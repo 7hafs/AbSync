@@ -2,6 +2,17 @@
   "expo": {
     "name": "AbSync",
     "slug": "absync",
+
+    
+    "web": {
+  "favicon": "./assets/images/icon.png"
+},
+"plugins": [
+  [
+    "expo-manifest"
+  ]
+],
+
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
