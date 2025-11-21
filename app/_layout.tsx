@@ -8,6 +8,7 @@ import useThemeStore from "@/store/useThemeStore";
 import useStaffStore from "@/store/useStaffStore";
 import useAbsenceStore from "@/store/useAbsenceStore";
 import { initializeSampleData } from "@/utils/sampleData";
+import { initializeNotifications } from "@/utils/notificationService";
 import Colors from "@/constants/colors";
 
 export const unstable_settings = {
@@ -53,6 +54,7 @@ function RootLayoutNav() {
   
   useEffect(() => {
     initializeSampleData(staffStore, absenceStore);
+    initializeNotifications();
   }, []);
 
   return (
