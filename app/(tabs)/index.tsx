@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, ScrollView, TouchableOpacity, Text, Modal, Alert } from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, Text, Modal, Alert, useWindowDimensions } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { ChevronLeft, ChevronRight, Plus, X, AlertTriangle, Flag } from "lucide-react-native";
@@ -14,10 +14,14 @@ import { Absence } from "@/types";
 
 export default function CalendarScreen() {
   const router = useRouter();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const systemColorScheme = useColorScheme();
   const { isDarkMode } = useThemeStore();
   const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
+
+  const isTablet = windowWidth >= 768;
+  const isDesktop = windowWidth >= 1024;
 
   const { absences, getConflictDays } = useAbsenceStore();
   const { getStaffById } = useStaffStore();
@@ -166,24 +170,24 @@ export default function CalendarScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingHorizontal: isDesktop ? 32 : isTablet ? 24 : 16 }]}>
         <TouchableOpacity onPress={handlePrevMonth}>
-          <ChevronLeft size={24} color={colors.text} />
+          <ChevronLeft size={isDesktop ? 32 : isTablet ? 28 : 24} color={colors.text} />
         </TouchableOpacity>
-        <ThemedText style={styles.headerTitle}>
+        <ThemedText style={[styles.headerTitle, { fontSize: isDesktop ? 24 : isTablet ? 22 : 20 }]}>
           <Text>
             {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
           </Text>
         </ThemedText>
         <TouchableOpacity onPress={handleNextMonth}>
-          <ChevronRight size={24} color={colors.text} />
+          <ChevronRight size={isDesktop ? 32 : isTablet ? 28 : 24} color={colors.text} />
         </TouchableOpacity>
       </View>
 
       <View style={[styles.weekDaysHeader, { backgroundColor: colors.surface }]}>
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
           <View key={day} style={styles.weekDayCell}>
-            <Text style={[styles.weekDayText, { color: colors.secondaryText }]}>
+            <Text style={[styles.weekDayText, { color: colors.secondaryText, fontSize: isDesktop ? 15 : isTablet ? 14 : 13 }]}>
               {day}
             </Text>
           </View>
@@ -205,17 +209,19 @@ export default function CalendarScreen() {
           const amConflict = amAbsences.length >= 2;
           const pmConflict = pmAbsences.length >= 2;
 
+          const cellHeight = isDesktop ? 140 : isTablet ? 120 : 100;
+
           return (
             <View
               key={`day-${day}`}
               style={[
                 styles.dayCell, 
-                { borderColor: colors.border }
+                { borderColor: colors.border, minHeight: cellHeight }
               ]}
             >
               <View style={styles.dayHeader}>
                 <View style={styles.dayNumberContainer}>
-                  <Text style={[styles.dayNumber, { color: colors.text }]}>
+                  <Text style={[styles.dayNumber, { color: colors.text, fontSize: isDesktop ? 18 : isTablet ? 16 : 15 }]}>
                     {day}
                   </Text>
                   {hasConflict && (
@@ -245,7 +251,7 @@ export default function CalendarScreen() {
                   onPress={() => handleAddAbsence(dateStr, 'AM')}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.sessionLabel, { color: colors.text }]}>
+                  <Text style={[styles.sessionLabel, { color: colors.text, fontSize: isDesktop ? 13 : isTablet ? 12 : 11 }]}>
                     AM
                   </Text>
                   {amAbsences.length > 0 && (
@@ -263,7 +269,7 @@ export default function CalendarScreen() {
                   onPress={() => handleAddAbsence(dateStr, 'PM')}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.sessionLabel, { color: colors.text }]}>
+                  <Text style={[styles.sessionLabel, { color: colors.text, fontSize: isDesktop ? 13 : isTablet ? 12 : 11 }]}>
                     PM
                   </Text>
                   {pmAbsences.length > 0 && (
@@ -292,7 +298,7 @@ export default function CalendarScreen() {
         onRequestClose={() => setShowSummaryModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, width: isDesktop ? '50%' : isTablet ? '70%' : '100%' }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
               <ThemedText style={styles.modalTitle}>Day Summary</ThemedText>
               <TouchableOpacity onPress={() => setShowSummaryModal(false)}>
@@ -415,7 +421,7 @@ export default function CalendarScreen() {
         onRequestClose={() => setShowConflictAlert(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.alertContent, { backgroundColor: colors.card }]}>
+          <View style={[styles.alertContent, { backgroundColor: colors.card, width: isDesktop ? '40%' : isTablet ? '60%' : '90%' }]}>
             <View style={styles.alertIconContainer}>
               <AlertTriangle size={48} color="#FF5722" />
             </View>
@@ -475,7 +481,7 @@ export default function CalendarScreen() {
         onRequestClose={() => setShowDailyAbsences(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.alertContent, { backgroundColor: colors.card }]}>
+          <View style={[styles.alertContent, { backgroundColor: colors.card, width: isDesktop ? '40%' : isTablet ? '60%' : '90%' }]}>
             <View style={styles.alertIconContainer}>
               <AlertTriangle size={48} color={colors.primary} />
             </View>
@@ -594,7 +600,7 @@ export default function CalendarScreen() {
         onRequestClose={() => setShow24HourAlert(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.alertContent, { backgroundColor: colors.card }]}>
+          <View style={[styles.alertContent, { backgroundColor: colors.card, width: isDesktop ? '40%' : isTablet ? '60%' : '90%' }]}>
             <View style={styles.alertIconContainer}>
               <AlertTriangle size={48} color="#FF9800" />
             </View>
@@ -719,7 +725,7 @@ export default function CalendarScreen() {
         onRequestClose={() => setShowWeeklyAlert(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.alertContent, { backgroundColor: colors.card }]}>            <View style={styles.alertIconContainer}>
+          <View style={[styles.alertContent, { backgroundColor: colors.card, width: isDesktop ? '40%' : isTablet ? '60%' : '90%' }]}>            <View style={styles.alertIconContainer}>
               <AlertTriangle size={48} color={colors.primary} />
             </View>
             <ThemedText style={styles.alertTitle}>This Week's Absences</ThemedText>
@@ -822,7 +828,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: {
-    fontSize: 20,
     fontWeight: '700' as const,
   },
   weekDaysHeader: {
@@ -834,7 +839,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   weekDayText: {
-    fontSize: 13,
     fontWeight: '600' as const,
   },
   calendarGrid: {
@@ -844,7 +848,6 @@ const styles = StyleSheet.create({
   },
   dayCell: {
     width: '14.28%',
-    minHeight: 100,
     padding: 2,
     borderWidth: 0.5,
   },
@@ -874,7 +877,6 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   dayNumber: {
-    fontSize: 15,
     fontWeight: '600' as const,
   },
   summaryButton: {
@@ -901,7 +903,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sessionLabel: {
-    fontSize: 11,
     fontWeight: '600' as const,
   },
   absenceIndicator: {
@@ -943,7 +944,6 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalContent: {
-    width: '100%',
     maxHeight: '80%',
     borderRadius: 16,
     overflow: 'hidden',
@@ -1034,7 +1034,6 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   alertContent: {
-    width: '90%',
     maxHeight: '70%',
     borderRadius: 16,
     padding: 24,
