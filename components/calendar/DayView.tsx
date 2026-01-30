@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, useColorScheme } from "react-native";
 import ThemedText from "@/components/ThemedText";
 import ThemedView from "@/components/ThemedView";
 import { formatDate, getDayName } from "@/utils/dateUtils";
@@ -8,7 +8,6 @@ import useNotesStore from "@/store/useNotesStore";
 import useRemindersStore from "@/store/useRemindersStore";
 import usePeopleStore from "@/store/usePeopleStore";
 import Colors from "@/constants/colors";
-import { useColorScheme } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import { EventType, NoteType, ReminderType } from "@/types";
 import { FileText, Clock, UserX, ChevronLeft, ChevronRight } from "lucide-react-native";
