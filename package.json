@@ -45,7 +45,8 @@
     "react-native-svg": "15.12.1",
     "react-native-web": "^0.21.0",
     "zod": "^4.1.12",
-    "zustand": "^5.0.2"
+    "zustand": "^5.0.2",
+    "@rork-ai/toolkit-sdk": "latest"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

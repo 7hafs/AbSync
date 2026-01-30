@@ -55,7 +55,7 @@ function RootLayoutNav() {
   useEffect(() => {
     initializeSampleData(staffStore, absenceStore);
     initializeNotifications();
-  }, []);
+  }, [staffStore, absenceStore]);
 
   return (
     <Stack
