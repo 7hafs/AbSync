@@ -19,6 +19,25 @@ export type AuthUser = {
 
 export type CalendarShareMode = 'edit' | 'view';
 
+export type AbsenceType = 'Holiday' | 'Sick Leave' | 'Appointment' | 'Training' | 'Public Holiday';
+export type AbsenceDuration = 'Full' | 'AM' | 'PM';
+export type AbsenceStatus = 'Pending' | 'Approved' | 'Rejected';
+
+export type Absence = {
+  id: string;
+  staffId: string;
+  name: string;
+  type: AbsenceType;
+  date: string;
+  duration: AbsenceDuration;
+  status: AbsenceStatus;
+  cover?: string | null;
+  notes: string;
+  locked?: boolean;
+  createdBy: string;
+  createdAt: string;
+};
+
 export type CalendarSharePayload = {
   version: 1;
   workspaceId: string;
@@ -30,25 +49,7 @@ export type CalendarSharePayload = {
   absences: Absence[];
 };
 
-export type AbsenceSessionType = 'AM' | 'PM' | 'Full Day';
-
-export type AbsenceTypeCategory = 'Holiday' | 'Sickness' | 'Other';
-
-export type AbsenceStatus = 'Pending' | 'Confirmed' | 'Cancelled';
-
-export type Absence = {
-  id: string;
-  staffId: string;
-  date: string;
-  session: AbsenceSessionType;
-  type: AbsenceTypeCategory;
-  note?: string;
-  status: AbsenceStatus;
-  createdBy: string;
-  createdAt: string;
-};
-
-export type CalendarViewType = "month" | "week" | "day";
+export type CalendarViewType = 'month' | 'week' | 'day';
 
 export type DashboardStats = {
   totalAbsencesThisMonth: number;

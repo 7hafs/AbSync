@@ -1,233 +1,165 @@
-import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, TouchableOpacity, Text } from "react-native";
-import ThemedView from "@/components/ThemedView";
-import ThemedText from "@/components/ThemedText";
-import useAbsenceStore from "@/store/useAbsenceStore";
-import useStaffStore from "@/store/useStaffStore";
-import Colors from "@/constants/colors";
-import { useColorScheme } from "react-native";
-import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Calendar } from "lucide-react-native";
-import useThemeStore from "@/store/useThemeStore";
-import { absenceColors } from "@/constants/colors";
+import React, { useMemo, useState } from 'react';
+import {
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { useColorScheme } from 'react-native';
+import { BarChart3, CalendarDays, ChevronLeft, ChevronRight, Stethoscope, SunMedium } from 'lucide-react-native';
+import ThemedView from '@/components/ThemedView';
+import ThemedText from '@/components/ThemedText';
+import Colors, { absenceColors } from '@/constants/colors';
+import useThemeStore from '@/store/useThemeStore';
+import useAbsenceStore from '@/store/useAbsenceStore';
+import useStaffStore from '@/store/useStaffStore';
+import { Absence } from '@/types';
+
+function getDaysValue(absence: Absence) {
+  return absence.duration === 'Full' ? 1 : 0.5;
+}
 
 export default function ReportsScreen() {
   const systemColorScheme = useColorScheme();
   const { isDarkMode } = useThemeStore();
-  const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
-  const colors = Colors[colorScheme || "light"];
+  const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? 'dark' : 'light';
+  const colors = Colors[colorScheme || 'light'];
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 1100;
 
   const { absences } = useAbsenceStore();
-  const { staff, getActiveStaff } = useStaffStore();
+  const { staff } = useStaffStore();
+  const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
 
-  const now = new Date();
-  const [selectedDate, setSelectedDate] = useState(now);
-  const currentMonth = selectedDate.getMonth();
-  const currentYear = selectedDate.getFullYear();
+  const month = selectedMonth.getMonth();
+  const year = selectedMonth.getFullYear();
 
-  const thisMonthAbsences = absences.filter((a) => {
-    const date = new Date(a.date);
-    return (
-      date.getMonth() === currentMonth &&
-      date.getFullYear() === currentYear &&
-      a.status !== "Cancelled"
-    );
-  });
-
-  const sicknessCount = thisMonthAbsences.filter((a) => a.type === "Sickness").length;
-  const holidayCount = thisMonthAbsences.filter((a) => a.type === "Holiday").length;
-  const otherCount = thisMonthAbsences.filter((a) => a.type === "Other").length;
-
-  const staffAbsenceCounts = staff.map((s) => ({
-    staff: s,
-    count: thisMonthAbsences.filter((a) => a.staffId === s.id).length,
-  }));
-
-  const topAbsentees = staffAbsenceCounts
-    .filter((item) => item.count > 0)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
-
-  const getPreviousMonth = () => {
-    const prev = new Date(selectedDate);
-    prev.setMonth(prev.getMonth() - 1);
-    setSelectedDate(prev);
-  };
-
-  const getNextMonth = () => {
-    const next = new Date(selectedDate);
-    next.setMonth(next.getMonth() + 1);
-    setSelectedDate(next);
-  };
-
-  const goToCurrentMonth = () => {
-    setSelectedDate(new Date());
-  };
-
-  const isCurrentMonth = currentMonth === now.getMonth() && currentYear === now.getFullYear();
-
-  const getPreviousMonthAbsences = () => {
-    const prev = new Date(selectedDate);
-    prev.setMonth(prev.getMonth() - 1);
-    return absences.filter((a) => {
-      const date = new Date(a.date);
+  const filteredAbsences = useMemo(() => {
+    return absences.filter((absence) => {
+      const parsedDate = new Date(absence.date);
       return (
-        date.getMonth() === prev.getMonth() &&
-        date.getFullYear() === prev.getFullYear() &&
-        a.status !== "Cancelled"
+        parsedDate.getMonth() === month &&
+        parsedDate.getFullYear() === year &&
+        absence.type !== 'Public Holiday' &&
+        absence.status !== 'Rejected'
       );
-    }).length;
-  };
+    });
+  }, [absences, month, year]);
 
-  const previousMonthCount = getPreviousMonthAbsences();
-  const changeFromLastMonth = thisMonthAbsences.length - previousMonthCount;
-  const percentChange = previousMonthCount > 0 ? ((changeFromLastMonth / previousMonthCount) * 100).toFixed(1) : 0;
+  const employeeRows = useMemo(() => {
+    return staff
+      .filter((member) => member.active)
+      .map((member) => {
+        const employeeAbsences = filteredAbsences.filter((absence) => absence.staffId === member.id);
+        const holidayDays = employeeAbsences
+          .filter((absence) => absence.type === 'Holiday')
+          .reduce((sum, absence) => sum + getDaysValue(absence), 0);
+        const sickDays = employeeAbsences
+          .filter((absence) => absence.type === 'Sick Leave')
+          .reduce((sum, absence) => sum + getDaysValue(absence), 0);
+        const totalDays = employeeAbsences.reduce((sum, absence) => sum + getDaysValue(absence), 0);
 
-  const activeStaff = getActiveStaff();
-  const averageAbsencesPerStaff = activeStaff.length > 0 ? (thisMonthAbsences.length / activeStaff.length).toFixed(1) : 0;
+        return {
+          id: member.id,
+          name: member.name,
+          holidays: holidayDays,
+          sick: sickDays,
+          total: totalDays,
+        };
+      })
+      .sort((left, right) => right.total - left.total || left.name.localeCompare(right.name));
+  }, [filteredAbsences, staff]);
 
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const workingDays = daysInMonth - Math.floor(daysInMonth / 7) * 2;
-  const absenceRate = workingDays > 0 ? ((thisMonthAbsences.length / (workingDays * activeStaff.length)) * 100).toFixed(1) : 0;
+  const monthlyTotalDays = filteredAbsences.reduce((sum, absence) => sum + getDaysValue(absence), 0);
+  const monthlySickDays = filteredAbsences
+    .filter((absence) => absence.type === 'Sick Leave')
+    .reduce((sum, absence) => sum + getDaysValue(absence), 0);
+  const employeesWithAbsence = employeeRows.filter((row) => row.total > 0).length;
 
   return (
     <ThemedView style={styles.container} useGradient>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={[styles.header, { backgroundColor: colors.card }]}>
-          <TouchableOpacity onPress={getPreviousMonth} style={styles.monthButton}>
-            <ChevronLeft size={24} color={colors.text} />
-          </TouchableOpacity>
-          
-          <View style={styles.headerCenter}>
-            <ThemedText style={styles.monthTitle}>
-              <Text>
-                {selectedDate.toLocaleString("default", { month: "long", year: "numeric" })}
-              </Text>
-            </ThemedText>
-            {!isCurrentMonth && (
-              <TouchableOpacity onPress={goToCurrentMonth} style={[styles.todayButton, { backgroundColor: colors.primary }]}>
-                <Calendar size={14} color="white" />
-                <Text style={styles.todayButtonText}>Today</Text>
+      <ScrollView contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}>
+        <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: isDesktop ? 1180 : 920 }]}> 
+          <View style={styles.headerRow}>
+            <View>
+              <ThemedText style={styles.title}>Reports dashboard</ThemedText>
+              <ThemedText variant="secondary">Monthly absence summaries for a small team.</ThemedText>
+            </View>
+            <View style={styles.monthControlRow}>
+              <TouchableOpacity
+                testID="reports-prev-month"
+                style={[styles.iconButton, { backgroundColor: colors.surfaceVariant }]}
+                onPress={() => setSelectedMonth(new Date(year, month - 1, 1))}
+              >
+                <ChevronLeft size={18} color={colors.text} />
               </TouchableOpacity>
-            )}
-          </View>
-
-          <TouchableOpacity onPress={getNextMonth} style={styles.monthButton}>
-            <ChevronRight size={24} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={[styles.statsGrid]}>
-          <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <ThemedText style={styles.statCardLabel}>
-              <Text>Total Absences</Text>
-            </ThemedText>
-            <ThemedText style={styles.statCardNumber}>
-              <Text>{thisMonthAbsences.length}</Text>
-            </ThemedText>
-            {changeFromLastMonth !== 0 && (
-              <View style={styles.changeContainer}>
-                {changeFromLastMonth > 0 ? (
-                  <TrendingUp size={16} color="#FF5722" />
-                ) : (
-                  <TrendingDown size={16} color="#4CAF50" />
-                )}
-                <Text style={[styles.changeText, { color: changeFromLastMonth > 0 ? "#FF5722" : "#4CAF50" }]}>
-                  {Math.abs(changeFromLastMonth)} ({percentChange}%)
-                </Text>
+              <View style={[styles.monthChip, { backgroundColor: colors.surfaceVariant }]}> 
+                <ThemedText style={styles.monthChipText}>
+                  {selectedMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+                </ThemedText>
               </View>
-            )}
-          </View>
-
-          <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <ThemedText style={styles.statCardLabel}>
-              <Text>Active Staff</Text>
-            </ThemedText>
-            <ThemedText style={styles.statCardNumber}>
-              <Text>{activeStaff.length}</Text>
-            </ThemedText>
-            <Text style={[styles.subText, { color: colors.secondaryText }]}>
-              {averageAbsencesPerStaff} avg absences
-            </Text>
-          </View>
-
-          <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <ThemedText style={styles.statCardLabel}>
-              <Text>Absence Rate</Text>
-            </ThemedText>
-            <ThemedText style={styles.statCardNumber}>
-              <Text>{absenceRate}%</Text>
-            </ThemedText>
-            <Text style={[styles.subText, { color: colors.secondaryText }]}>
-              of working days
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <ThemedText style={styles.cardTitle}>
-            <Text>Breakdown by Type</Text>
-          </ThemedText>
-          <View style={styles.typeBreakdown}>
-            <View style={[styles.typeCard, { backgroundColor: absenceColors.holiday }]}>
-              <Text style={styles.typeLabel}>Holiday</Text>
-              <Text style={styles.typeCount}>{holidayCount}</Text>
-            </View>
-            <View style={[styles.typeCard, { backgroundColor: absenceColors.sickness }]}>
-              <Text style={styles.typeLabel}>Sickness</Text>
-              <Text style={styles.typeCount}>{sicknessCount}</Text>
-            </View>
-            <View style={[styles.typeCard, { backgroundColor: absenceColors.other }]}>
-              <Text style={styles.typeLabel}>Other</Text>
-              <Text style={styles.typeCount}>{otherCount}</Text>
+              <TouchableOpacity
+                testID="reports-next-month"
+                style={[styles.iconButton, { backgroundColor: colors.surfaceVariant }]}
+                onPress={() => setSelectedMonth(new Date(year, month + 1, 1))}
+              >
+                <ChevronRight size={18} color={colors.text} />
+              </TouchableOpacity>
             </View>
           </View>
-        </View>
 
-        {topAbsentees.length > 0 && (
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <ThemedText style={styles.cardTitle}>
-              <Text>Top Absences This Month</Text>
-            </ThemedText>
-            {topAbsentees.map((item, index) => (
-              <View key={item.staff.id} style={styles.topAbsenteeRow}>
-                <View style={styles.rankContainer}>
-                  <View style={[
-                    styles.rankBadge, 
-                    { backgroundColor: index === 0 ? "#FFD700" : index === 1 ? "#C0C0C0" : index === 2 ? "#CD7F32" : colors.surface }
-                  ]}>
-                    <Text style={[styles.rankText, { color: index < 3 ? "#333" : colors.text }]}>
-                      {index + 1}
-                    </Text>
-                  </View>
+          <View style={styles.statsRow}>
+            <View style={[styles.statCard, { backgroundColor: colors.surfaceVariant }]}> 
+              <BarChart3 size={18} color={colors.primary} />
+              <ThemedText style={styles.statValue}>{monthlyTotalDays.toFixed(1)}</ThemedText>
+              <ThemedText variant="secondary">Total days off</ThemedText>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: colors.surfaceVariant }]}> 
+              <Stethoscope size={18} color={absenceColors.sickLeave} />
+              <ThemedText style={styles.statValue}>{monthlySickDays.toFixed(1)}</ThemedText>
+              <ThemedText variant="secondary">Sick days</ThemedText>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: colors.surfaceVariant }]}> 
+              <SunMedium size={18} color={absenceColors.holiday} />
+              <ThemedText style={styles.statValue}>{employeesWithAbsence}</ThemedText>
+              <ThemedText variant="secondary">Employees affected</ThemedText>
+            </View>
+          </View>
+
+          <View style={[styles.tableCard, { borderColor: colors.border, backgroundColor: colors.surface }]}> 
+            <View style={[styles.tableHeader, { borderBottomColor: colors.border }]}> 
+              <ThemedText style={[styles.headerCell, styles.nameCell]}>Name</ThemedText>
+              <ThemedText style={styles.headerCell}>Holidays</ThemedText>
+              <ThemedText style={styles.headerCell}>Sick</ThemedText>
+              <ThemedText style={styles.headerCell}>Total Days</ThemedText>
+            </View>
+
+            {employeeRows.map((row) => (
+              <View key={row.id} style={[styles.tableRow, { borderBottomColor: colors.border }]}> 
+                <View style={styles.nameCell}>
+                  <ThemedText style={styles.employeeName}>{row.name}</ThemedText>
                 </View>
-                <View style={styles.absenteeInfo}>
-                  <ThemedText style={styles.absenceeName}>
-                    <Text>{item.staff.name}</Text>
-                  </ThemedText>
-                  {item.staff.department && (
-                    <Text style={[styles.absenceeDept, { color: colors.secondaryText }]}>
-                      {item.staff.department}
-                    </Text>
-                  )}
-                </View>
-                <View style={[styles.countBadge, { backgroundColor: colors.primary }]}>
-                  <Text style={styles.countBadgeText}>{item.count}</Text>
-                </View>
+                <ThemedText style={styles.tableCell}>{row.holidays.toFixed(1)}</ThemedText>
+                <ThemedText style={styles.tableCell}>{row.sick.toFixed(1)}</ThemedText>
+                <ThemedText style={styles.tableCell}>{row.total.toFixed(1)}</ThemedText>
               </View>
             ))}
           </View>
-        )}
 
-        {topAbsentees.length === 0 && (
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.emptyState}>
-              <Calendar size={48} color={colors.secondaryText} />
-              <ThemedText style={[styles.emptyText, { color: colors.secondaryText }]}>
-                <Text>No absences recorded this month</Text>
-              </ThemedText>
+          <View style={styles.bottomRow}>
+            <View style={[styles.insightCard, { backgroundColor: colors.surfaceVariant }]}> 
+              <CalendarDays size={18} color={colors.primary} />
+              <ThemedText style={styles.insightTitle}>Days off per month</ThemedText>
+              <ThemedText variant="secondary">{selectedMonth.toLocaleDateString('en-GB', { month: 'long' })}: {monthlyTotalDays.toFixed(1)} days</ThemedText>
+            </View>
+            <View style={[styles.insightCard, { backgroundColor: colors.surfaceVariant }]}> 
+              <BarChart3 size={18} color={colors.primary} />
+              <ThemedText style={styles.insightTitle}>Top employee</ThemedText>
+              <ThemedText variant="secondary">{employeeRows[0]?.name ?? 'No absences recorded'}{employeeRows[0] ? ` • ${employeeRows[0].total.toFixed(1)} days` : ''}</ThemedText>
             </View>
           </View>
-        )}
+        </View>
       </ScrollView>
     </ThemedView>
   );
@@ -239,157 +171,116 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingBottom: 32,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    marginBottom: 20,
+  contentDesktop: {
+    alignItems: 'center',
   },
-  monthButton: {
-    padding: 8,
+  panel: {
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: 28,
+    padding: 18,
+    gap: 16,
   },
-  headerCenter: {
-    flex: 1,
-    alignItems: "center",
-    gap: 4,
-  },
-  monthTitle: {
-    fontSize: 20,
-    fontWeight: "700" as const,
-  },
-  todayButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  todayButtonText: {
-    color: "white",
-    fontSize: 12,
-    fontWeight: "600" as const,
-  },
-  statsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 12,
-    marginBottom: 16,
+    flexWrap: 'wrap',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '800' as const,
+  },
+  monthControlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthChip: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  monthChipText: {
+    fontWeight: '700' as const,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    flexWrap: 'wrap',
   },
   statCard: {
     flex: 1,
-    minWidth: "30%",
-    padding: 16,
-    borderRadius: 12,
+    minWidth: 180,
+    borderRadius: 22,
+    padding: 18,
+    gap: 8,
+  },
+  statValue: {
+    fontSize: 26,
+    fontWeight: '800' as const,
+  },
+  tableCard: {
     borderWidth: 1,
+    borderRadius: 22,
+    overflow: 'hidden',
   },
-  statCardLabel: {
-    fontSize: 13,
-    marginBottom: 8,
-    opacity: 0.7,
+  tableHeader: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(148, 163, 184, 0.08)',
   },
-  statCardNumber: {
-    fontSize: 32,
-    fontWeight: "700" as const,
-    marginBottom: 4,
-  },
-  changeContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 4,
-  },
-  changeText: {
-    fontSize: 12,
-    fontWeight: "600" as const,
-  },
-  subText: {
-    fontSize: 11,
-  },
-  card: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: "600" as const,
-    marginBottom: 12,
-  },
-  typeBreakdown: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  typeCard: {
+  headerCell: {
     flex: 1,
-    padding: 16,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  typeLabel: {
     fontSize: 13,
-    fontWeight: "600" as const,
-    color: "#333",
-    marginBottom: 8,
+    fontWeight: '800' as const,
+    textAlign: 'center',
   },
-  typeCount: {
-    fontSize: 24,
-    fontWeight: "700" as const,
-    color: "#333",
+  nameCell: {
+    flex: 2,
+    justifyContent: 'center',
   },
-  topAbsenteeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    gap: 12,
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
   },
-  rankContainer: {
-    width: 40,
-  },
-  rankBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rankText: {
+  employeeName: {
     fontSize: 14,
-    fontWeight: "700" as const,
+    fontWeight: '700' as const,
   },
-  absenteeInfo: {
+  tableCell: {
     flex: 1,
+    textAlign: 'center',
+    fontWeight: '600' as const,
   },
-  absenceeName: {
-    fontSize: 16,
-    fontWeight: "600" as const,
-  },
-  absenceeDept: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  countBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  countBadgeText: {
-    color: "white",
-    fontSize: 14,
-    fontWeight: "700" as const,
-  },
-  emptyState: {
-    alignItems: "center",
-    paddingVertical: 40,
+  bottomRow: {
+    flexDirection: 'row',
     gap: 12,
+    flexWrap: 'wrap',
   },
-  emptyText: {
+  insightCard: {
+    flex: 1,
+    minWidth: 220,
+    borderRadius: 22,
+    padding: 18,
+    gap: 8,
+  },
+  insightTitle: {
     fontSize: 16,
-    textAlign: "center",
+    fontWeight: '700' as const,
   },
 });

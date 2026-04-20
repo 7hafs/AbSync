@@ -1,47 +1,46 @@
-const white = "#FFFFFF";
-const black = "#000000";
-const lightGray = "#F8F9FA";
-const mediumGray = "#E0E0E0";
-const darkGray = "#333333";
+const white = '#FFFFFF';
+const black = '#0F172A';
+const lightGray = '#EEF2F7';
+const mediumGray = '#D5DCE5';
 
 export const absenceColors = {
-  amSlot: "rgba(255, 216, 168, 0.4)",
-  pmSlot: "rgba(168, 216, 255, 0.4)",
-  holiday: "rgba(255, 246, 168, 0.4)",
-  sickness: "rgba(255, 198, 198, 0.4)",
-  other: "rgba(230, 230, 230, 0.4)",
-  amSlotSolid: "#FFD8A8",
-  pmSlotSolid: "#A8D8FF",
-  holidaySolid: "#FFF6A8",
-  sicknessSolid: "#FFC6C6",
-  otherSolid: "#E6E6E6",
+  holiday: '#22C55E',
+  sickLeave: '#EF4444',
+  appointment: '#F97316',
+  training: '#8B5CF6',
+  publicHoliday: '#D4A017',
+  pending: '#94A3B8',
+  approved: '#16A34A',
+  rejected: '#DC2626',
+  amSlot: 'rgba(59, 130, 246, 0.10)',
+  pmSlot: 'rgba(249, 115, 22, 0.10)',
 };
 
 export default {
   light: {
-    primary: "#4A90E2",
-    background: "#E8F4F8",
-    backgroundGradientStart: "#E8F4F8",
-    backgroundGradientEnd: "#D4E9F7",
+    primary: '#0F766E',
+    background: '#F4F7F4',
+    backgroundGradientStart: '#F4F7F4',
+    backgroundGradientEnd: '#E7F1EC',
     card: white,
     text: black,
     border: mediumGray,
-    notification: "#4A90E2",
-    secondaryText: "#757575",
-    surface: white,
-    surfaceVariant: "#F5F9FB",
+    notification: '#0F766E',
+    secondaryText: '#64748B',
+    surface: '#FBFDFB',
+    surfaceVariant: lightGray,
   },
   dark: {
-    primary: "#4A90E2",
-    background: "#0A1628",
-    backgroundGradientStart: "#0A1628",
-    backgroundGradientEnd: "#1A2332",
-    card: "#1E1E1E",
-    text: white,
-    border: "#2C2C2C",
-    notification: "#4A90E2",
-    secondaryText: "#BBBBBB",
-    surface: "#262626",
-    surfaceVariant: "#2C2C2C",
+    primary: '#5EEAD4',
+    background: '#091412',
+    backgroundGradientStart: '#091412',
+    backgroundGradientEnd: '#0E1D1A',
+    card: '#10201D',
+    text: '#F8FAFC',
+    border: '#1F3733',
+    notification: '#5EEAD4',
+    secondaryText: '#94A3B8',
+    surface: '#132723',
+    surfaceVariant: '#18322D',
   },
 };

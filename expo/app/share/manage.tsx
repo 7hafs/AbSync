@@ -35,7 +35,7 @@ export default function ShareManageScreen() {
   const [importValue, setImportValue] = useState<string>("");
 
   const activeAbsenceCount = useMemo(() => {
-    return absences.filter((absence) => absence.status !== "Cancelled").length;
+    return absences.filter((absence) => absence.status !== "Rejected").length;
   }, [absences]);
 
   const handleCreateShare = async () => {

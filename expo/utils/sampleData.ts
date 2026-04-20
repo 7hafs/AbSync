@@ -1,79 +1,35 @@
-import { StaffMember, Absence } from "@/types";
+import { StaffMember, Absence } from '@/types';
 
 export const sampleStaff: StaffMember[] = [
-  { id: "1", name: "Emily Wright", department: "HR", active: true, createdAt: "2025-01-01T00:00:00.000Z" },
-  { id: "2", name: "Michael Chen", department: "IT", active: true, createdAt: "2025-01-01T00:00:00.000Z" },
-  { id: "3", name: "Sarah Johnson", department: "Finance", active: true, createdAt: "2025-01-01T00:00:00.000Z" },
-  { id: "4", name: "David Martinez", department: "Operations", active: true, createdAt: "2025-01-01T00:00:00.000Z" },
-  { id: "5", name: "Lisa Anderson", department: "Marketing", active: true, createdAt: "2025-01-01T00:00:00.000Z" },
-  { id: "6", name: "James Wilson", department: "Sales", active: true, createdAt: "2025-01-01T00:00:00.000Z" },
-  { id: "7", name: "Maria Garcia", department: "HR", active: true, createdAt: "2025-01-01T00:00:00.000Z" },
-  { id: "8", name: "Robert Taylor", department: "IT", active: true, createdAt: "2025-01-01T00:00:00.000Z" },
-  { id: "9", name: "Jennifer Brown", department: "Finance", active: true, createdAt: "2025-01-01T00:00:00.000Z" },
-  { id: "10", name: "William Davis", department: "Operations", active: true, createdAt: "2025-01-01T00:00:00.000Z" },
+  { id: '1', name: 'Sarah Ahmed', department: 'Operations', active: true, createdAt: '2026-01-01T00:00:00.000Z' },
+  { id: '2', name: 'Adam Lewis', department: 'Support', active: true, createdAt: '2026-01-01T00:00:00.000Z' },
+  { id: '3', name: 'Maya Patel', department: 'Finance', active: true, createdAt: '2026-01-01T00:00:00.000Z' },
+  { id: '4', name: 'Chloe Green', department: 'People', active: true, createdAt: '2026-01-01T00:00:00.000Z' },
+  { id: '5', name: 'Owen Clark', department: 'Sales', active: true, createdAt: '2026-01-01T00:00:00.000Z' },
+];
+
+const publicHolidays2026: Absence[] = [
+  { id: 'ph-2026-01-01', staffId: 'public-holiday', name: 'New Year\'s Day', type: 'Public Holiday', date: '2026-01-01', duration: 'Full', status: 'Approved', cover: null, notes: 'UK public holiday', locked: true, createdBy: 'system', createdAt: '2026-01-01T00:00:00.000Z' },
+  { id: 'ph-2026-04-03', staffId: 'public-holiday', name: 'Good Friday', type: 'Public Holiday', date: '2026-04-03', duration: 'Full', status: 'Approved', cover: null, notes: 'UK public holiday', locked: true, createdBy: 'system', createdAt: '2026-01-01T00:00:00.000Z' },
+  { id: 'ph-2026-04-06', staffId: 'public-holiday', name: 'Easter Monday', type: 'Public Holiday', date: '2026-04-06', duration: 'Full', status: 'Approved', cover: null, notes: 'UK public holiday', locked: true, createdBy: 'system', createdAt: '2026-01-01T00:00:00.000Z' },
+  { id: 'ph-2026-05-04', staffId: 'public-holiday', name: 'Early May Bank Holiday', type: 'Public Holiday', date: '2026-05-04', duration: 'Full', status: 'Approved', cover: null, notes: 'UK public holiday', locked: true, createdBy: 'system', createdAt: '2026-01-01T00:00:00.000Z' },
+  { id: 'ph-2026-05-25', staffId: 'public-holiday', name: 'Spring Bank Holiday', type: 'Public Holiday', date: '2026-05-25', duration: 'Full', status: 'Approved', cover: null, notes: 'UK public holiday', locked: true, createdBy: 'system', createdAt: '2026-01-01T00:00:00.000Z' },
+  { id: 'ph-2026-08-31', staffId: 'public-holiday', name: 'Summer Bank Holiday', type: 'Public Holiday', date: '2026-08-31', duration: 'Full', status: 'Approved', cover: null, notes: 'UK public holiday', locked: true, createdBy: 'system', createdAt: '2026-01-01T00:00:00.000Z' },
+  { id: 'ph-2026-12-25', staffId: 'public-holiday', name: 'Christmas Day', type: 'Public Holiday', date: '2026-12-25', duration: 'Full', status: 'Approved', cover: null, notes: 'UK public holiday', locked: true, createdBy: 'system', createdAt: '2026-01-01T00:00:00.000Z' },
+  { id: 'ph-2026-12-28', staffId: 'public-holiday', name: 'Boxing Day (substitute day)', type: 'Public Holiday', date: '2026-12-28', duration: 'Full', status: 'Approved', cover: null, notes: 'UK public holiday', locked: true, createdBy: 'system', createdAt: '2026-01-01T00:00:00.000Z' },
 ];
 
 export const sampleAbsences: Absence[] = [
-  {
-    id: "a1",
-    staffId: "1",
-    date: "2025-10-25",
-    session: "Full Day",
-    type: "Holiday",
-    note: "Annual leave",
-    status: "Confirmed",
-    createdBy: "Admin 1",
-    createdAt: "2025-10-20T00:00:00.000Z",
-  },
-  {
-    id: "a2",
-    staffId: "2",
-    date: "2025-10-27",
-    session: "AM",
-    type: "Sickness",
-    note: "Doctor appointment",
-    status: "Confirmed",
-    createdBy: "Admin 1",
-    createdAt: "2025-10-21T00:00:00.000Z",
-  },
-  {
-    id: "a3",
-    staffId: "3",
-    date: "2025-10-28",
-    session: "PM",
-    type: "Holiday",
-    status: "Confirmed",
-    createdBy: "Admin 2",
-    createdAt: "2025-10-22T00:00:00.000Z",
-  },
-  {
-    id: "a4",
-    staffId: "4",
-    date: "2025-10-29",
-    session: "Full Day",
-    type: "Sickness",
-    note: "Flu",
-    status: "Confirmed",
-    createdBy: "Admin 1",
-    createdAt: "2025-10-23T00:00:00.000Z",
-  },
-  {
-    id: "a5",
-    staffId: "5",
-    date: "2025-10-30",
-    session: "AM",
-    type: "Other",
-    note: "Family emergency",
-    status: "Confirmed",
-    createdBy: "Admin 3",
-    createdAt: "2025-10-24T00:00:00.000Z",
-  },
+  ...publicHolidays2026,
+  { id: 'a1', staffId: '1', name: 'Sarah Ahmed', type: 'Holiday', date: '2026-04-21', duration: 'Full', status: 'Pending', cover: 'James', notes: 'Family trip', createdBy: 'Manager', createdAt: '2026-04-12T00:00:00.000Z' },
+  { id: 'a2', staffId: '2', name: 'Adam Lewis', type: 'Sick Leave', date: '2026-04-21', duration: 'AM', status: 'Approved', cover: null, notes: 'GP appointment', createdBy: 'Manager', createdAt: '2026-04-13T00:00:00.000Z' },
+  { id: 'a3', staffId: '3', name: 'Maya Patel', type: 'Training', date: '2026-04-24', duration: 'PM', status: 'Approved', cover: null, notes: 'Leadership workshop', createdBy: 'Manager', createdAt: '2026-04-13T00:00:00.000Z' },
+  { id: 'a4', staffId: '4', name: 'Chloe Green', type: 'Appointment', date: '2026-04-24', duration: 'AM', status: 'Rejected', cover: null, notes: 'Dentist', createdBy: 'Manager', createdAt: '2026-04-15T00:00:00.000Z' },
 ];
 
-export function initializeSampleData(
-  staffStore: any,
-  absenceStore: any
-) {
+export function initializeSampleData(staffStore: any, absenceStore: any) {
+  console.log('[sampleData] initializing sample data');
+
   if (staffStore.staff.length === 0) {
     sampleStaff.forEach((staff: StaffMember) => {
       staffStore.addStaff(staff);

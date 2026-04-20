@@ -1,333 +1,326 @@
-import React from "react";
+import React, { useMemo } from 'react';
 import {
-  View,
+  Alert,
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
-  Alert,
-} from "react-native";
-import { useRouter, useLocalSearchParams, Stack } from "expo-router";
-import ThemedView from "@/components/ThemedView";
-import ThemedText from "@/components/ThemedText";
-import useAbsenceStore from "@/store/useAbsenceStore";
-import useStaffStore from "@/store/useStaffStore";
-import Colors, { absenceColors } from "@/constants/colors";
-import { useColorScheme } from "react-native";
-import useThemeStore from "@/store/useThemeStore";
-import { Absence } from "@/types";
-import { Plus, Calendar, Clock, User, FileText, Trash2, ChevronLeft, ChevronRight } from "lucide-react-native";
-import useAuthStore from "@/store/useAuthStore";
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import {
+  Briefcase,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  Clock3,
+  Plus,
+  ShieldAlert,
+  Trash2,
+  User,
+} from 'lucide-react-native';
+import { useColorScheme } from 'react-native';
+import ThemedText from '@/components/ThemedText';
+import ThemedView from '@/components/ThemedView';
+import Colors, { absenceColors } from '@/constants/colors';
+import useThemeStore from '@/store/useThemeStore';
+import useAbsenceStore from '@/store/useAbsenceStore';
+import useStaffStore from '@/store/useStaffStore';
+import useAuthStore from '@/store/useAuthStore';
+import { Absence, AbsenceStatus, AbsenceType } from '@/types';
+
+function getTypeColor(type: AbsenceType) {
+  switch (type) {
+    case 'Holiday':
+      return absenceColors.holiday;
+    case 'Sick Leave':
+      return absenceColors.sickLeave;
+    case 'Appointment':
+      return absenceColors.appointment;
+    case 'Training':
+      return absenceColors.training;
+    case 'Public Holiday':
+      return absenceColors.publicHoliday;
+    default:
+      return absenceColors.pending;
+  }
+}
+
+function getStatusColor(status: AbsenceStatus) {
+  switch (status) {
+    case 'Approved':
+      return absenceColors.approved;
+    case 'Rejected':
+      return absenceColors.rejected;
+    default:
+      return absenceColors.pending;
+  }
+}
+
+function getDurationSortValue(duration: Absence['duration']) {
+  if (duration === 'AM') {
+    return 0;
+  }
+
+  if (duration === 'PM') {
+    return 1;
+  }
+
+  return 2;
+}
 
 export default function DayAbsencesScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams();
+  const params = useLocalSearchParams<{ date?: string }>();
   const systemColorScheme = useColorScheme();
   const { isDarkMode } = useThemeStore();
-  const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
-  const colors = Colors[colorScheme || "light"];
+  const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? 'dark' : 'light';
+  const colors = Colors[colorScheme || 'light'];
+  const { width } = useWindowDimensions();
+  const isLargeScreen = width >= 960;
 
-  const { absences, deleteAbsence } = useAbsenceStore();
   const { user } = useAuthStore();
-  const canEdit = user?.accessLevel !== "viewer";
+  const canEdit = user?.accessLevel !== 'viewer';
   const { getStaffById } = useStaffStore();
+  const {
+    absences,
+    deleteAbsence,
+    updateAbsenceStatus,
+    maxAbsencesPerDay,
+  } = useAbsenceStore();
 
-  const date = typeof params.date === "string" ? params.date : new Date().toISOString().split('T')[0];
+  const date = typeof params.date === 'string' ? params.date : new Date().toISOString().split('T')[0];
 
-  const dayAbsences = absences.filter(
-    (a) => a.date === date && a.status !== 'Cancelled'
-  ).sort((a, b) => {
-    const sessionOrder = { 'AM': 0, 'PM': 1, 'Full Day': 2 };
-    return sessionOrder[a.session] - sessionOrder[b.session];
+  const dayAbsences = useMemo(() => {
+    return absences
+      .filter((absence) => absence.date === date)
+      .sort((left, right) => getDurationSortValue(left.duration) - getDurationSortValue(right.duration));
+  }, [absences, date]);
+
+  const workingAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected');
+  const amAbsences = dayAbsences.filter((absence) => absence.duration === 'AM' || absence.duration === 'Full');
+  const pmAbsences = dayAbsences.filter((absence) => absence.duration === 'PM' || absence.duration === 'Full');
+  const hasClash = workingAbsences.length >= maxAbsencesPerDay;
+
+  const formattedDate = new Date(date).toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
   });
 
-  const amAbsences = dayAbsences.filter(a => a.session === 'AM' || a.session === 'Full Day');
-  const pmAbsences = dayAbsences.filter(a => a.session === 'PM' || a.session === 'Full Day');
-  
-  const hasConflict = dayAbsences.length > 2;
-  const amConflict = amAbsences.length > 2;
-  const pmConflict = pmAbsences.length > 2;
-
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('default', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
-  };
-
-  const changeDay = (direction: number) => {
-    const currentDate = new Date(date);
-    currentDate.setDate(currentDate.getDate() + direction);
-    const newDate = currentDate.toISOString().split('T')[0];
+  const goToDate = (offset: number) => {
+    const nextDate = new Date(date);
+    nextDate.setDate(nextDate.getDate() + offset);
     router.replace({
-      pathname: "/calendar/day-absences" as any,
-      params: { date: newDate },
+      pathname: '/calendar/day-absences' as never,
+      params: { date: nextDate.toISOString().split('T')[0] },
     });
   };
 
-  const handleAddAbsence = () => {
+  const handleDelete = (absence: Absence) => {
     if (!canEdit) {
-      Alert.alert("View-only access", "You can review this shared calendar, but only editors can add absences.");
+      Alert.alert('View-only access', 'Only editors can delete absences.');
       return;
     }
 
-    router.push({
-      pathname: "/calendar/absence-form" as any,
-      params: { date },
-    });
-  };
-
-  const handleEditAbsence = (absence: Absence) => {
-    if (!canEdit) {
+    if (absence.locked || absence.type === 'Public Holiday') {
+      Alert.alert('Locked event', 'Public holidays cannot be deleted.');
       return;
     }
 
-    router.push({
-      pathname: "/calendar/absence-form" as any,
-      params: { id: absence.id, date: absence.date },
-    });
+    Alert.alert('Delete absence', `Remove ${absence.name}'s absence?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => deleteAbsence(absence.id),
+      },
+    ]);
   };
 
-  const handleDeleteAbsence = (absence: Absence) => {
+  const handleStatusUpdate = (absence: Absence, status: AbsenceStatus) => {
     if (!canEdit) {
-      Alert.alert("View-only access", "You can review this shared calendar, but only editors can delete absences.");
+      Alert.alert('View-only access', 'Only editors can approve or reject requests.');
       return;
     }
 
-    Alert.alert(
-      "Delete Absence",
-      `Remove ${getStaffById(absence.staffId)?.name}'s absence?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteAbsence(absence.id),
-        },
-      ]
-    );
-  };
-
-  const getAbsenceColor = (type: string) => {
-    switch (type) {
-      case 'Holiday':
-        return absenceColors.holiday;
-      case 'Sickness':
-        return absenceColors.sickness;
-      default:
-        return absenceColors.other;
+    if (absence.locked || absence.type === 'Public Holiday') {
+      return;
     }
-  };
 
-  const renderAbsenceCard = (absence: Absence) => {
-    const staff = getStaffById(absence.staffId);
-    if (!staff) return null;
-
-    return (
-      <TouchableOpacity
-        key={absence.id}
-        style={[
-          styles.absenceCard,
-          { 
-            backgroundColor: colors.surface, 
-            borderColor: colors.border,
-            borderLeftColor: getAbsenceColor(absence.type),
-          }
-        ]}
-        onPress={() => handleEditAbsence(absence)}
-      >
-        <View style={styles.cardContent}>
-          <View style={styles.cardHeader}>
-            <View style={styles.staffInfo}>
-              <User size={16} color={colors.text} />
-              <ThemedText style={styles.staffName}>{staff.name}</ThemedText>
-            </View>
-            <View style={[styles.sessionBadge, { backgroundColor: colors.primary + '20' }]}>
-              <Clock size={12} color={colors.primary} />
-              <ThemedText style={[styles.sessionText, { color: colors.primary }]}>
-                {absence.session}
-              </ThemedText>
-            </View>
-          </View>
-
-          <View style={styles.cardDetails}>
-            <View style={styles.detailRow}>
-              <Calendar size={14} color={colors.secondaryText} />
-              <ThemedText style={[styles.detailText, { color: colors.secondaryText }]}>
-                {absence.type}
-              </ThemedText>
-            </View>
-
-            {staff.department && (
-              <View style={styles.detailRow}>
-                <FileText size={14} color={colors.secondaryText} />
-                <ThemedText style={[styles.detailText, { color: colors.secondaryText }]}>
-                  {staff.department}
-                </ThemedText>
-              </View>
-            )}
-          </View>
-
-          {absence.note && (
-            <View style={[styles.noteContainer, { backgroundColor: colors.background }]}>
-              <ThemedText style={[styles.noteText, { color: colors.secondaryText }]}>
-                {absence.note}
-              </ThemedText>
-            </View>
-          )}
-        </View>
-
-        {canEdit ? (
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => handleDeleteAbsence(absence)}
-        >
-          <Trash2 size={18} color="#FF3B30" />
-        </TouchableOpacity>
-        ) : null}
-      </TouchableOpacity>
-    );
+    updateAbsenceStatus(absence.id, status);
   };
 
   return (
     <ThemedView style={styles.container}>
-      <Stack.Screen
-        options={{
-          title: "Absences",
-        }}
-      />
+      <Stack.Screen options={{ title: 'Day view' }} />
 
-      <View style={[
-        styles.header, 
-        { 
-          backgroundColor: hasConflict ? "#FF5722" : colors.card, 
-          borderBottomColor: colors.border 
-        }
-      ]}>
-        {hasConflict && (
-          <View style={styles.conflictWarning}>
-            <ThemedText style={styles.conflictWarningText}>
-              ⚠️ High Absence Alert: {dayAbsences.length} staff members absent
-            </ThemedText>
-          </View>
-        )}
-        <View style={styles.dateHeader}>
-          <TouchableOpacity 
-            style={[styles.navButton, { backgroundColor: colors.surface }]} 
-            onPress={() => changeDay(-1)}
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <View style={styles.headerTopRow}>
+          <TouchableOpacity
+            testID="day-prev-button"
+            style={[styles.navButton, { backgroundColor: colors.surfaceVariant }]}
+            onPress={() => goToDate(-1)}
           >
-            <ChevronLeft size={24} color={colors.text} />
+            <ChevronLeft size={20} color={colors.text} />
           </TouchableOpacity>
-          <ThemedText style={styles.dateTitle}>{formatDate(date)}</ThemedText>
-          <TouchableOpacity 
-            style={[styles.navButton, { backgroundColor: colors.surface }]} 
-            onPress={() => changeDay(1)}
+          <View style={styles.headerTitleWrap}>
+            <ThemedText style={styles.headerTitle}>{formattedDate}</ThemedText>
+            <ThemedText variant="secondary">{dayAbsences.length} entries</ThemedText>
+          </View>
+          <TouchableOpacity
+            testID="day-next-button"
+            style={[styles.navButton, { backgroundColor: colors.surfaceVariant }]}
+            onPress={() => goToDate(1)}
           >
-            <ChevronRight size={24} color={colors.text} />
+            <ChevronRight size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
-        <View style={[styles.statsRow, hasConflict && { marginTop: 8 }]}>
-          <View style={styles.stat}>
-            <ThemedText style={[
-              styles.statNumber, 
-              { color: hasConflict ? "white" : (amConflict ? "#FF5722" : colors.primary) }
-            ]}>
-              {amAbsences.length}
-            </ThemedText>
-            <ThemedText style={[
-              styles.statLabel, 
-              { color: hasConflict ? "rgba(255,255,255,0.8)" : colors.secondaryText }
-            ]}>
-              AM {amConflict && !hasConflict ? "⚠️" : ""}
-            </ThemedText>
+
+        <View style={styles.metricRow}>
+          <View style={[styles.metricCard, { backgroundColor: colors.surfaceVariant }]}>
+            <ThemedText style={styles.metricValue}>{amAbsences.length}</ThemedText>
+            <ThemedText variant="secondary">AM / Full</ThemedText>
           </View>
-          <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-          <View style={styles.stat}>
-            <ThemedText style={[
-              styles.statNumber, 
-              { color: hasConflict ? "white" : (pmConflict ? "#FF5722" : colors.primary) }
-            ]}>
-              {pmAbsences.length}
-            </ThemedText>
-            <ThemedText style={[
-              styles.statLabel, 
-              { color: hasConflict ? "rgba(255,255,255,0.8)" : colors.secondaryText }
-            ]}>
-              PM {pmConflict && !hasConflict ? "⚠️" : ""}
-            </ThemedText>
+          <View style={[styles.metricCard, { backgroundColor: colors.surfaceVariant }]}>
+            <ThemedText style={styles.metricValue}>{pmAbsences.length}</ThemedText>
+            <ThemedText variant="secondary">PM / Full</ThemedText>
           </View>
-          <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-          <View style={styles.stat}>
-            <ThemedText style={[
-              styles.statNumber, 
-              { color: hasConflict ? "white" : colors.primary }
-            ]}>
-              {dayAbsences.length}
+          <View style={[styles.metricCard, { backgroundColor: hasClash ? '#FEF2F2' : colors.surfaceVariant }]}>
+            <ThemedText style={[styles.metricValue, hasClash && { color: absenceColors.rejected }]}>
+              {workingAbsences.length}/{maxAbsencesPerDay}
             </ThemedText>
-            <ThemedText style={[
-              styles.statLabel, 
-              { color: hasConflict ? "rgba(255,255,255,0.8)" : colors.secondaryText }
-            ]}>
-              Total
-            </ThemedText>
+            <ThemedText variant="secondary">Team load</ThemedText>
           </View>
         </View>
+
+        {hasClash ? (
+          <View style={styles.warningRow}>
+            <ShieldAlert size={16} color={absenceColors.rejected} />
+            <ThemedText style={[styles.warningText, { color: absenceColors.rejected }]}>Daily limit reached for this date.</ThemedText>
+          </View>
+        ) : null}
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        {dayAbsences.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Calendar size={64} color={colors.secondaryText} />
-            <ThemedText style={[styles.emptyText, { color: colors.secondaryText }]}>
-              No absences recorded for this day
-            </ThemedText>
-            {canEdit ? (
-            <TouchableOpacity
-              style={[styles.addButton, { backgroundColor: colors.primary }]}
-              onPress={handleAddAbsence}
-            >
-              <Plus size={20} color="white" />
-              <ThemedText style={styles.addButtonText}>Add Absence</ThemedText>
-            </TouchableOpacity>
-            ) : null}
-          </View>
-        ) : (
-          <>
-            {amAbsences.length > 0 && (
-              <View style={styles.section}>
-                <View style={[styles.sectionHeader, { backgroundColor: absenceColors.amSlot }]}>
-                  <ThemedText style={styles.sectionTitle}>
-                    Morning ({amAbsences.length})
-                  </ThemedText>
-                </View>
-                {amAbsences.map(renderAbsenceCard)}
-              </View>
-            )}
+      <ScrollView contentContainerStyle={[styles.content, isLargeScreen && styles.contentLarge]}>
+        <View style={styles.listWrap}>
+          {dayAbsences.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <CalendarDays size={44} color={colors.secondaryText} />
+              <ThemedText style={styles.emptyTitle}>No absences recorded</ThemedText>
+              <ThemedText variant="secondary" style={styles.emptyCopy}>
+                Add a request for this date to start tracking availability.
+              </ThemedText>
+              {canEdit ? (
+                <TouchableOpacity
+                  testID="day-add-button"
+                  style={[styles.emptyButton, { backgroundColor: colors.primary }]}
+                  onPress={() => router.push({ pathname: '/calendar/absence-form' as never, params: { date } })}
+                >
+                  <Plus size={18} color="white" />
+                  <ThemedText style={styles.emptyButtonText}>Create absence</ThemedText>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : (
+            dayAbsences.map((absence) => {
+              const staffMember = absence.type === 'Public Holiday' ? undefined : getStaffById(absence.staffId);
+              const departmentLabel = staffMember?.department ?? (absence.type === 'Public Holiday' ? 'UK calendar' : 'Team member');
+              const isLocked = Boolean(absence.locked || absence.type === 'Public Holiday');
 
-            {pmAbsences.length > 0 && (
-              <View style={styles.section}>
-                <View style={[styles.sectionHeader, { backgroundColor: absenceColors.pmSlot }]}>
-                  <ThemedText style={styles.sectionTitle}>
-                    Afternoon ({pmAbsences.length})
-                  </ThemedText>
+              return (
+                <View
+                  key={absence.id}
+                  testID={`absence-card-${absence.id}`}
+                  style={[styles.absenceCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                >
+                  <View style={styles.cardTopRow}>
+                    <View style={styles.cardTitleWrap}>
+                      <View style={[styles.typeDot, { backgroundColor: getTypeColor(absence.type) }]} />
+                      <View>
+                        <ThemedText style={styles.cardTitle}>
+                          {absence.type} – {absence.name}
+                          {absence.duration !== 'Full' ? ` (${absence.duration})` : ''}
+                        </ThemedText>
+                        <ThemedText variant="secondary">{departmentLabel}</ThemedText>
+                      </View>
+                    </View>
+                    <View style={[styles.statusBadge, { backgroundColor: getStatusColor(absence.status) }]}>
+                      <ThemedText style={styles.statusText}>{absence.status}</ThemedText>
+                    </View>
+                  </View>
+
+                  <View style={styles.metaRow}>
+                    <View style={styles.metaItem}>
+                      <Clock3 size={14} color={colors.secondaryText} />
+                      <ThemedText variant="secondary">{absence.duration}</ThemedText>
+                    </View>
+                    <View style={styles.metaItem}>
+                      <User size={14} color={colors.secondaryText} />
+                      <ThemedText variant="secondary">{absence.name}</ThemedText>
+                    </View>
+                    <View style={styles.metaItem}>
+                      <Briefcase size={14} color={colors.secondaryText} />
+                      <ThemedText variant="secondary">{absence.cover ? `Covered by ${absence.cover}` : 'No cover set'}</ThemedText>
+                    </View>
+                  </View>
+
+                  {absence.notes ? (
+                    <View style={[styles.notesCard, { backgroundColor: colors.surfaceVariant }]}>
+                      <CircleAlert size={14} color={colors.secondaryText} />
+                      <ThemedText variant="secondary" style={styles.notesText}>{absence.notes}</ThemedText>
+                    </View>
+                  ) : null}
+
+                  <View style={styles.actionRow}>
+                    {isLocked ? (
+                      <ThemedText variant="secondary">Locked public holiday</ThemedText>
+                    ) : (
+                      <>
+                        <View style={styles.approvalRow}>
+                          <TouchableOpacity
+                            testID={`approve-${absence.id}`}
+                            style={[styles.actionButton, { backgroundColor: absenceColors.approved }]}
+                            onPress={() => handleStatusUpdate(absence, 'Approved')}
+                          >
+                            <ThemedText style={styles.actionButtonText}>Approve</ThemedText>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            testID={`reject-${absence.id}`}
+                            style={[styles.actionButton, { backgroundColor: absenceColors.rejected }]}
+                            onPress={() => handleStatusUpdate(absence, 'Rejected')}
+                          >
+                            <ThemedText style={styles.actionButtonText}>Reject</ThemedText>
+                          </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.secondaryActions}>
+                          <TouchableOpacity
+                            testID={`edit-${absence.id}`}
+                            style={[styles.secondaryButton, { borderColor: colors.border }]}
+                            onPress={() => router.push({ pathname: '/calendar/absence-form' as never, params: { id: absence.id } })}
+                          >
+                            <ThemedText>Edit</ThemedText>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            testID={`delete-${absence.id}`}
+                            style={[styles.iconButton, { borderColor: colors.border }]}
+                            onPress={() => handleDelete(absence)}
+                          >
+                            <Trash2 size={16} color={absenceColors.rejected} />
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    )}
+                  </View>
                 </View>
-                {pmAbsences.map(renderAbsenceCard)}
-              </View>
-            )}
-          </>
-        )}
+              );
+            })
+          )}
+        </View>
       </ScrollView>
-
-      {dayAbsences.length > 0 && canEdit ? (
-        <TouchableOpacity
-          style={[styles.fab, { backgroundColor: colors.primary }]}
-          onPress={handleAddAbsence}
-        >
-          <Plus size={24} color="white" />
-        </TouchableOpacity>
-      ) : null}
     </ThemedView>
   );
 }
@@ -337,176 +330,188 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    padding: 16,
     borderBottomWidth: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
+    gap: 14,
   },
-  conflictWarning: {
-    marginBottom: 12,
-    padding: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: 8,
-  },
-  conflictWarningText: {
-    color: "white",
-    fontSize: 14,
-    fontWeight: "600" as const,
-    textAlign: "center",
-  },
-  dateHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
+  },
+  headerTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+    textAlign: 'center',
   },
   navButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  dateTitle: {
+  metricRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  metricCard: {
     flex: 1,
-    fontSize: 18,
-    fontWeight: "700" as const,
-    textAlign: "center",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: 'center',
   },
-  statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-  },
-  stat: {
-    alignItems: "center",
-    flex: 1,
-  },
-  statNumber: {
+  metricValue: {
     fontSize: 24,
-    fontWeight: "700" as const,
+    fontWeight: '700' as const,
   },
-  statLabel: {
-    fontSize: 12,
-    marginTop: 4,
+  warningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  statDivider: {
-    width: 1,
-    height: 40,
+  warningText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
   },
   content: {
     padding: 16,
+    paddingBottom: 28,
   },
-  section: {
-    marginBottom: 24,
+  contentLarge: {
+    alignItems: 'center',
   },
-  sectionHeader: {
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
+  listWrap: {
+    width: '100%',
+    maxWidth: 980,
+    gap: 12,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600" as const,
+  emptyCard: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+    gap: 12,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+  },
+  emptyCopy: {
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  emptyButton: {
+    marginTop: 8,
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  emptyButtonText: {
+    color: 'white',
+    fontWeight: '700' as const,
   },
   absenceCard: {
-    flexDirection: "row",
     borderWidth: 1,
-    borderLeftWidth: 4,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 24,
+    padding: 18,
+    gap: 14,
   },
-  cardContent: {
+  cardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  cardTitleWrap: {
+    flexDirection: 'row',
+    gap: 10,
     flex: 1,
   },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  staffInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  staffName: {
-    fontSize: 16,
-    fontWeight: "600" as const,
-  },
-  sessionBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  sessionText: {
-    fontSize: 12,
-    fontWeight: "600" as const,
-  },
-  cardDetails: {
-    gap: 8,
-  },
-  detailRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  detailText: {
-    fontSize: 14,
-  },
-  noteContainer: {
-    marginTop: 12,
-    padding: 8,
+  typeDot: {
+    width: 12,
+    height: 12,
     borderRadius: 6,
+    marginTop: 5,
   },
-  noteText: {
-    fontSize: 13,
-    fontStyle: "italic" as const,
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: '700' as const,
+    lineHeight: 22,
   },
-  deleteButton: {
-    padding: 8,
-    marginLeft: 8,
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    alignSelf: 'flex-start',
   },
-  emptyState: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 80,
-    gap: 16,
+  statusText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '700' as const,
   },
-  emptyText: {
-    fontSize: 16,
-    textAlign: "center",
-  },
-  addButton: {
-    flexDirection: "row",
-    alignItems: "center",
+  metaRow: {
     gap: 8,
-    paddingHorizontal: 24,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notesCard: {
+    borderRadius: 14,
+    padding: 12,
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'flex-start',
+  },
+  notesText: {
+    flex: 1,
+    lineHeight: 20,
+  },
+  actionRow: {
+    gap: 12,
+  },
+  approvalRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  actionButton: {
+    flex: 1,
+    borderRadius: 14,
     paddingVertical: 12,
-    borderRadius: 24,
-    marginTop: 8,
+    alignItems: 'center',
   },
-  addButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600" as const,
+  actionButtonText: {
+    color: 'white',
+    fontWeight: '700' as const,
   },
-  fab: {
-    position: "absolute",
-    bottom: 24,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+  secondaryActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  iconButton: {
+    borderWidth: 1,
+    borderRadius: 14,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
