@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Platform,
   Modal,
   ScrollView,
   StyleSheet,
@@ -212,15 +213,28 @@ export default function AbsenceFormScreen() {
       return;
     }
 
+    const confirmDelete = () => {
+      console.log('[AbsenceForm] Deleting absence', existingAbsence.id);
+      deleteAbsence(existingAbsence.id);
+      router.back();
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function'
+        ? window.confirm('Are you sure you want to remove this absence?')
+        : true;
+      if (confirmed) {
+        confirmDelete();
+      }
+      return;
+    }
+
     Alert.alert('Delete absence', 'Are you sure you want to remove this absence?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => {
-          deleteAbsence(existingAbsence.id);
-          router.back();
-        },
+        onPress: confirmDelete,
       },
     ]);
   };

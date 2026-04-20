@@ -101,10 +101,20 @@ const useAbsenceStore = create<AbsenceState>()(
           ),
         })),
 
-      deleteAbsence: (id) =>
+      deleteAbsence: (id) => {
+        console.log('[useAbsenceStore] deleteAbsence', id);
         set((state) => ({
-          absences: state.absences.filter((absence) => absence.id !== id || absence.locked),
-        })),
+          absences: state.absences.filter((absence) => {
+            if (absence.id !== id) {
+              return true;
+            }
+            if (absence.locked || absence.type === 'Public Holiday') {
+              return true;
+            }
+            return false;
+          }),
+        }));
+      },
 
       replaceAbsences: (absences) => set(() => ({ absences })),
 

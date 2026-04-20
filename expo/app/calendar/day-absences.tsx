@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import {
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -126,12 +127,27 @@ export default function DayAbsencesScreen() {
       return;
     }
 
+    const confirmDelete = () => {
+      console.log('[DayAbsencesScreen] Deleting absence', absence.id);
+      deleteAbsence(absence.id);
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function'
+        ? window.confirm(`Remove ${absence.name}'s absence?`)
+        : true;
+      if (confirmed) {
+        confirmDelete();
+      }
+      return;
+    }
+
     Alert.alert('Delete absence', `Remove ${absence.name}'s absence?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => deleteAbsence(absence.id),
+        onPress: confirmDelete,
       },
     ]);
   };
