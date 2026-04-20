@@ -16,6 +16,7 @@ import { useColorScheme } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import { Absence } from "@/types";
 import { Plus, Calendar, Clock, User, FileText, Trash2, ChevronLeft, ChevronRight } from "lucide-react-native";
+import useAuthStore from "@/store/useAuthStore";
 
 export default function DayAbsencesScreen() {
   const router = useRouter();
@@ -26,6 +27,8 @@ export default function DayAbsencesScreen() {
   const colors = Colors[colorScheme || "light"];
 
   const { absences, deleteAbsence } = useAbsenceStore();
+  const { user } = useAuthStore();
+  const canEdit = user?.accessLevel !== "viewer";
   const { getStaffById } = useStaffStore();
 
   const date = typeof params.date === "string" ? params.date : new Date().toISOString().split('T')[0];
@@ -65,6 +68,11 @@ export default function DayAbsencesScreen() {
   };
 
   const handleAddAbsence = () => {
+    if (!canEdit) {
+      Alert.alert("View-only access", "You can review this shared calendar, but only editors can add absences.");
+      return;
+    }
+
     router.push({
       pathname: "/calendar/absence-form" as any,
       params: { date },
@@ -72,6 +80,10 @@ export default function DayAbsencesScreen() {
   };
 
   const handleEditAbsence = (absence: Absence) => {
+    if (!canEdit) {
+      return;
+    }
+
     router.push({
       pathname: "/calendar/absence-form" as any,
       params: { id: absence.id, date: absence.date },
@@ -79,6 +91,11 @@ export default function DayAbsencesScreen() {
   };
 
   const handleDeleteAbsence = (absence: Absence) => {
+    if (!canEdit) {
+      Alert.alert("View-only access", "You can review this shared calendar, but only editors can delete absences.");
+      return;
+    }
+
     Alert.alert(
       "Delete Absence",
       `Remove ${getStaffById(absence.staffId)?.name}'s absence?`,
@@ -162,12 +179,14 @@ export default function DayAbsencesScreen() {
           )}
         </View>
 
+        {canEdit ? (
         <TouchableOpacity
           style={styles.deleteButton}
           onPress={() => handleDeleteAbsence(absence)}
         >
           <Trash2 size={18} color="#FF3B30" />
         </TouchableOpacity>
+        ) : null}
       </TouchableOpacity>
     );
   };
@@ -264,6 +283,7 @@ export default function DayAbsencesScreen() {
             <ThemedText style={[styles.emptyText, { color: colors.secondaryText }]}>
               No absences recorded for this day
             </ThemedText>
+            {canEdit ? (
             <TouchableOpacity
               style={[styles.addButton, { backgroundColor: colors.primary }]}
               onPress={handleAddAbsence}
@@ -271,6 +291,7 @@ export default function DayAbsencesScreen() {
               <Plus size={20} color="white" />
               <ThemedText style={styles.addButtonText}>Add Absence</ThemedText>
             </TouchableOpacity>
+            ) : null}
           </View>
         ) : (
           <>
@@ -299,14 +320,14 @@ export default function DayAbsencesScreen() {
         )}
       </ScrollView>
 
-      {dayAbsences.length > 0 && (
+      {dayAbsences.length > 0 && canEdit ? (
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: colors.primary }]}
           onPress={handleAddAbsence}
         >
           <Plus size={24} color="white" />
         </TouchableOpacity>
-      )}
+      ) : null}
     </ThemedView>
   );
 }

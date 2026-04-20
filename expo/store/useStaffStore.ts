@@ -10,6 +10,7 @@ interface StaffState {
   deleteStaff: (id: string) => void;
   archiveStaff: (id: string) => void;
   unarchiveStaff: (id: string) => void;
+  replaceStaff: (staff: StaffMember[]) => void;
   getActiveStaff: () => StaffMember[];
   getArchivedStaff: () => StaffMember[];
   searchStaff: (query: string) => StaffMember[];
@@ -50,6 +51,11 @@ const useStaffStore = create<StaffState>()(
           staff: state.staff.map((s) =>
             s.id === id ? { ...s, active: true } : s
           ),
+        })),
+
+      replaceStaff: (staff) =>
+        set(() => ({
+          staff,
         })),
 
       getActiveStaff: () => {

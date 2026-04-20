@@ -6,6 +6,30 @@ export type StaffMember = {
   createdAt: string;
 };
 
+export type CalendarAccessLevel = 'owner' | 'editor' | 'viewer';
+
+export type AuthUser = {
+  id: string;
+  name: string;
+  email: string;
+  workspaceId: string;
+  accessLevel: CalendarAccessLevel;
+  joinedAt: string;
+};
+
+export type CalendarShareMode = 'edit' | 'view';
+
+export type CalendarSharePayload = {
+  version: 1;
+  workspaceId: string;
+  sharedBy: string;
+  sharedByEmail: string;
+  createdAt: string;
+  mode: CalendarShareMode;
+  staff: StaffMember[];
+  absences: Absence[];
+};
+
 export type AbsenceSessionType = 'AM' | 'PM' | 'Full Day';
 
 export type AbsenceTypeCategory = 'Holiday' | 'Sickness' | 'Other';

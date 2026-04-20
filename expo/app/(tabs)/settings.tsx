@@ -1,17 +1,19 @@
 import React from "react";
 import { View, StyleSheet, Switch, Platform, TouchableOpacity } from "react-native";
-import { Moon, Sun, Info, Users, ChevronRight, Archive } from "lucide-react-native";
+import { Moon, Sun, Info, Users, ChevronRight, Archive, Share2, LogOut, ShieldCheck } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
 import useThemeStore from "@/store/useThemeStore";
 import Colors from "@/constants/colors";
 import { useColorScheme } from "react-native";
+import useAuthStore from "@/store/useAuthStore";
 
 export default function SettingsScreen() {
   const router = useRouter();
   const systemColorScheme = useColorScheme();
   const { isDarkMode, setDarkMode } = useThemeStore();
+  const { user, signOut, isAuthenticated } = useAuthStore();
   const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
   
@@ -69,6 +71,56 @@ export default function SettingsScreen() {
         </View>
       </View>
       
+      <View style={styles.section}>
+        <ThemedText size="large" weight="bold" style={styles.sectionTitle}>
+          Access & Sharing
+        </ThemedText>
+
+        <TouchableOpacity
+          testID="settings-sharing"
+          style={[
+            styles.settingItem,
+            { backgroundColor: colors.card, borderColor: colors.border }
+          ]}
+          onPress={() => router.push("/share/manage" as any)}
+        >
+          <View style={styles.settingContent}>
+            <Share2 size={24} color={colors.primary} />
+            <View style={styles.settingTextContainer}>
+              <ThemedText weight="semibold">Shared calendar access</ThemedText>
+              <ThemedText variant="secondary" size="small">
+                {isAuthenticated ? "Invite others or join a shared calendar" : "Sign in to manage shared access"}
+              </ThemedText>
+            </View>
+          </View>
+          <ChevronRight size={20} color={colors.secondaryText} />
+        </TouchableOpacity>
+
+        <View style={[
+          styles.settingItem,
+          { backgroundColor: colors.card, borderColor: colors.border }
+        ]}>
+          <View style={styles.settingContent}>
+            <ShieldCheck size={24} color={colors.primary} />
+            <View style={styles.settingTextContainer}>
+              <ThemedText weight="semibold">Account</ThemedText>
+              <ThemedText variant="secondary" size="small">
+                {isAuthenticated && user ? `${user.name} · ${user.email}` : "Not signed in"}
+              </ThemedText>
+            </View>
+          </View>
+          {isAuthenticated ? (
+            <TouchableOpacity testID="settings-sign-out" onPress={signOut}>
+              <LogOut size={20} color={colors.secondaryText} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity testID="settings-sign-in" onPress={() => router.push("/auth" as any)}>
+              <ChevronRight size={20} color={colors.secondaryText} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       <View style={styles.section}>
         <ThemedText size="large" weight="bold" style={styles.sectionTitle}>
           People & Absences
@@ -136,7 +188,7 @@ export default function SettingsScreen() {
       
       <View style={styles.footer}>
         <ThemedText variant="secondary" size="small" style={styles.footerText}>
-          FocusEaze - Calendar, Notes & Reminders
+          AbsenceFlow
         </ThemedText>
       </View>
     </ThemedView>

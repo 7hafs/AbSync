@@ -11,6 +11,7 @@ import useThemeStore from "@/store/useThemeStore";
 import useAbsenceStore from "@/store/useAbsenceStore";
 import useStaffStore from "@/store/useStaffStore";
 import { Absence } from "@/types";
+import useAuthStore from "@/store/useAuthStore";
 
 export default function CalendarScreen() {
   const router = useRouter();
@@ -25,6 +26,8 @@ export default function CalendarScreen() {
 
   const { absences, getConflictDays } = useAbsenceStore();
   const { getStaffById } = useStaffStore();
+  const { user } = useAuthStore();
+  const canEdit = user?.accessLevel !== "viewer";
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [showSummaryModal, setShowSummaryModal] = useState(false);
@@ -99,6 +102,11 @@ export default function CalendarScreen() {
   };
 
   const handleAddAbsence = (date: string, session: 'AM' | 'PM') => {
+    if (!canEdit) {
+      Alert.alert("View-only access", "You can review this shared calendar, but only editors can add absences.");
+      return;
+    }
+
     router.push({
       pathname: "/calendar/absence-form" as any,
       params: { date, session },
@@ -183,6 +191,12 @@ export default function CalendarScreen() {
           <ChevronRight size={isDesktop ? 32 : isTablet ? 28 : 24} color={colors.text} />
         </TouchableOpacity>
       </View>
+
+      {!canEdit ? (
+        <View style={[styles.readOnlyBanner, { backgroundColor: colors.surfaceVariant, borderBottomColor: colors.border }]}>
+          <ThemedText variant="secondary">You are viewing a shared calendar in read-only mode.</ThemedText>
+        </View>
+      ) : null}
 
       <View style={[styles.weekDaysHeader, { backgroundColor: colors.surface }]}>
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
@@ -829,6 +843,12 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontWeight: '700' as const,
+  },
+  readOnlyBanner: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    alignItems: "center",
   },
   weekDaysHeader: {
     flexDirection: 'row',

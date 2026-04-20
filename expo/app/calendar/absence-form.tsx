@@ -19,6 +19,7 @@ import { useColorScheme } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import { Absence, AbsenceSessionType, AbsenceTypeCategory, AbsenceStatus } from "@/types";
 import { ChevronDown, X, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react-native";
+import useAuthStore from "@/store/useAuthStore";
 
 export default function AbsenceFormScreen() {
   const router = useRouter();
@@ -30,6 +31,8 @@ export default function AbsenceFormScreen() {
 
   const { absences, addAbsence, updateAbsence, deleteAbsence } = useAbsenceStore();
   const { staff, getStaffById } = useStaffStore();
+  const { user } = useAuthStore();
+  const canEdit = user?.accessLevel !== "viewer";
   
   const [selectedStaffId, setSelectedStaffId] = useState<string>("");
   const [date, setDate] = useState(typeof params.date === "string" ? params.date : new Date().toISOString().split('T')[0]);
@@ -70,6 +73,11 @@ export default function AbsenceFormScreen() {
   }, [absenceId, absences]);
 
   const handleSave = () => {
+    if (!canEdit) {
+      Alert.alert("View-only access", "You can review this shared calendar, but only editors can save absences.");
+      return;
+    }
+
     if (!selectedStaffId) {
       Alert.alert("Error", "Please select a staff member");
       return;
@@ -125,6 +133,11 @@ export default function AbsenceFormScreen() {
   };
 
   const handleDelete = () => {
+    if (!canEdit) {
+      Alert.alert("View-only access", "You can review this shared calendar, but only editors can delete absences.");
+      return;
+    }
+
     if (!absenceId) return;
 
     Alert.alert(
@@ -190,7 +203,7 @@ export default function AbsenceFormScreen() {
         options={{
           title: isEditing ? "Edit Absence" : "Add Absence",
           headerRight: () =>
-            isEditing ? (
+            isEditing && canEdit ? (
               <TouchableOpacity onPress={handleDelete}>
                 <ThemedText style={[styles.deleteButton, { color: "#FF3B30" }]}>
                   <ThemedText>Delete</ThemedText>
@@ -395,7 +408,9 @@ export default function AbsenceFormScreen() {
           />
         </View>
 
+        {canEdit ? (
         <TouchableOpacity
+          testID="absence-save-button"
           style={[styles.saveButton, { backgroundColor: colors.primary }]}
           onPress={handleSave}
         >
@@ -403,6 +418,11 @@ export default function AbsenceFormScreen() {
             <ThemedText>{isEditing ? "Update" : "Add"} Absence</ThemedText>
           </ThemedText>
         </TouchableOpacity>
+        ) : (
+          <View style={[styles.readOnlyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <ThemedText variant="secondary">This shared calendar is view-only.</ThemedText>
+          </View>
+        )}
       </ScrollView>
 
       <Modal
@@ -515,6 +535,13 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     fontWeight: "600" as const,
+  },
+  readOnlyCard: {
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 20,
+    alignItems: "center",
   },
   deleteButton: {
     fontSize: 16,

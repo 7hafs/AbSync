@@ -8,6 +8,7 @@ interface AbsenceState {
   addAbsence: (absence: Absence) => void;
   updateAbsence: (absence: Absence) => void;
   deleteAbsence: (id: string) => void;
+  replaceAbsences: (absences: Absence[]) => void;
   getAbsencesForDate: (date: string) => Absence[];
   getAbsencesForDateAndSession: (date: string, session: AbsenceSessionType) => Absence[];
   getAbsencesForStaff: (staffId: string) => Absence[];
@@ -36,6 +37,11 @@ const useAbsenceStore = create<AbsenceState>()(
       deleteAbsence: (id) =>
         set((state) => ({
           absences: state.absences.filter((a) => a.id !== id),
+        })),
+
+      replaceAbsences: (absences) =>
+        set(() => ({
+          absences,
         })),
 
       getAbsencesForDate: (date) => {

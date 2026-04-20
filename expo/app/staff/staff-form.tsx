@@ -16,6 +16,7 @@ import Colors from "@/constants/colors";
 import { useColorScheme } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import { StaffMember } from "@/types";
+import useAuthStore from "@/store/useAuthStore";
 
 export default function StaffFormScreen() {
   const router = useRouter();
@@ -26,6 +27,8 @@ export default function StaffFormScreen() {
   const colors = Colors[colorScheme || "light"];
 
   const { staff, addStaff, updateStaff, deleteStaff, archiveStaff, getStaffById } = useStaffStore();
+  const { user } = useAuthStore();
+  const canEdit = user?.accessLevel !== "viewer";
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("");
   const [active, setActive] = useState(true);
@@ -45,6 +48,11 @@ export default function StaffFormScreen() {
   }, [staffId, getStaffById]);
 
   const handleSave = () => {
+    if (!canEdit) {
+      Alert.alert("View-only access", "You can review this shared calendar, but only editors can update staff.");
+      return;
+    }
+
     if (!name.trim()) {
       Alert.alert("Error", "Please enter a staff name");
       return;
@@ -68,6 +76,11 @@ export default function StaffFormScreen() {
   };
 
   const handleArchive = () => {
+    if (!canEdit) {
+      Alert.alert("View-only access", "You can review this shared calendar, but only editors can archive staff.");
+      return;
+    }
+
     if (!staffId) return;
 
     Alert.alert(
@@ -87,6 +100,11 @@ export default function StaffFormScreen() {
   };
 
   const handleDelete = () => {
+    if (!canEdit) {
+      Alert.alert("View-only access", "You can review this shared calendar, but only editors can delete staff.");
+      return;
+    }
+
     if (!staffId) return;
 
     Alert.alert(
@@ -158,7 +176,9 @@ export default function StaffFormScreen() {
           </View>
         </View>
 
+        {canEdit ? (
         <TouchableOpacity
+          testID="staff-save-button"
           style={[styles.saveButton, { backgroundColor: colors.primary }]}
           onPress={handleSave}
         >
@@ -166,8 +186,13 @@ export default function StaffFormScreen() {
             <ThemedText>{isEditing ? "Update" : "Add"} Staff</ThemedText>
           </ThemedText>
         </TouchableOpacity>
+        ) : (
+          <View style={[styles.readOnlyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <ThemedText variant="secondary">This shared calendar is view-only.</ThemedText>
+          </View>
+        )}
 
-        {isEditing && active && (
+        {canEdit && isEditing && active && (
           <TouchableOpacity
             style={[styles.archiveButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={handleArchive}
@@ -233,5 +258,12 @@ const styles = StyleSheet.create({
   archiveButtonText: {
     fontSize: 16,
     fontWeight: "600" as const,
+  },
+  readOnlyCard: {
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 20,
+    alignItems: "center",
   },
 });

@@ -1,6 +1,6 @@
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { useColorScheme } from "react-native";
@@ -10,6 +10,7 @@ import useAbsenceStore from "@/store/useAbsenceStore";
 import { initializeSampleData } from "@/utils/sampleData";
 import { initializeNotifications } from "@/utils/notificationService";
 import Colors from "@/constants/colors";
+import useAuthStore from "@/store/useAuthStore";
 
 export const unstable_settings = {
   initialRouteName: "(tabs)",
@@ -44,11 +45,13 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
+  const router = useRouter();
+  const segments = useSegments();
   const systemColorScheme = useColorScheme();
   const { isDarkMode } = useThemeStore();
   const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
-  
+  const { isAuthenticated } = useAuthStore();
   const staffStore = useStaffStore();
   const absenceStore = useAbsenceStore();
   
@@ -56,6 +59,26 @@ function RootLayoutNav() {
     initializeSampleData(staffStore, absenceStore);
     initializeNotifications();
   }, [staffStore, absenceStore]);
+
+  useEffect(() => {
+    const firstSegment = segments[0];
+    const isAuthRoute = firstSegment === "auth";
+    const isShareRoute = firstSegment === "share";
+
+    console.log("[RootLayout] Evaluating route access", {
+      isAuthenticated,
+      firstSegment,
+    });
+
+    if (!isAuthenticated && !isAuthRoute && !isShareRoute) {
+      router.replace("/auth" as any);
+      return;
+    }
+
+    if (isAuthenticated && isAuthRoute) {
+      router.replace("/(tabs)" as any);
+    }
+  }, [isAuthenticated, router, segments]);
 
   return (
     <Stack
@@ -72,7 +95,20 @@ function RootLayoutNav() {
         },
       }}
     >
+      <Stack.Screen name="auth" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="share/manage"
+        options={{
+          title: "Share Calendar",
+        }}
+      />
+      <Stack.Screen
+        name="share/join"
+        options={{
+          title: "Join Shared Calendar",
+        }}
+      />
       <Stack.Screen 
         name="calendar/absence-form" 
         options={{ 

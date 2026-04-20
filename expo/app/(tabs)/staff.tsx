@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -16,6 +16,7 @@ import Colors from "@/constants/colors";
 import { useColorScheme } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import { StaffMember } from "@/types";
+import useAuthStore from "@/store/useAuthStore";
 
 export default function StaffScreen() {
   const router = useRouter();
@@ -25,7 +26,9 @@ export default function StaffScreen() {
   const colors = Colors[colorScheme || "light"];
 
   const { staff } = useStaffStore();
-  const [searchQuery, setSearchQuery] = useState("");
+  const { user } = useAuthStore();
+  const canEdit = user?.accessLevel !== "viewer";
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   const filteredStaff = useMemo(() => {
     if (!searchQuery.trim()) {
@@ -41,10 +44,18 @@ export default function StaffScreen() {
   }, [staff, searchQuery]);
 
   const handleAddStaff = () => {
+    if (!canEdit) {
+      return;
+    }
+
     router.push("/staff/staff-form");
   };
 
   const handleStaffPress = (staffMember: StaffMember) => {
+    if (!canEdit) {
+      return;
+    }
+
     router.push({
       pathname: "/staff/staff-form",
       params: { id: staffMember.id },
@@ -53,9 +64,10 @@ export default function StaffScreen() {
 
   return (
     <ThemedView style={styles.container} useGradient>
-      <View style={[styles.searchContainer, { backgroundColor: colors.surface }]}>
+      <View style={[styles.searchContainer, { backgroundColor: colors.surface }]}> 
         <Search size={20} color={colors.secondaryText} />
         <TextInput
+          testID="staff-search-input"
           style={[styles.searchInput, { color: colors.text }]}
           placeholder="Search staff by name or department..."
           placeholderTextColor={colors.secondaryText}
@@ -68,6 +80,11 @@ export default function StaffScreen() {
         <ThemedText style={styles.countText}>
           {filteredStaff.length} staff members
         </ThemedText>
+        {!canEdit ? (
+          <ThemedText variant="secondary" size="small">
+            View-only access
+          </ThemedText>
+        ) : null}
       </View>
 
       <FlatList
@@ -75,35 +92,41 @@ export default function StaffScreen() {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <TouchableOpacity
+            testID={`staff-card-${item.id}`}
             style={[styles.staffCard, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => handleStaffPress(item)}
+            activeOpacity={canEdit ? 0.8 : 1}
           >
             <View style={styles.staffInfo}>
               <ThemedText style={styles.staffName}>{item.name}</ThemedText>
-              {item.department && (
+              {item.department ? (
                 <ThemedText style={[styles.department, { color: colors.secondaryText }]}>
                   {item.department}
                 </ThemedText>
-              )}
+              ) : null}
+              {!canEdit ? (
+                <Text style={[styles.readOnlyBadge, { color: colors.primary }]}>Shared view</Text>
+              ) : null}
             </View>
           </TouchableOpacity>
         )}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <ThemedText style={[styles.emptyText, { color: colors.secondaryText }]}>
-              No staff members found
-            </ThemedText>
+            <ThemedText style={[styles.emptyText, { color: colors.secondaryText }]}>No staff members found</ThemedText>
           </View>
         }
       />
 
-      <TouchableOpacity
-        style={[styles.fab, { backgroundColor: colors.primary }]}
-        onPress={handleAddStaff}
-      >
-        <Plus size={24} color="white" />
-      </TouchableOpacity>
+      {canEdit ? (
+        <TouchableOpacity
+          testID="staff-add-button"
+          style={[styles.fab, { backgroundColor: colors.primary }]}
+          onPress={handleAddStaff}
+        >
+          <Plus size={24} color="white" />
+        </TouchableOpacity>
+      ) : null}
     </ThemedView>
   );
 }
@@ -128,6 +151,9 @@ const styles = StyleSheet.create({
   headerRow: {
     paddingHorizontal: 16,
     paddingBottom: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   countText: {
     fontSize: 14,
@@ -152,6 +178,11 @@ const styles = StyleSheet.create({
   },
   department: {
     fontSize: 14,
+  },
+  readOnlyBadge: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: "600" as const,
   },
   emptyContainer: {
     paddingVertical: 40,
