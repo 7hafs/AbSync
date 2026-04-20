@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { CalendarDays, ChevronLeft, ChevronRight, Plus, TriangleAlert, Users } from 'lucide-react-native';
+import { CalendarDays, ChevronLeft, ChevronRight, Flag, Plus, TriangleAlert, Users } from 'lucide-react-native';
 import { useColorScheme } from 'react-native';
 import ThemedText from '@/components/ThemedText';
 import ThemedView from '@/components/ThemedView';
@@ -180,6 +180,14 @@ export default function CalendarScreen() {
               const pmAbsences = dayAbsences.filter((absence) => absence.duration === 'PM' || absence.duration === 'Full');
               const isToday = date === todayIso;
               const clash = workingAbsences.length >= maxAbsencesPerDay;
+              const overLimit = workingAbsences.length > maxAbsencesPerDay;
+              const publicHoliday = dayAbsences.find((absence) => absence.type === 'Public Holiday');
+              const hasAbsences = workingAbsences.length > 0;
+              const flagColor = overLimit
+                ? absenceColors.rejected
+                : clash
+                ? absenceColors.appointment
+                : absenceColors.approved;
               const cellMinHeight = isDesktop ? 170 : isTablet ? 138 : 112;
 
               return (
@@ -190,8 +198,8 @@ export default function CalendarScreen() {
                   style={[
                     styles.dayCard,
                     {
-                      borderColor: isToday ? colors.primary : colors.border,
-                      backgroundColor: colors.surface,
+                      borderColor: isToday ? colors.primary : publicHoliday ? absenceColors.publicHoliday : colors.border,
+                      backgroundColor: publicHoliday ? absenceColors.publicHoliday : colors.surface,
                       minHeight: cellMinHeight,
                     },
                   ]}
@@ -199,10 +207,12 @@ export default function CalendarScreen() {
                 >
                   <View style={styles.dayTopRow}>
                     <View style={styles.dayTopLeft}>
-                      <ThemedText style={styles.dayNumber}>{day}</ThemedText>
-                      {clash ? <View style={[styles.clashDot, { backgroundColor: absenceColors.rejected }]} /> : null}
+                      <ThemedText style={[styles.dayNumber, publicHoliday && styles.dayNumberOnHoliday]}>{day}</ThemedText>
+                      {hasAbsences ? (
+                        <Flag size={13} color={flagColor} fill={flagColor} />
+                      ) : null}
                     </View>
-                    {dayAbsences.length > 0 ? (
+                    {dayAbsences.length > 0 && !publicHoliday ? (
                       <TouchableOpacity
                         testID={`summary-${date}`}
                         style={[styles.summaryBadge, { backgroundColor: colors.primary }]}
@@ -216,38 +226,40 @@ export default function CalendarScreen() {
                     ) : null}
                   </View>
 
-                  <View style={styles.sessionRow}>
-                    <TouchableOpacity
-                      testID={`add-am-${date}`}
-                      style={[styles.sessionBlock, { backgroundColor: absenceColors.amSlot }]}
-                      onPress={() => handleAdd(date, 'AM')}
-                      disabled={!canEdit}
-                    >
-                      <ThemedText style={styles.sessionLabel}>AM</ThemedText>
-                      <ThemedText variant="secondary" style={styles.sessionCount}>{amAbsences.length || '—'}</ThemedText>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      testID={`add-pm-${date}`}
-                      style={[styles.sessionBlock, { backgroundColor: absenceColors.pmSlot }]}
-                      onPress={() => handleAdd(date, 'PM')}
-                      disabled={!canEdit}
-                    >
-                      <ThemedText style={styles.sessionLabel}>PM</ThemedText>
-                      <ThemedText variant="secondary" style={styles.sessionCount}>{pmAbsences.length || '—'}</ThemedText>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.eventsWrap}>
-                    {dayAbsences.slice(0, isDesktop ? 3 : 2).map((absence) => (
-                      <View key={absence.id} style={[styles.eventPill, { backgroundColor: `${getTypeColor(absence.type)}20` }]}>
-                        <View style={[styles.eventStatusDot, { backgroundColor: getStatusColor(absence.status) }]} />
-                        <ThemedText numberOfLines={1} style={styles.eventText}>{formatEventTitle(absence)}</ThemedText>
+                  {publicHoliday ? (
+                    <View style={styles.holidayBlock}>
+                      <ThemedText style={styles.holidayLabel} numberOfLines={2}>{publicHoliday.name}</ThemedText>
+                      <ThemedText style={styles.holidaySubLabel}>Public Holiday</ThemedText>
+                    </View>
+                  ) : (
+                    <>
+                      <View style={styles.sessionRow}>
+                        <TouchableOpacity
+                          testID={`add-session-${date}`}
+                          style={[styles.sessionBlock, { backgroundColor: absenceColors.amSlot }]}
+                          onPress={() => handleAdd(date, 'AM')}
+                          disabled={!canEdit}
+                        >
+                          <ThemedText style={styles.sessionLabel}>AM · PM</ThemedText>
+                          <ThemedText variant="secondary" style={styles.sessionCount}>
+                            {amAbsences.length || 0} / {pmAbsences.length || 0}
+                          </ThemedText>
+                        </TouchableOpacity>
                       </View>
-                    ))}
-                    {dayAbsences.length > (isDesktop ? 3 : 2) ? (
-                      <ThemedText variant="secondary" style={styles.moreText}>+{dayAbsences.length - (isDesktop ? 3 : 2)} more</ThemedText>
-                    ) : null}
-                  </View>
+
+                      <View style={styles.eventsWrap}>
+                        {dayAbsences.slice(0, isDesktop ? 3 : 2).map((absence) => (
+                          <View key={absence.id} style={[styles.eventPill, { backgroundColor: `${getTypeColor(absence.type)}20` }]}>
+                            <View style={[styles.eventStatusDot, { backgroundColor: getStatusColor(absence.status) }]} />
+                            <ThemedText numberOfLines={1} style={styles.eventText}>{formatEventTitle(absence)}</ThemedText>
+                          </View>
+                        ))}
+                        {dayAbsences.length > (isDesktop ? 3 : 2) ? (
+                          <ThemedText variant="secondary" style={styles.moreText}>+{dayAbsences.length - (isDesktop ? 3 : 2)} more</ThemedText>
+                        ) : null}
+                      </View>
+                    </>
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -414,6 +426,25 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+  dayNumberOnHoliday: {
+    color: '#3a2a00',
+  },
+  holidayBlock: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: 4,
+    gap: 2,
+  },
+  holidayLabel: {
+    color: '#3a2a00',
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+  holidaySubLabel: {
+    color: '#5a3f00',
+    fontSize: 10,
+    fontWeight: '700' as const,
   },
   summaryBadge: {
     minWidth: 24,
