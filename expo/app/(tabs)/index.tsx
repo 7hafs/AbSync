@@ -231,16 +231,19 @@ export default function CalendarScreen() {
                     </View>
                   ) : (
                     <View style={styles.eventsWrap}>
-                      {dayAbsences.slice(0, maxEvents).map((absence) => (
-                        <View
-                          key={absence.id}
-                          style={[styles.eventBar, { backgroundColor: getTypeColor(absence.type) }]}
-                        >
-                          <ThemedText numberOfLines={1} style={styles.eventText}>
-                            {absence.duration !== 'Full' ? `${absence.duration} ` : ''}{absence.name}
-                          </ThemedText>
-                        </View>
-                      ))}
+                      {dayAbsences.slice(0, maxEvents).map((absence) => {
+                        const typeColor = getTypeColor(absence.type);
+                        return (
+                          <View
+                            key={absence.id}
+                            style={[styles.eventBar, { backgroundColor: `${typeColor}33`, borderLeftColor: typeColor }]}
+                          >
+                            <ThemedText numberOfLines={1} style={[styles.eventText, { color: typeColor }]}>
+                              {absence.duration !== 'Full' ? `${absence.duration} ` : ''}{absence.name}
+                            </ThemedText>
+                          </View>
+                        );
+                      })}
                       {dayAbsences.length > maxEvents ? (
                         <ThemedText variant="secondary" style={styles.moreText}>
                           +{dayAbsences.length - maxEvents} more
@@ -434,9 +437,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     paddingHorizontal: 4,
     paddingVertical: 2,
+    borderLeftWidth: 2,
   },
   eventText: {
-    color: 'white',
     fontSize: 9,
     fontWeight: '700' as const,
   },
