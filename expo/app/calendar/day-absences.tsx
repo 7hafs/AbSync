@@ -16,7 +16,6 @@ import {
   CircleAlert,
   Clock3,
   Plus,
-  ShieldAlert,
   Trash2,
   User,
 } from 'lucide-react-native';
@@ -87,7 +86,6 @@ export default function DayAbsencesScreen() {
     absences,
     deleteAbsence,
     updateAbsenceStatus,
-    maxAbsencesPerDay,
   } = useAbsenceStore();
 
   const date = typeof params.date === 'string' ? params.date : new Date().toISOString().split('T')[0];
@@ -98,10 +96,8 @@ export default function DayAbsencesScreen() {
       .sort((left, right) => getDurationSortValue(left.duration) - getDurationSortValue(right.duration));
   }, [absences, date]);
 
-  const workingAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected');
-  const amAbsences = dayAbsences.filter((absence) => absence.duration === 'AM' || absence.duration === 'Full');
-  const pmAbsences = dayAbsences.filter((absence) => absence.duration === 'PM' || absence.duration === 'Full');
-  const hasClash = workingAbsences.length >= maxAbsencesPerDay;
+  const amAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected' && (absence.duration === 'AM' || absence.duration === 'Full'));
+  const pmAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected' && (absence.duration === 'PM' || absence.duration === 'Full'));
 
   const formattedDate = new Date(date).toLocaleDateString('en-GB', {
     weekday: 'long',
@@ -182,30 +178,61 @@ export default function DayAbsencesScreen() {
         <View style={styles.metricRow}>
           <View style={[styles.metricCard, { backgroundColor: colors.surfaceVariant }]}>
             <ThemedText style={styles.metricValue}>{amAbsences.length}</ThemedText>
-            <ThemedText variant="secondary">AM / Full</ThemedText>
+            <ThemedText variant="secondary">AM absent</ThemedText>
           </View>
           <View style={[styles.metricCard, { backgroundColor: colors.surfaceVariant }]}>
             <ThemedText style={styles.metricValue}>{pmAbsences.length}</ThemedText>
-            <ThemedText variant="secondary">PM / Full</ThemedText>
-          </View>
-          <View style={[styles.metricCard, { backgroundColor: hasClash ? '#FEF2F2' : colors.surfaceVariant }]}>
-            <ThemedText style={[styles.metricValue, hasClash && { color: absenceColors.rejected }]}>
-              {workingAbsences.length}/{maxAbsencesPerDay}
-            </ThemedText>
-            <ThemedText variant="secondary">Team load</ThemedText>
+            <ThemedText variant="secondary">PM absent</ThemedText>
           </View>
         </View>
-
-        {hasClash ? (
-          <View style={styles.warningRow}>
-            <ShieldAlert size={16} color={absenceColors.rejected} />
-            <ThemedText style={[styles.warningText, { color: absenceColors.rejected }]}>Daily limit reached for this date.</ThemedText>
-          </View>
-        ) : null}
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, isLargeScreen && styles.contentLarge]}>
         <View style={styles.listWrap}>
+          {dayAbsences.length > 0 ? (
+            <View style={styles.sessionSections}>
+              <View style={[styles.sessionSection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.sessionHeader, { backgroundColor: colors.surfaceVariant }]}>
+                  <ThemedText style={styles.sessionHeaderText}>AM · Morning</ThemedText>
+                  <ThemedText variant="secondary">{amAbsences.length}</ThemedText>
+                </View>
+                {amAbsences.length === 0 ? (
+                  <ThemedText variant="secondary" style={styles.sessionEmpty}>No morning absences</ThemedText>
+                ) : (
+                  <View style={styles.sessionNameList}>
+                    {amAbsences.map((absence) => (
+                      <View key={`am-${absence.id}`} style={[styles.sessionNamePill, { backgroundColor: `${getTypeColor(absence.type)}22`, borderColor: getTypeColor(absence.type) }]}>
+                        <View style={[styles.typeDotSmall, { backgroundColor: getTypeColor(absence.type) }]} />
+                        <ThemedText style={styles.sessionName}>{absence.name}</ThemedText>
+                        <ThemedText variant="secondary" style={styles.sessionType}>{absence.type}</ThemedText>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              <View style={[styles.sessionSection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.sessionHeader, { backgroundColor: colors.surfaceVariant }]}>
+                  <ThemedText style={styles.sessionHeaderText}>PM · Afternoon</ThemedText>
+                  <ThemedText variant="secondary">{pmAbsences.length}</ThemedText>
+                </View>
+                {pmAbsences.length === 0 ? (
+                  <ThemedText variant="secondary" style={styles.sessionEmpty}>No afternoon absences</ThemedText>
+                ) : (
+                  <View style={styles.sessionNameList}>
+                    {pmAbsences.map((absence) => (
+                      <View key={`pm-${absence.id}`} style={[styles.sessionNamePill, { backgroundColor: `${getTypeColor(absence.type)}22`, borderColor: getTypeColor(absence.type) }]}>
+                        <View style={[styles.typeDotSmall, { backgroundColor: getTypeColor(absence.type) }]} />
+                        <ThemedText style={styles.sessionName}>{absence.name}</ThemedText>
+                        <ThemedText variant="secondary" style={styles.sessionType}>{absence.type}</ThemedText>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </View>
+          ) : null}
+
           {dayAbsences.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <CalendarDays size={44} color={colors.secondaryText} />
@@ -372,14 +399,55 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700' as const,
   },
-  warningRow: {
+  sessionSections: {
+    gap: 12,
+    marginBottom: 4,
+  },
+  sessionSection: {
+    borderWidth: 1,
+    borderRadius: 20,
+    overflow: 'hidden' as const,
+  },
+  sessionHeader: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sessionHeaderText: {
+    fontSize: 14,
+    fontWeight: '800' as const,
+    letterSpacing: 0.3,
+  },
+  sessionEmpty: {
+    padding: 14,
+  },
+  sessionNameList: {
+    padding: 12,
+    gap: 8,
+  },
+  sessionNamePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
   },
-  warningText: {
-    fontSize: 13,
-    fontWeight: '600' as const,
+  typeDotSmall: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  sessionName: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    flex: 1,
+  },
+  sessionType: {
+    fontSize: 12,
   },
   content: {
     padding: 16,

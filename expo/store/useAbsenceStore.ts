@@ -153,30 +153,12 @@ const useAbsenceStore = create<AbsenceState>()(
             };
           }
 
-          if (get().wouldExceedDailyLimit(date, duration, excludeId)) {
-            return {
-              valid: false,
-              message: `Daily absence limit reached for ${date}.`,
-              conflictingDate: date,
-            };
-          }
         }
 
         return { valid: true };
       },
 
-      wouldExceedDailyLimit: (date, duration, excludeId) => {
-        const overlapping = get().absences.filter(
-          (absence) =>
-            absence.date === date &&
-            absence.id !== excludeId &&
-            absence.status !== 'Rejected' &&
-            absence.type !== 'Public Holiday' &&
-            normalizeDurationMatch(absence, duration)
-        );
-
-        return overlapping.length >= get().maxAbsencesPerDay;
-      },
+      wouldExceedDailyLimit: () => false,
 
       getConflictDays: (startDate, endDate) => {
         const start = new Date(startDate);
@@ -195,11 +177,10 @@ const useAbsenceStore = create<AbsenceState>()(
         });
 
         return Array.from(counts.entries())
-          .filter(([, count]) => count >= get().maxAbsencesPerDay)
           .map(([date, count]) => ({
             date,
             count,
-            severity: count >= get().maxAbsencesPerDay + 2 ? 'critical' : count > get().maxAbsencesPerDay ? 'high' : 'medium',
+            severity: 'medium' as const,
           }))
           .sort((a, b) => a.date.localeCompare(b.date));
       },

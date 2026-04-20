@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { CalendarDays, ChevronLeft, ChevronRight, Flag, Plus, TriangleAlert, Users } from 'lucide-react-native';
+import { CalendarDays, ChevronLeft, ChevronRight, Plus, Users } from 'lucide-react-native';
 import { useColorScheme } from 'react-native';
 import ThemedText from '@/components/ThemedText';
 import ThemedView from '@/components/ThemedView';
@@ -85,7 +85,7 @@ export default function CalendarScreen() {
 
   const { user } = useAuthStore();
   const canEdit = user?.accessLevel !== 'viewer';
-  const { absences, maxAbsencesPerDay } = useAbsenceStore();
+  const { absences } = useAbsenceStore();
 
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -109,6 +109,7 @@ export default function CalendarScreen() {
 
     router.push({ pathname: '/calendar/absence-form' as never, params: { date, session: duration } });
   };
+  void handleAdd;
 
   return (
     <ThemedView style={styles.container} useGradient>
@@ -141,9 +142,9 @@ export default function CalendarScreen() {
           </View>
           <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
           <View style={styles.summaryCell}>
-            <TriangleAlert size={14} color={absenceColors.appointment} />
-            <ThemedText style={styles.summaryValue}>{maxAbsencesPerDay}</ThemedText>
-            <ThemedText variant="secondary" style={styles.summaryLabel}>Daily limit</ThemedText>
+            <Users size={14} color={absenceColors.appointment} />
+            <ThemedText style={styles.summaryValue}>{absences.filter((absence) => new Date(absence.date).getMonth() === month && absence.type !== 'Public Holiday' && absence.status !== 'Rejected').length}</ThemedText>
+            <ThemedText variant="secondary" style={styles.summaryLabel}>This month</ThemedText>
           </View>
           <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
           <View style={styles.summaryCell}>
@@ -170,22 +171,40 @@ export default function CalendarScreen() {
 
               const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
               const dayAbsences = getAbsencesForDate(date);
-              const workingAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected');
-              const amAbsences = dayAbsences.filter((absence) => absence.duration === 'AM' || absence.duration === 'Full');
-              const pmAbsences = dayAbsences.filter((absence) => absence.duration === 'PM' || absence.duration === 'Full');
+              const amAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected' && (absence.duration === 'AM' || absence.duration === 'Full'));
+              const pmAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected' && (absence.duration === 'PM' || absence.duration === 'Full'));
               const isToday = date === todayIso;
-              const clash = workingAbsences.length >= maxAbsencesPerDay;
-              const overLimit = workingAbsences.length > maxAbsencesPerDay;
               const publicHoliday = dayAbsences.find((absence) => absence.type === 'Public Holiday');
-              const hasAbsences = workingAbsences.length > 0;
-              const flagColor = overLimit
-                ? absenceColors.rejected
-                : clash
-                ? absenceColors.appointment
-                : absenceColors.approved;
-              const cellMinHeight = isDesktop ? 140 : isTablet ? 120 : isSmallPhone ? 74 : 84;
-              const maxEvents = isDesktop ? 3 : isTablet ? 2 : isSmallPhone ? 1 : 2;
-              const uniqueTypes = Array.from(new Set(dayAbsences.map((a) => a.type)));
+              const cellMinHeight = isDesktop ? 150 : isTablet ? 130 : isSmallPhone ? 86 : 100;
+              const maxEventsPerSession = isDesktop ? 3 : isTablet ? 2 : 1;
+
+              const renderSessionPills = (list: Absence[]) => {
+                if (list.length === 0) {
+                  return null;
+                }
+                return (
+                  <View style={styles.sessionPills}>
+                    {list.slice(0, maxEventsPerSession).map((absence) => {
+                      const typeColor = getTypeColor(absence.type);
+                      return (
+                        <View
+                          key={absence.id}
+                          style={[styles.eventBar, { backgroundColor: `${typeColor}33`, borderLeftColor: typeColor }]}
+                        >
+                          <ThemedText numberOfLines={1} style={[styles.eventText, { color: typeColor }]}>
+                            {absence.name}
+                          </ThemedText>
+                        </View>
+                      );
+                    })}
+                    {list.length > maxEventsPerSession ? (
+                      <ThemedText variant="secondary" style={styles.moreText}>
+                        +{list.length - maxEventsPerSession}
+                      </ThemedText>
+                    ) : null}
+                  </View>
+                );
+              };
 
               return (
                 <TouchableOpacity
@@ -218,9 +237,6 @@ export default function CalendarScreen() {
                         {day}
                       </ThemedText>
                     </View>
-                    {hasAbsences ? (
-                      <Flag size={12} color={flagColor} fill={flagColor} />
-                    ) : null}
                   </View>
 
                   {publicHoliday ? (
@@ -230,26 +246,15 @@ export default function CalendarScreen() {
                       </ThemedText>
                     </View>
                   ) : (
-                    <View style={styles.eventsWrap}>
-                      {dayAbsences.slice(0, maxEvents).map((absence) => {
-                        const typeColor = getTypeColor(absence.type);
-                        return (
-                          <View
-                            key={absence.id}
-                            style={[styles.eventBar, { backgroundColor: `${typeColor}33`, borderLeftColor: typeColor }]}
-                          >
-                            <ThemedText numberOfLines={1} style={[styles.eventText, { color: typeColor }]}>
-                              {absence.duration !== 'Full' ? `${absence.duration} ` : ''}{absence.name}
-                            </ThemedText>
-                          </View>
-                        );
-                      })}
-                      {dayAbsences.length > maxEvents ? (
-                        <ThemedText variant="secondary" style={styles.moreText}>
-                          +{dayAbsences.length - maxEvents} more
-                        </ThemedText>
-                      ) : dayAbsences.length === 0 ? null : null}
-                      {dayAbsences.length === 0 && uniqueTypes.length === 0 ? null : null}
+                    <View style={styles.sessionsWrap}>
+                      <View style={[styles.sessionBlock, { borderBottomColor: colors.border }]}>
+                        <ThemedText style={[styles.sessionLabel, { color: colors.secondaryText }]}>AM</ThemedText>
+                        {renderSessionPills(amAbsences)}
+                      </View>
+                      <View style={styles.sessionBlock}>
+                        <ThemedText style={[styles.sessionLabel, { color: colors.secondaryText }]}>PM</ThemedText>
+                        {renderSessionPills(pmAbsences)}
+                      </View>
                     </View>
                   )}
                 </TouchableOpacity>
@@ -431,6 +436,24 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
   },
   eventsWrap: {
+    gap: 2,
+  },
+  sessionsWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  sessionBlock: {
+    flex: 1,
+    borderBottomWidth: 0,
+    paddingVertical: 1,
+    gap: 2,
+  },
+  sessionLabel: {
+    fontSize: 8,
+    fontWeight: '800' as const,
+    letterSpacing: 0.4,
+  },
+  sessionPills: {
     gap: 2,
   },
   eventBar: {

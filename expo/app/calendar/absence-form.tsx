@@ -11,7 +11,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ShieldCheck, UserRoundX, X } from 'lucide-react-native';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, UserRoundX, X } from 'lucide-react-native';
 import ThemedText from '@/components/ThemedText';
 import ThemedView from '@/components/ThemedView';
 import Colors from '@/constants/colors';
@@ -76,7 +76,6 @@ export default function AbsenceFormScreen() {
     updateAbsence,
     deleteAbsence,
     validateNewAbsence,
-    maxAbsencesPerDay,
   } = useAbsenceStore();
 
   const absenceId = typeof params.id === 'string' ? params.id : undefined;
@@ -249,10 +248,7 @@ export default function AbsenceFormScreen() {
                 Save requests with status, cover, clash detection, and multi-day support.
               </ThemedText>
             </View>
-            <View style={[styles.limitBadge, { backgroundColor: colors.surfaceVariant }]}>
-              <ShieldCheck size={16} color={colors.primary} />
-              <ThemedText style={styles.limitText}>Daily limit {maxAbsencesPerDay}</ThemedText>
-            </View>
+
           </View>
 
           <View style={styles.formSection}>
