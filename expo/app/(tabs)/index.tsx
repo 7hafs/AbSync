@@ -428,16 +428,18 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
   },
   sessionRow: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: 6,
   },
   sessionBlock: {
-    flex: 1,
+    width: '100%',
     borderRadius: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    gap: 6,
   },
   sessionLabel: {
     fontSize: 11,
