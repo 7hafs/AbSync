@@ -191,9 +191,9 @@ export default function DayAbsencesScreen() {
         <View style={styles.listWrap}>
           {dayAbsences.length > 0 ? (
             <View style={styles.sessionSections}>
-              <View style={[styles.sessionSection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <View style={[styles.sessionHeader, { backgroundColor: colors.surfaceVariant }]}>
-                  <ThemedText style={styles.sessionHeaderText}>AM · Morning</ThemedText>
+              <View style={[styles.sessionSection, { backgroundColor: 'rgba(255, 184, 77, 0.10)', borderColor: 'rgba(255, 159, 28, 0.35)' }]}>
+                <View style={[styles.sessionHeader, { backgroundColor: 'rgba(255, 159, 28, 0.18)' }]}>
+                  <ThemedText style={[styles.sessionHeaderText, { color: '#C26A00' }]}>AM · Morning</ThemedText>
                   <ThemedText variant="secondary">{amAbsences.length}</ThemedText>
                 </View>
                 {amAbsences.length === 0 ? (
@@ -211,9 +211,9 @@ export default function DayAbsencesScreen() {
                 )}
               </View>
 
-              <View style={[styles.sessionSection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <View style={[styles.sessionHeader, { backgroundColor: colors.surfaceVariant }]}>
-                  <ThemedText style={styles.sessionHeaderText}>PM · Afternoon</ThemedText>
+              <View style={[styles.sessionSection, { backgroundColor: 'rgba(91, 127, 255, 0.10)', borderColor: 'rgba(91, 127, 255, 0.35)' }]}>
+                <View style={[styles.sessionHeader, { backgroundColor: 'rgba(91, 127, 255, 0.18)' }]}>
+                  <ThemedText style={[styles.sessionHeaderText, { color: '#2E4BCE' }]}>PM · Afternoon</ThemedText>
                   <ThemedText variant="secondary">{pmAbsences.length}</ThemedText>
                 </View>
                 {pmAbsences.length === 0 ? (
