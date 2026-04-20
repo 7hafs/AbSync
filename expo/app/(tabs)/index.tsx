@@ -81,6 +81,7 @@ export default function CalendarScreen() {
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
   const isDesktop = width >= 1100;
+  const isSmallPhone = width < 380;
 
   const { user } = useAuthStore();
   const canEdit = user?.accessLevel !== 'viewer';
@@ -111,50 +112,44 @@ export default function CalendarScreen() {
 
   return (
     <ThemedView style={styles.container} useGradient>
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingHorizontal: isDesktop ? 32 : 16 }]}> 
-        <View>
-          <ThemedText style={[styles.title, { fontSize: isDesktop ? 30 : isTablet ? 26 : 22 }]}>Team calendar</ThemedText>
-          <ThemedText variant="secondary">Track requests, public holidays, and daily team cover.</ThemedText>
-        </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            testID="calendar-prev-month"
-            style={[styles.headerIconButton, { backgroundColor: colors.surfaceVariant }]}
-            onPress={() => setCurrentDate(new Date(year, month - 1, 1))}
-          >
-            <ChevronLeft size={20} color={colors.text} />
-          </TouchableOpacity>
-          <View style={[styles.monthBadge, { backgroundColor: colors.surfaceVariant }]}>
-            <ThemedText style={styles.monthBadgeText}>
-              {currentDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
-            </ThemedText>
-          </View>
-          <TouchableOpacity
-            testID="calendar-next-month"
-            style={[styles.headerIconButton, { backgroundColor: colors.surfaceVariant }]}
-            onPress={() => setCurrentDate(new Date(year, month + 1, 1))}
-          >
-            <ChevronRight size={20} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingHorizontal: isDesktop ? 32 : 12 }]}>
+        <TouchableOpacity
+          testID="calendar-prev-month"
+          style={[styles.headerIconButton, { backgroundColor: colors.surfaceVariant }]}
+          onPress={() => setCurrentDate(new Date(year, month - 1, 1))}
+        >
+          <ChevronLeft size={18} color={colors.text} />
+        </TouchableOpacity>
+        <ThemedText style={[styles.title, { fontSize: isDesktop ? 22 : isTablet ? 20 : 17 }]}>
+          {currentDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+        </ThemedText>
+        <TouchableOpacity
+          testID="calendar-next-month"
+          style={[styles.headerIconButton, { backgroundColor: colors.surfaceVariant }]}
+          onPress={() => setCurrentDate(new Date(year, month + 1, 1))}
+        >
+          <ChevronRight size={18} color={colors.text} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}>
-        <View style={[styles.overviewRow, isDesktop && styles.overviewRowDesktop]}>
-          <View style={[styles.overviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Users size={18} color={colors.primary} />
-            <ThemedText style={styles.overviewValue}>{absences.filter((absence) => absence.date === todayIso && absence.type !== 'Public Holiday' && absence.status !== 'Rejected').length}</ThemedText>
-            <ThemedText variant="secondary">Away today</ThemedText>
+        <View style={[styles.summaryTable, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.summaryCell}>
+            <Users size={14} color={colors.primary} />
+            <ThemedText style={styles.summaryValue}>{absences.filter((absence) => absence.date === todayIso && absence.type !== 'Public Holiday' && absence.status !== 'Rejected').length}</ThemedText>
+            <ThemedText variant="secondary" style={styles.summaryLabel}>Away today</ThemedText>
           </View>
-          <View style={[styles.overviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <TriangleAlert size={18} color={absenceColors.appointment} />
-            <ThemedText style={styles.overviewValue}>{maxAbsencesPerDay}</ThemedText>
-            <ThemedText variant="secondary">Daily limit</ThemedText>
+          <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.summaryCell}>
+            <TriangleAlert size={14} color={absenceColors.appointment} />
+            <ThemedText style={styles.summaryValue}>{maxAbsencesPerDay}</ThemedText>
+            <ThemedText variant="secondary" style={styles.summaryLabel}>Daily limit</ThemedText>
           </View>
-          <View style={[styles.overviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <CalendarDays size={18} color={absenceColors.publicHoliday} />
-            <ThemedText style={styles.overviewValue}>{absences.filter((absence) => absence.type === 'Public Holiday' && new Date(absence.date).getMonth() === month).length}</ThemedText>
-            <ThemedText variant="secondary">Public holidays</ThemedText>
+          <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.summaryCell}>
+            <CalendarDays size={14} color={absenceColors.publicHoliday} />
+            <ThemedText style={styles.summaryValue}>{absences.filter((absence) => absence.type === 'Public Holiday' && new Date(absence.date).getMonth() === month).length}</ThemedText>
+            <ThemedText variant="secondary" style={styles.summaryLabel}>Holidays</ThemedText>
           </View>
         </View>
 
@@ -188,8 +183,8 @@ export default function CalendarScreen() {
                 : clash
                 ? absenceColors.appointment
                 : absenceColors.approved;
-              const cellMinHeight = isDesktop ? 150 : isTablet ? 124 : 96;
-              const maxEvents = isDesktop ? 3 : isTablet ? 2 : 2;
+              const cellMinHeight = isDesktop ? 140 : isTablet ? 120 : isSmallPhone ? 74 : 84;
+              const maxEvents = isDesktop ? 3 : isTablet ? 2 : isSmallPhone ? 1 : 2;
               const uniqueTypes = Array.from(new Set(dayAbsences.map((a) => a.type)));
 
               return (
@@ -310,84 +305,81 @@ const styles = StyleSheet.create({
   },
   header: {
     borderBottomWidth: 1,
-    paddingTop: 14,
-    paddingBottom: 16,
-    gap: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   title: {
     fontWeight: '800' as const,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    textAlign: 'center',
+    flex: 1,
   },
   headerIconButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  monthBadge: {
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  monthBadgeText: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-  },
   content: {
-    padding: 16,
+    padding: 10,
     paddingBottom: 96,
-    gap: 16,
+    gap: 10,
   },
   contentDesktop: {
     alignItems: 'center',
   },
-  overviewRow: {
+  summaryTable: {
     flexDirection: 'row',
-    gap: 12,
-    flexWrap: 'wrap',
-  },
-  overviewRowDesktop: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    alignItems: 'center',
     width: '100%',
     maxWidth: 1320,
   },
-  overviewCard: {
+  summaryCell: {
     flex: 1,
-    minWidth: 180,
-    borderRadius: 22,
-    borderWidth: 1,
-    padding: 18,
-    gap: 8,
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: 2,
   },
-  overviewValue: {
-    fontSize: 26,
+  summaryValue: {
+    fontSize: 18,
     fontWeight: '800' as const,
+  },
+  summaryLabel: {
+    fontSize: 11,
+  },
+  summaryDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    marginVertical: 4,
   },
   calendarCard: {
     width: '100%',
     borderWidth: 1,
-    borderRadius: 28,
-    padding: 10,
+    borderRadius: 18,
+    padding: 4,
     alignSelf: 'center',
+    flex: 1,
   },
   weekHeader: {
     flexDirection: 'row',
-    marginBottom: 6,
-    paddingHorizontal: 2,
+    marginBottom: 2,
   },
   weekCell: {
     width: `${100 / 7}%`,
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 4,
   },
   weekText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700' as const,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
     textTransform: 'uppercase' as const,
   },
   grid: {
@@ -396,8 +388,8 @@ const styles = StyleSheet.create({
   },
   dayCard: {
     width: `${100 / 7}%`,
-    padding: 6,
-    gap: 4,
+    padding: 3,
+    gap: 2,
   },
   emptyDay: {
     opacity: 0,
@@ -409,15 +401,15 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   dayNumberWrap: {
-    minWidth: 26,
-    height: 26,
-    paddingHorizontal: 6,
-    borderRadius: 13,
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 5,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dayNumber: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700' as const,
   },
   dayNumberToday: {
@@ -432,25 +424,25 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   holidayLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700' as const,
   },
   eventsWrap: {
-    gap: 3,
+    gap: 2,
   },
   eventBar: {
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
   },
   eventText: {
     color: 'white',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700' as const,
   },
   moreText: {
-    fontSize: 10,
-    paddingLeft: 4,
+    fontSize: 9,
+    paddingLeft: 2,
   },
   fab: {
     position: 'absolute',
