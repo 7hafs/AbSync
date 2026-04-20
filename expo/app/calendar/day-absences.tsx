@@ -99,6 +99,7 @@ export default function DayAbsencesScreen() {
 
   const amAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected' && (absence.duration === 'AM' || absence.duration === 'Full'));
   const pmAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected' && (absence.duration === 'PM' || absence.duration === 'Full'));
+  const reviewAbsences = dayAbsences.filter((absence) => absence.type === 'Public Holiday' || absence.status !== 'Approved');
 
   const formattedDate = new Date(date).toLocaleDateString('en-GB', {
     weekday: 'long',
@@ -249,7 +250,7 @@ export default function DayAbsencesScreen() {
             </View>
           ) : null}
 
-          {dayAbsences.length === 0 ? (
+          {reviewAbsences.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <CalendarDays size={44} color={colors.secondaryText} />
               <ThemedText style={styles.emptyTitle}>No absences recorded</ThemedText>
@@ -268,7 +269,7 @@ export default function DayAbsencesScreen() {
               ) : null}
             </View>
           ) : (
-            dayAbsences.map((absence) => {
+            reviewAbsences.map((absence) => {
               const staffMember = absence.type === 'Public Holiday' ? undefined : getStaffById(absence.staffId);
               const departmentLabel = staffMember?.department ?? (absence.type === 'Public Holiday' ? 'UK calendar' : 'Team member');
               const isLocked = Boolean(absence.locked || absence.type === 'Public Holiday');
