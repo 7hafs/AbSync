@@ -243,7 +243,7 @@ export default function CalendarScreen() {
                         {day}
                       </ThemedText>
                     </View>
-                    {isShortStaffed && !publicHoliday ? (
+                    {isShortStaffed ? (
                       <View style={styles.flagBadge} testID={`calendar-flag-${date}`}>
                         <Flag size={9} color="#FFFFFF" fill="#FFFFFF" />
                         <ThemedText style={styles.flagText}>{staffOffCount}</ThemedText>
@@ -253,22 +253,21 @@ export default function CalendarScreen() {
 
                   {publicHoliday ? (
                     <View style={styles.holidayBlock}>
-                      <ThemedText style={[styles.holidayLabel, { color: absenceColors.publicHoliday }]} numberOfLines={2}>
+                      <ThemedText style={[styles.holidayLabel, { color: absenceColors.publicHoliday }]} numberOfLines={1}>
                         {publicHoliday.name}
                       </ThemedText>
                     </View>
-                  ) : (
-                    <View style={styles.sessionsWrap}>
-                      <View style={[styles.sessionBlock, styles.amBlock, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
-                        <ThemedText style={[styles.sessionLabel, { color: '#059669' }]}>AM</ThemedText>
-                        {renderSessionPills(amAbsences)}
-                      </View>
-                      <View style={[styles.sessionBlock, styles.pmBlock, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
-                        <ThemedText style={[styles.sessionLabel, { color: '#4F46E5' }]}>PM</ThemedText>
-                        {renderSessionPills(pmAbsences)}
-                      </View>
+                  ) : null}
+                  <View style={styles.sessionsWrap}>
+                    <View style={[styles.sessionBlock, styles.amBlock, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                      <ThemedText style={[styles.sessionLabel, { color: '#059669' }]}>AM</ThemedText>
+                      {renderSessionPills(amAbsences)}
                     </View>
-                  )}
+                    <View style={[styles.sessionBlock, styles.pmBlock, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
+                      <ThemedText style={[styles.sessionLabel, { color: '#4F46E5' }]}>PM</ThemedText>
+                      {renderSessionPills(pmAbsences)}
+                    </View>
+                  </View>
                 </TouchableOpacity>
               );
             })}
