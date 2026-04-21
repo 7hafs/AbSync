@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { CalendarDays, ChevronLeft, ChevronRight, Plus, Users } from 'lucide-react-native';
+import { CalendarDays, ChevronLeft, ChevronRight, Flag, Plus, Users } from 'lucide-react-native';
 import { useColorScheme } from 'react-native';
 import ThemedText from '@/components/ThemedText';
 import ThemedView from '@/components/ThemedView';
@@ -175,6 +175,12 @@ export default function CalendarScreen() {
               const pmAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected' && (absence.duration === 'PM' || absence.duration === 'Full'));
               const isToday = date === todayIso;
               const publicHoliday = dayAbsences.find((absence) => absence.type === 'Public Holiday');
+              const staffOffCount = new Set(
+                dayAbsences
+                  .filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected')
+                  .map((absence) => absence.name)
+              ).size;
+              const isShortStaffed = staffOffCount >= 2;
               const cellMinHeight = isDesktop ? 150 : isTablet ? 130 : isSmallPhone ? 86 : 100;
               const maxEventsPerSession = isDesktop ? 3 : isTablet ? 2 : 1;
 
@@ -237,6 +243,12 @@ export default function CalendarScreen() {
                         {day}
                       </ThemedText>
                     </View>
+                    {isShortStaffed && !publicHoliday ? (
+                      <View style={styles.flagBadge} testID={`calendar-flag-${date}`}>
+                        <Flag size={9} color="#FFFFFF" fill="#FFFFFF" />
+                        <ThemedText style={styles.flagText}>{staffOffCount}</ThemedText>
+                      </View>
+                    ) : null}
                   </View>
 
                   {publicHoliday ? (
@@ -475,6 +487,20 @@ const styles = StyleSheet.create({
   moreText: {
     fontSize: 9,
     paddingLeft: 2,
+  },
+  flagBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 8,
+  },
+  flagText: {
+    fontSize: 9,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
   },
   fab: {
     position: 'absolute',
