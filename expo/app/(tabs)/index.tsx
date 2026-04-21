@@ -247,12 +247,12 @@ export default function CalendarScreen() {
                     </View>
                   ) : (
                     <View style={styles.sessionsWrap}>
-                      <View style={[styles.sessionBlock, { borderBottomColor: colors.border }]}>
-                        <ThemedText style={[styles.sessionLabel, { color: colors.secondaryText }]}>AM</ThemedText>
+                      <View style={[styles.sessionBlock, styles.amBlock, { backgroundColor: 'rgba(251, 191, 36, 0.12)' }]}>
+                        <ThemedText style={[styles.sessionLabel, { color: '#D97706' }]}>AM</ThemedText>
                         {renderSessionPills(amAbsences)}
                       </View>
-                      <View style={styles.sessionBlock}>
-                        <ThemedText style={[styles.sessionLabel, { color: colors.secondaryText }]}>PM</ThemedText>
+                      <View style={[styles.sessionBlock, styles.pmBlock, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
+                        <ThemedText style={[styles.sessionLabel, { color: '#4F46E5' }]}>PM</ThemedText>
                         {renderSessionPills(pmAbsences)}
                       </View>
                     </View>
@@ -445,8 +445,14 @@ const styles = StyleSheet.create({
   sessionBlock: {
     flex: 1,
     borderBottomWidth: 0,
-    paddingVertical: 1,
+    paddingVertical: 2,
+    paddingHorizontal: 3,
     gap: 2,
+    borderRadius: 4,
+  },
+  amBlock: {
+  },
+  pmBlock: {
   },
   sessionLabel: {
     fontSize: 8,
