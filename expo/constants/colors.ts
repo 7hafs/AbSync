@@ -4,16 +4,16 @@ const lightGray = '#EEF2F7';
 const mediumGray = '#D5DCE5';
 
 export const absenceColors = {
-  holiday: '#22C55E',
-  sickLeave: '#EF4444',
-  appointment: '#F97316',
-  training: '#8B5CF6',
-  publicHoliday: '#D4A017',
-  pending: '#94A3B8',
-  approved: '#16A34A',
-  rejected: '#DC2626',
-  amSlot: 'rgba(59, 130, 246, 0.10)',
-  pmSlot: 'rgba(249, 115, 22, 0.10)',
+  holiday: '#0891B2',
+  sickLeave: '#DC2626',
+  appointment: '#EA580C',
+  training: '#DB2777',
+  publicHoliday: '#B45309',
+  pending: '#64748B',
+  approved: '#0F766E',
+  rejected: '#B91C1C',
+  amSlot: 'rgba(16, 185, 129, 0.12)',
+  pmSlot: 'rgba(99, 102, 241, 0.12)',
 };
 
 export default {
