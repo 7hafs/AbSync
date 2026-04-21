@@ -407,8 +407,8 @@ const styles = StyleSheet.create({
   },
   dayCard: {
     width: `${100 / 7}%`,
-    padding: 3,
-    gap: 2,
+    padding: 2,
+    gap: 1,
   },
   emptyDay: {
     opacity: 0,
@@ -417,18 +417,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 2,
+    marginBottom: 1,
+    gap: 2,
   },
   dayNumberWrap: {
-    minWidth: 22,
-    height: 22,
-    paddingHorizontal: 5,
-    borderRadius: 11,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dayNumber: {
-    fontSize: 13,
+    fontSize: 10,
     fontWeight: '700' as const,
   },
   dayNumberToday: {
@@ -443,7 +444,7 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   holidayLabel: {
-    fontSize: 10,
+    fontSize: 8,
     fontWeight: '700' as const,
   },
   eventsWrap: {
@@ -466,38 +467,38 @@ const styles = StyleSheet.create({
   pmBlock: {
   },
   sessionLabel: {
-    fontSize: 8,
+    fontSize: 7,
     fontWeight: '800' as const,
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
   },
   sessionPills: {
     gap: 2,
   },
   eventBar: {
-    borderRadius: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
+    borderRadius: 3,
+    paddingHorizontal: 3,
+    paddingVertical: 1,
     borderLeftWidth: 2,
   },
   eventText: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '700' as const,
   },
   moreText: {
-    fontSize: 9,
+    fontSize: 8,
     paddingLeft: 2,
   },
   flagBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 1,
     backgroundColor: '#DC2626',
-    paddingHorizontal: 4,
+    paddingHorizontal: 3,
     paddingVertical: 1,
-    borderRadius: 8,
+    borderRadius: 6,
   },
   flagText: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '800' as const,
     color: '#FFFFFF',
   },
