@@ -247,8 +247,8 @@ export default function CalendarScreen() {
                     </View>
                   ) : (
                     <View style={styles.sessionsWrap}>
-                      <View style={[styles.sessionBlock, styles.amBlock, { backgroundColor: 'rgba(251, 191, 36, 0.12)' }]}>
-                        <ThemedText style={[styles.sessionLabel, { color: '#D97706' }]}>AM</ThemedText>
+                      <View style={[styles.sessionBlock, styles.amBlock, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                        <ThemedText style={[styles.sessionLabel, { color: '#059669' }]}>AM</ThemedText>
                         {renderSessionPills(amAbsences)}
                       </View>
                       <View style={[styles.sessionBlock, styles.pmBlock, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
