@@ -15,12 +15,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./local/assets/notification_icon.png",
           "color": "#ffffff",
           "defaultChannel": "default",
-          "sounds": [
-            "./local/assets/notification_sound.wav"
-          ],
           "enableBackgroundRemoteNotifications": false
         }
       ]
@@ -38,7 +34,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.absync.absync"
+      "bundleIdentifier": "com.absync.absync",
+      "buildNumber": "3"
     },
     "android": {
       "adaptiveIcon": {
@@ -53,6 +50,15 @@
     },
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {
+        "origin": "https://rork.com/"
+      },
+      "eas": {
+        "projectId": "ba31f81d-ad18-497f-a30a-9d4c9012ccd3"
+      }
+    },
+    "owner": "70104b"
   }
 }
