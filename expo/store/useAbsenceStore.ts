@@ -1,14 +1,14 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Absence, AbsenceDuration, AbsenceStatus } from '@/types';
+import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Absence, AbsenceDuration, AbsenceStatus } from "@/types";
 
 export const DEFAULT_MAX_ABSENCES_PER_DAY = 2;
 
 export type CreateAbsenceInput = {
   staffId: string;
   name: string;
-  type: Absence['type'];
+  type: Absence["type"];
   dates: string[];
   duration: AbsenceDuration;
   notes: string;
@@ -25,33 +25,69 @@ export type AbsenceValidationResult = {
 interface AbsenceState {
   absences: Absence[];
   maxAbsencesPerDay: number;
+  isLoaded: boolean;
+  dbVersion: number;
   addAbsence: (absence: Absence) => void;
-  createAbsences: (input: CreateAbsenceInput) => void;
+  createAbsences: (input: CreateAbsenceInput) => string[];
   updateAbsence: (absence: Absence) => void;
   updateAbsenceStatus: (id: string, status: AbsenceStatus) => void;
   deleteAbsence: (id: string) => void;
   replaceAbsences: (absences: Absence[]) => void;
+  setLoaded: (loaded: boolean) => void;
+  setDbVersion: (version: number) => void;
   setMaxAbsencesPerDay: (limit: number) => void;
   getAbsencesForDate: (date: string) => Absence[];
   getApprovedAbsencesForDate: (date: string) => Absence[];
-  getAbsencesForDateAndDuration: (date: string, duration: AbsenceDuration) => Absence[];
+  getAbsencesForDateAndDuration: (
+    date: string,
+    duration: AbsenceDuration
+  ) => Absence[];
   getAbsencesForStaff: (staffId: string) => Absence[];
   getAbsencesForMonth: (year: number, month: number) => Absence[];
-  hasDuplicate: (staffId: string, date: string, duration: AbsenceDuration, excludeId?: string) => boolean;
-  validateNewAbsence: (staffId: string, dates: string[], duration: AbsenceDuration, excludeId?: string) => AbsenceValidationResult;
-  wouldExceedDailyLimit: (date: string, duration: AbsenceDuration, excludeId?: string) => boolean;
-  getConflictDays: (startDate: string, endDate: string) => Array<{ date: string; count: number; severity: 'medium' | 'high' | 'critical' }>;
+  hasDuplicate: (
+    staffId: string,
+    date: string,
+    duration: AbsenceDuration,
+    excludeId?: string
+  ) => boolean;
+  validateNewAbsence: (
+    staffId: string,
+    dates: string[],
+    duration: AbsenceDuration,
+    excludeId?: string
+  ) => AbsenceValidationResult;
+  wouldExceedDailyLimit: (
+    date: string,
+    duration: AbsenceDuration,
+    excludeId?: string
+  ) => boolean;
+  getConflictDays: (
+    startDate: string,
+    endDate: string
+  ) => Array<{
+    date: string;
+    count: number;
+    severity: "medium" | "high" | "critical";
+  }>;
 }
 
-function createAbsenceId(date: string, staffId: string, duration: AbsenceDuration) {
-  return `${date}-${staffId}-${duration}-${Math.random().toString(36).slice(2, 8)}`;
+function createAbsenceId(
+  date: string,
+  staffId: string,
+  duration: AbsenceDuration
+) {
+  return `${date}-${staffId}-${duration}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
 }
 
-function normalizeDurationMatch(absence: Absence, duration: AbsenceDuration) {
-  if (absence.duration === 'Full' || duration === 'Full') {
+function normalizeDurationMatch(
+  absence: Absence,
+  duration: AbsenceDuration
+) {
+  if (absence.duration === "Full" || duration === "Full") {
     return true;
   }
-
   return absence.duration === duration;
 }
 
@@ -60,6 +96,8 @@ const useAbsenceStore = create<AbsenceState>()(
     (set, get) => ({
       absences: [],
       maxAbsencesPerDay: DEFAULT_MAX_ABSENCES_PER_DAY,
+      isLoaded: false,
+      dbVersion: 0,
 
       addAbsence: (absence) =>
         set((state) => ({
@@ -75,7 +113,7 @@ const useAbsenceStore = create<AbsenceState>()(
           type: input.type,
           date,
           duration: input.duration,
-          status: 'Pending',
+          status: "Pending" as const,
           cover: input.cover ?? null,
           notes: input.notes,
           createdBy: input.createdBy,
@@ -85,6 +123,9 @@ const useAbsenceStore = create<AbsenceState>()(
         set((state) => ({
           absences: [...state.absences, ...nextAbsences],
         }));
+
+        // Return created IDs for the caller to sync with Supabase
+        return nextAbsences.map((a) => a.id);
       },
 
       updateAbsence: (updatedAbsence) =>
@@ -102,15 +143,12 @@ const useAbsenceStore = create<AbsenceState>()(
         })),
 
       deleteAbsence: (id) => {
-        console.log('[useAbsenceStore] deleteAbsence', id);
+        console.log("[useAbsenceStore] deleteAbsence", id);
         set((state) => ({
           absences: state.absences.filter((absence) => {
-            if (absence.id !== id) {
+            if (absence.id !== id) return true;
+            if (absence.locked || absence.type === "Public Holiday")
               return true;
-            }
-            if (absence.locked || absence.type === 'Public Holiday') {
-              return true;
-            }
             return false;
           }),
         }));
@@ -118,30 +156,41 @@ const useAbsenceStore = create<AbsenceState>()(
 
       replaceAbsences: (absences) => set(() => ({ absences })),
 
+      setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
+      setDbVersion: (version) => set(() => ({ dbVersion: version })),
+
       setMaxAbsencesPerDay: (limit) =>
         set(() => ({
-          maxAbsencesPerDay: Math.max(1, Math.floor(limit) || DEFAULT_MAX_ABSENCES_PER_DAY),
+          maxAbsencesPerDay: Math.max(
+            1,
+            Math.floor(limit) || DEFAULT_MAX_ABSENCES_PER_DAY
+          ),
         })),
 
-      getAbsencesForDate: (date) => get().absences.filter((absence) => absence.date === date),
+      getAbsencesForDate: (date) =>
+        get().absences.filter((absence) => absence.date === date),
 
       getApprovedAbsencesForDate: (date) =>
-        get().absences.filter((absence) => absence.date === date && absence.status !== 'Rejected'),
+        get().absences.filter(
+          (absence) =>
+            absence.date === date && absence.status !== "Rejected"
+        ),
 
       getAbsencesForDateAndDuration: (date, duration) =>
         get().absences.filter(
           (absence) =>
             absence.date === date &&
-            absence.status !== 'Rejected' &&
+            absence.status !== "Rejected" &&
             normalizeDurationMatch(absence, duration)
         ),
 
-      getAbsencesForStaff: (staffId) => get().absences.filter((absence) => absence.staffId === staffId),
+      getAbsencesForStaff: (staffId) =>
+        get().absences.filter((absence) => absence.staffId === staffId),
 
       getAbsencesForMonth: (year, month) =>
         get().absences.filter((absence) => {
-          const parsedDate = new Date(absence.date);
-          return parsedDate.getFullYear() === year && parsedDate.getMonth() === month;
+          const [y, m] = absence.date.split("-").map(Number);
+          return y === year && m - 1 === month;
         }),
 
       hasDuplicate: (staffId, date, duration, excludeId) =>
@@ -158,31 +207,33 @@ const useAbsenceStore = create<AbsenceState>()(
           if (get().hasDuplicate(staffId, date, duration, excludeId)) {
             return {
               valid: false,
-              message: 'Duplicate entry for the same employee, date, and duration.',
+              message:
+                "Duplicate entry for the same employee, date, and duration.",
               conflictingDate: date,
             };
           }
-
         }
-
         return { valid: true };
       },
 
       wouldExceedDailyLimit: () => false,
 
       getConflictDays: (startDate, endDate) => {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
         const counts = new Map<string, number>();
 
         get().absences.forEach((absence) => {
-          if (absence.status === 'Rejected' || absence.type === 'Public Holiday') {
+          if (
+            absence.status === "Rejected" ||
+            absence.type === "Public Holiday"
+          ) {
             return;
           }
 
-          const parsedDate = new Date(absence.date);
-          if (parsedDate >= start && parsedDate <= end) {
-            counts.set(absence.date, (counts.get(absence.date) ?? 0) + 1);
+          if (absence.date >= startDate && absence.date <= endDate) {
+            counts.set(
+              absence.date,
+              (counts.get(absence.date) ?? 0) + 1
+            );
           }
         });
 
@@ -190,14 +241,18 @@ const useAbsenceStore = create<AbsenceState>()(
           .map(([date, count]) => ({
             date,
             count,
-            severity: 'medium' as const,
+            severity: "medium" as const,
           }))
           .sort((a, b) => a.date.localeCompare(b.date));
       },
     }),
     {
-      name: 'absence-storage',
+      name: "absence-storage-v2",
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        absences: state.absences,
+        dbVersion: state.dbVersion,
+      }),
     }
   )
 );

@@ -1,57 +1,81 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { AuthUser, CalendarAccessLevel } from "@/types";
+import { AuthUser as AppUser } from "@/types";
+
+/**
+ * Local auth state store.
+ *
+ * This store is the bridge between Rork Auth (hooks/useAuth.tsx)
+ * and the rest of the app. The Supabase-backed data layer uses
+ * the Rork Auth user ID for RLS-scoped queries.
+ *
+ * The email field acts as the unique human-readable account identifier.
+ * The id field is the stable Rork Auth user ID (from JWT sub claim).
+ *
+ * Sign out only clears the session — never deletes data from Supabase.
+ */
 
 interface SignInInput {
-  name: string;
+  id: string;
+  name?: string;
   email: string;
-  workspaceId?: string;
-  accessLevel?: CalendarAccessLevel;
 }
 
 interface AuthState {
-  user: AuthUser | null;
+  user: AppUser | null;
   isAuthenticated: boolean;
   signIn: (input: SignInInput) => void;
   signOut: () => void;
+  updateUser: (user: AppUser) => void;
 }
-
-const defaultWorkspaceId = "personal-workspace";
 
 const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
       isAuthenticated: false,
-      signIn: ({ name, email, workspaceId, accessLevel }) => {
-        const trimmedName = name.trim();
-        const trimmedEmail = email.trim().toLowerCase();
-        const user: AuthUser = {
-          id: `${trimmedEmail}-${Date.now()}`,
-          name: trimmedName,
-          email: trimmedEmail,
-          workspaceId: workspaceId ?? defaultWorkspaceId,
-          accessLevel: accessLevel ?? "owner",
+      signIn: ({ id, name, email }) => {
+        const user: AppUser = {
+          id,
+          name: name ?? email,
+          email: email.toLowerCase().trim(),
+          workspaceId: "personal-workspace",
+          accessLevel: "owner",
           joinedAt: new Date().toISOString(),
         };
 
-        console.log("[useAuthStore] Signing in user", {
+        console.log("[useAuthStore] User signed in", {
+          id: user.id,
           email: user.email,
-          workspaceId: user.workspaceId,
-          accessLevel: user.accessLevel,
         });
 
         set({ user, isAuthenticated: true });
       },
       signOut: () => {
-        console.log("[useAuthStore] Signing out current user");
+        console.log("[useAuthStore] Signing out — data preserved in Supabase");
         set({ user: null, isAuthenticated: false });
+      },
+      updateUser: (user) => {
+        set({ user, isAuthenticated: true });
       },
     }),
     {
-      name: "auth-storage",
+      name: "auth-storage-v2",
       storage: createJSONStorage(() => AsyncStorage),
+      // Only persist the user identity, not full auth state
+      partialize: (state) => ({
+        user: state.user
+          ? {
+              id: state.user.id,
+              name: state.user.name,
+              email: state.user.email,
+              workspaceId: state.user.workspaceId,
+              accessLevel: state.user.accessLevel,
+              joinedAt: state.user.joinedAt,
+            }
+          : null,
+      }),
     }
   )
 );

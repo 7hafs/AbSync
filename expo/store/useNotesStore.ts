@@ -5,10 +5,13 @@ import { NoteType } from "@/types";
 
 interface NotesState {
   notes: NoteType[];
+  isLoaded: boolean;
   addNote: (note: NoteType) => void;
   updateNote: (note: NoteType) => void;
   deleteNote: (id: string) => void;
   togglePinNote: (id: string) => void;
+  replaceNotes: (notes: NoteType[]) => void;
+  setLoaded: (loaded: boolean) => void;
   searchNotes: (query: string) => NoteType[];
   getNotesForDate: (date: string) => NoteType[];
   getNotesByTag: (tag: string) => NoteType[];
@@ -19,6 +22,7 @@ const useNotesStore = create<NotesState>()(
   persist(
     (set, get) => ({
       notes: [],
+      isLoaded: false,
 
       addNote: (note) =>
         set((state) => ({
@@ -44,6 +48,9 @@ const useNotesStore = create<NotesState>()(
           ),
         })),
 
+      replaceNotes: (notes) => set(() => ({ notes })),
+      setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
+
       searchNotes: (query) => {
         const lowerQuery = query.toLowerCase();
         return get().notes.filter(
@@ -67,8 +74,11 @@ const useNotesStore = create<NotesState>()(
       },
     }),
     {
-      name: "notes-storage",
+      name: "notes-storage-v2",
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        notes: state.notes,
+      }),
     }
   )
 );

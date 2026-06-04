@@ -5,10 +5,13 @@ import { ReminderType } from "@/types";
 
 interface RemindersState {
   reminders: ReminderType[];
+  isLoaded: boolean;
   addReminder: (reminder: ReminderType) => void;
   updateReminder: (reminder: ReminderType) => void;
   deleteReminder: (id: string) => void;
   toggleComplete: (id: string) => void;
+  replaceReminders: (reminders: ReminderType[]) => void;
+  setLoaded: (loaded: boolean) => void;
   getRemindersForDate: (date: string) => ReminderType[];
   getActiveReminders: () => ReminderType[];
   getCompletedReminders: () => ReminderType[];
@@ -18,6 +21,7 @@ const useRemindersStore = create<RemindersState>()(
   persist(
     (set, get) => ({
       reminders: [],
+      isLoaded: false,
 
       addReminder: (reminder) =>
         set((state) => ({
@@ -43,6 +47,9 @@ const useRemindersStore = create<RemindersState>()(
           ),
         })),
 
+      replaceReminders: (reminders) => set(() => ({ reminders })),
+      setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
+
       getRemindersForDate: (date) => {
         return get().reminders.filter((r) => r.date === date);
       },
@@ -56,8 +63,11 @@ const useRemindersStore = create<RemindersState>()(
       },
     }),
     {
-      name: "reminders-storage",
+      name: "reminders-storage-v2",
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        reminders: state.reminders,
+      }),
     }
   )
 );

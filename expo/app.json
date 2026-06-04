@@ -19,12 +19,14 @@
           "defaultChannel": "default",
           "enableBackgroundRemoteNotifications": false
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "rork-lxwo9f6yr6sjgzxbuwjkz",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {

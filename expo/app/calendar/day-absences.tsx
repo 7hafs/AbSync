@@ -29,6 +29,7 @@ import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
 import useAuthStore from '@/store/useAuthStore';
 import { Absence, AbsenceStatus, AbsenceType } from '@/types';
+import { toDateString, todayDateString, formatDateUKLong } from '@/utils/dateUtils';
 
 function getTypeColor(type: AbsenceType) {
   switch (type) {
@@ -89,7 +90,7 @@ export default function DayAbsencesScreen() {
     updateAbsenceStatus,
   } = useAbsenceStore();
 
-  const date = typeof params.date === 'string' ? params.date : new Date().toISOString().split('T')[0];
+  const date = typeof params.date === 'string' ? params.date : todayDateString();
 
   const dayAbsences = useMemo(() => {
     return absences
@@ -101,19 +102,14 @@ export default function DayAbsencesScreen() {
   const pmAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected' && (absence.duration === 'PM' || absence.duration === 'Full'));
   const reviewAbsences = dayAbsences.filter((absence) => absence.type === 'Public Holiday' || absence.status !== 'Approved');
 
-  const formattedDate = new Date(date).toLocaleDateString('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  const formattedDate = formatDateUKLong(date);
 
   const goToDate = (offset: number) => {
     const nextDate = new Date(date);
     nextDate.setDate(nextDate.getDate() + offset);
     router.replace({
       pathname: '/calendar/day-absences' as never,
-      params: { date: nextDate.toISOString().split('T')[0] },
+      params: { date: toDateString(nextDate) },
     });
   };
 

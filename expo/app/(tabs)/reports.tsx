@@ -15,6 +15,7 @@ import useThemeStore from '@/store/useThemeStore';
 import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
 import { Absence } from '@/types';
+import { fromDateString } from '@/utils/dateUtils';
 
 function getDaysValue(absence: Absence) {
   return absence.duration === 'Full' ? 1 : 0.5;
@@ -37,7 +38,7 @@ export default function ReportsScreen() {
 
   const filteredAbsences = useMemo(() => {
     return absences.filter((absence) => {
-      const parsedDate = new Date(absence.date);
+      const parsedDate = fromDateString(absence.date);
       return (
         parsedDate.getMonth() === month &&
         parsedDate.getFullYear() === year &&

@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
+import { toDateString, todayDateString } from '@/utils/dateUtils';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -69,11 +70,11 @@ export function checkAndNotifyAbsences() {
   }
 
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = todayDateString();
   
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  const tomorrowStr = toDateString(tomorrow);
   
   const absenceStore = useAbsenceStore.getState();
   const staffStore = useStaffStore.getState();

@@ -1,50 +1,61 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { Redirect } from "expo-router";
-import { LockKeyhole, Mail, ShieldCheck, UserRound } from "lucide-react-native";
+import {
+  LockKeyhole,
+  ShieldCheck,
+  LogIn,
+} from "lucide-react-native";
 import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
 import Colors from "@/constants/colors";
 import useThemeStore from "@/store/useThemeStore";
 import useAuthStore from "@/store/useAuthStore";
+import { useAuth } from "@/hooks/useAuth";
 import { useColorScheme } from "react-native";
 
 export default function AuthScreen() {
   const systemColorScheme = useColorScheme();
   const { isDarkMode } = useThemeStore();
-  const { signIn, isAuthenticated } = useAuthStore();
-  const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
+  const { isAuthenticated } = useAuthStore();
+  const colorScheme =
+    isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
-  const [name, setName] = useState<string>("");
-  const [email, setEmail] = useState<string>("");
 
-  const isFormValid = useMemo(() => {
-    return name.trim().length >= 2 && email.includes("@");
-  }, [email, name]);
+  const {
+    signIn: rorkSignIn,
+    isSigningIn,
+    error: authError,
+    clearError,
+  } = useAuth();
 
-  const handleContinue = () => {
-    if (!isFormValid) {
-      Alert.alert("Missing details", "Enter your name and a valid email to continue.");
-      return;
+  const canContinue = useMemo(() => !isSigningIn, [isSigningIn]);
+
+  const handleGoogleSignIn = async () => {
+    if (!canContinue) return;
+    try {
+      await rorkSignIn("google");
+    } catch {
+      // Error is handled by the auth hook
     }
+  };
 
-    console.log("[AuthScreen] Continuing into app", {
-      email,
-    });
-
-    signIn({
-      name,
-      email,
-    });
+  const handleAppleSignIn = async () => {
+    if (!canContinue) return;
+    try {
+      await rorkSignIn("apple");
+    } catch {
+      // Error is handled by the auth hook
+    }
   };
 
   if (isAuthenticated) {
@@ -57,66 +68,106 @@ export default function AuthScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.keyboardView}
       >
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.iconWrap, { backgroundColor: colors.primary }]}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View
+            style={[
+              styles.heroCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View
+              style={[styles.iconWrap, { backgroundColor: colors.primary }]}
+            >
               <ShieldCheck color="white" size={28} />
             </View>
             <ThemedText size="xlarge" weight="bold" style={styles.title}>
-              Secure shared calendar access
+              AbsenceFlow
             </ThemedText>
             <ThemedText variant="secondary" style={styles.subtitle}>
-              Sign in to manage absences, join shared calendars, and control who can view or edit your team calendar.
+              Sign in to manage staff absences, track holidays, and keep your
+              team calendar in sync. Your data is securely stored and always
+              available when you sign back in.
             </ThemedText>
 
-            <View style={styles.formGroup}>
-              <ThemedText weight="semibold" style={styles.label}>Name</ThemedText>
-              <View style={[styles.inputShell, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <UserRound color={colors.secondaryText} size={18} />
-                <TextInput
-                  testID="auth-name-input"
-                  style={[styles.input, { color: colors.text }]}
-                  placeholder="Alex Morgan"
-                  placeholderTextColor={colors.secondaryText}
-                  value={name}
-                  onChangeText={setName}
-                  autoCapitalize="words"
-                />
-              </View>
-            </View>
+            {authError ? (
+              <TouchableOpacity
+                onPress={clearError}
+                style={[
+                  styles.errorCard,
+                  { backgroundColor: colors.surfaceVariant },
+                ]}
+              >
+                <ThemedText
+                  style={{ color: "#DC2626", fontSize: 13, flex: 1 }}
+                >
+                  {authError}
+                </ThemedText>
+                <ThemedText
+                  style={{ color: "#DC2626", fontWeight: "700", fontSize: 13 }}
+                >
+                  Dismiss
+                </ThemedText>
+              </TouchableOpacity>
+            ) : null}
 
-            <View style={styles.formGroup}>
-              <ThemedText weight="semibold" style={styles.label}>Email</ThemedText>
-              <View style={[styles.inputShell, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Mail color={colors.secondaryText} size={18} />
-                <TextInput
-                  testID="auth-email-input"
-                  style={[styles.input, { color: colors.text }]}
-                  placeholder="you@school.org"
-                  placeholderTextColor={colors.secondaryText}
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
+            {isSigningIn ? (
+              <View style={styles.loadingWrap}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <ThemedText variant="secondary">
+                  Signing you in…
+                </ThemedText>
               </View>
-            </View>
+            ) : (
+              <>
+                <TouchableOpacity
+                  testID="auth-google-button"
+                  style={[
+                    styles.oauthButton,
+                    { backgroundColor: "#4285F4" },
+                  ]}
+                  onPress={handleGoogleSignIn}
+                  activeOpacity={0.85}
+                >
+                  <LogIn size={20} color="white" />
+                  <ThemedText style={styles.oauthButtonText}>
+                    Sign in with Google
+                  </ThemedText>
+                </TouchableOpacity>
 
-            <View style={[styles.noteCard, { backgroundColor: colors.surfaceVariant }]}> 
+                <TouchableOpacity
+                  testID="auth-apple-button"
+                  style={[
+                    styles.oauthButton,
+                    styles.appleButton,
+                  ]}
+                  onPress={handleAppleSignIn}
+                  activeOpacity={0.85}
+                >
+                  <LogIn size={20} color="white" />
+                  <ThemedText style={styles.oauthButtonText}>
+                    Sign in with Apple
+                  </ThemedText>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <View
+              style={[
+                styles.noteCard,
+                { backgroundColor: colors.surfaceVariant },
+              ]}
+            >
               <LockKeyhole color={colors.primary} size={18} />
               <ThemedText variant="secondary" style={styles.noteText}>
-                Shared links can be imported by other signed-in users. View-only guests can browse the calendar without editing it.
+                Your account is linked to your email. All absence records,
+                staff, and settings are permanently saved and restored
+                automatically when you sign back in — even after reinstalling
+                the app.
               </ThemedText>
             </View>
-
-            <TouchableOpacity
-              testID="auth-continue-button"
-              style={[styles.primaryButton, { backgroundColor: isFormValid ? colors.primary : colors.border }]}
-              onPress={handleContinue}
-              activeOpacity={0.85}
-            >
-              <ThemedText style={styles.primaryButtonText}>Continue</ThemedText>
-            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -125,12 +176,8 @@ export default function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  keyboardView: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  keyboardView: { flex: 1 },
   content: {
     flexGrow: 1,
     justifyContent: "center",
@@ -160,24 +207,33 @@ const styles = StyleSheet.create({
   subtitle: {
     lineHeight: 22,
   },
-  formGroup: {
-    gap: 8,
-  },
-  label: {
-    fontSize: 15,
-  },
-  inputShell: {
-    minHeight: 54,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 14,
+  errorCard: {
+    borderRadius: 14,
+    padding: 12,
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
+  },
+  loadingWrap: {
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+  },
+  oauthButton: {
+    minHeight: 54,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
     gap: 10,
   },
-  input: {
-    flex: 1,
+  appleButton: {
+    backgroundColor: "#000",
+  },
+  oauthButtonText: {
+    color: "white",
     fontSize: 16,
+    fontWeight: "700",
   },
   noteCard: {
     borderRadius: 18,
@@ -189,16 +245,5 @@ const styles = StyleSheet.create({
   noteText: {
     flex: 1,
     lineHeight: 20,
-  },
-  primaryButton: {
-    minHeight: 54,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  primaryButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "700",
   },
 });

@@ -5,12 +5,14 @@ import { StaffMember } from "@/types";
 
 interface StaffState {
   staff: StaffMember[];
-  addStaff: (staff: StaffMember) => void;
+  isLoaded: boolean;
+  addStaff: (staff: StaffMember) => StaffMember;
   updateStaff: (staff: StaffMember) => void;
   deleteStaff: (id: string) => void;
   archiveStaff: (id: string) => void;
   unarchiveStaff: (id: string) => void;
   replaceStaff: (staff: StaffMember[]) => void;
+  setLoaded: (loaded: boolean) => void;
   getActiveStaff: () => StaffMember[];
   getArchivedStaff: () => StaffMember[];
   searchStaff: (query: string) => StaffMember[];
@@ -21,11 +23,17 @@ const useStaffStore = create<StaffState>()(
   persist(
     (set, get) => ({
       staff: [],
+      isLoaded: false,
 
-      addStaff: (staff) =>
+      addStaff: (staffMember) => {
+        const member = staffMember.id
+          ? staffMember
+          : { ...staffMember, id: Date.now().toString() };
         set((state) => ({
-          staff: [...state.staff, staff],
-        })),
+          staff: [...state.staff, member],
+        }));
+        return member;
+      },
 
       updateStaff: (updatedStaff) =>
         set((state) => ({
@@ -53,10 +61,9 @@ const useStaffStore = create<StaffState>()(
           ),
         })),
 
-      replaceStaff: (staff) =>
-        set(() => ({
-          staff,
-        })),
+      replaceStaff: (staff) => set(() => ({ staff })),
+
+      setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
 
       getActiveStaff: () => {
         return get().staff.filter((s) => s.active);
@@ -80,8 +87,11 @@ const useStaffStore = create<StaffState>()(
       },
     }),
     {
-      name: "staff-storage",
+      name: "staff-storage-v2",
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        staff: state.staff,
+      }),
     }
   )
 );

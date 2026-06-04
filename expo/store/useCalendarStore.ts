@@ -6,10 +6,13 @@ import { EventType } from "@/types";
 interface CalendarState {
   events: EventType[];
   selectedDate: string | null;
+  isLoaded: boolean;
   addEvent: (event: EventType) => void;
   updateEvent: (event: EventType) => void;
   deleteEvent: (id: string) => void;
   setSelectedDate: (date: string | null) => void;
+  replaceEvents: (events: EventType[]) => void;
+  setLoaded: (loaded: boolean) => void;
   getEventsForDate: (date: string) => EventType[];
   getEventsForDateRange: (startDate: string, endDate: string) => EventType[];
 }
@@ -19,6 +22,7 @@ const useCalendarStore = create<CalendarState>()(
     (set, get) => ({
       events: [],
       selectedDate: null,
+      isLoaded: false,
 
       addEvent: (event) =>
         set((state) => ({
@@ -38,9 +42,11 @@ const useCalendarStore = create<CalendarState>()(
         })),
 
       setSelectedDate: (date) =>
-        set(() => ({
-          selectedDate: date,
-        })),
+        set(() => ({ selectedDate: date })),
+
+      replaceEvents: (events) => set(() => ({ events })),
+
+      setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
 
       getEventsForDate: (date) => {
         return get().events.filter((e) => e.date === date);
@@ -53,8 +59,11 @@ const useCalendarStore = create<CalendarState>()(
       },
     }),
     {
-      name: "calendar-storage",
+      name: "calendar-storage-v2",
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        events: state.events,
+      }),
     }
   )
 );

@@ -1,4 +1,5 @@
 import { StaffMember, Absence } from '@/types';
+import { toDateString } from '@/utils/dateUtils';
 
 export const sampleStaff: StaffMember[] = [
   { id: '1', name: 'Sarah Ahmed', department: 'Operations', active: true, createdAt: '2026-01-01T00:00:00.000Z' },
@@ -32,13 +33,17 @@ export function initializeSampleData(staffStore: any, absenceStore: any) {
 
   if (staffStore.staff.length === 0) {
     sampleStaff.forEach((staff: StaffMember) => {
-      staffStore.addStaff(staff);
+      if (!staffStore.staff.find((s: StaffMember) => s.id === staff.id)) {
+        staffStore.addStaff(staff);
+      }
     });
   }
 
   if (absenceStore.absences.length === 0) {
     sampleAbsences.forEach((absence: Absence) => {
-      absenceStore.addAbsence(absence);
+      if (!absenceStore.absences.find((a: Absence) => a.id === absence.id)) {
+        absenceStore.addAbsence(absence);
+      }
     });
   }
 }

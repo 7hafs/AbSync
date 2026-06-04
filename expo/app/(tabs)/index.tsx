@@ -17,6 +17,7 @@ import useThemeStore from '@/store/useThemeStore';
 import useAbsenceStore from '@/store/useAbsenceStore';
 import useAuthStore from '@/store/useAuthStore';
 import { Absence, AbsenceType } from '@/types';
+import { toDateString, todayDateString, formatDateUKLong } from '@/utils/dateUtils';
 
 function getTypeColor(type: AbsenceType) {
   switch (type) {
@@ -96,7 +97,7 @@ export default function CalendarScreen() {
   const monthGrid = useMemo(() => getMonthGrid(currentDate), [currentDate]);
 
   const getAbsencesForDate = (date: string) => absences.filter((absence) => absence.date === date);
-  const todayIso = new Date().toISOString().split('T')[0];
+  const todayIso = todayDateString();
 
   const handleOpenDay = (date: string) => {
     router.push({ pathname: '/calendar/day-absences' as never, params: { date } });
@@ -287,7 +288,7 @@ export default function CalendarScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}> 
             <ThemedText style={styles.modalTitle}>Day summary</ThemedText>
-            <ThemedText variant="secondary">{selectedDate ? new Date(selectedDate).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : ''}</ThemedText>
+            <ThemedText variant="secondary">{selectedDate ? formatDateUKLong(selectedDate) : ''}</ThemedText>
             <ScrollView style={styles.modalScroll}>
               {(selectedDate ? getAbsencesForDate(selectedDate) : []).map((absence) => (
                 <View key={absence.id} style={[styles.modalItem, { backgroundColor: colors.surfaceVariant }]}> 

@@ -22,6 +22,7 @@ import useStaffStore from '@/store/useStaffStore';
 import useAuthStore from '@/store/useAuthStore';
 import { Absence, AbsenceDuration, AbsenceStatus, AbsenceType } from '@/types';
 import { useColorScheme } from 'react-native';
+import { toDateString, todayDateString } from '@/utils/dateUtils';
 
 const ABSENCE_TYPES: AbsenceType[] = ['Holiday', 'Sick Leave', 'Appointment', 'Training'];
 const DURATIONS: AbsenceDuration[] = ['Full', 'AM', 'PM'];
@@ -90,7 +91,7 @@ export default function AbsenceFormScreen() {
   const [duration, setDuration] = useState<AbsenceDuration>('Full');
   const [type, setType] = useState<AbsenceType>('Holiday');
   const [status, setStatus] = useState<AbsenceStatus>('Pending');
-  const [date, setDate] = useState<string>(typeof params.date === 'string' ? params.date : new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState<string>(typeof params.date === 'string' ? params.date : todayDateString());
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [notes, setNotes] = useState<string>('');
   const [cover, setCover] = useState<string>('');
@@ -112,7 +113,7 @@ export default function AbsenceFormScreen() {
       return;
     }
 
-    const routeDate = typeof params.date === 'string' ? params.date : new Date().toISOString().split('T')[0];
+    const routeDate = typeof params.date === 'string' ? params.date : todayDateString();
     const routeDuration = params.session === 'AM' || params.session === 'PM' ? params.session : 'Full';
     setDate(routeDate);
     setSelectedDates([routeDate]);
@@ -334,7 +335,7 @@ export default function AbsenceFormScreen() {
                       return <View key={`empty-${index}`} style={styles.dayCell} />;
                     }
 
-                    const dateValue = dayValue.toISOString().split('T')[0];
+                    const dateValue = toDateString(dayValue);
                     const isSelected = selectedDates.includes(dateValue);
 
                     return (
