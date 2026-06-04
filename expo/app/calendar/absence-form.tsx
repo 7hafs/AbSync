@@ -632,11 +632,11 @@ const styles = StyleSheet.create({
   daysGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
   },
   dayCell: {
-    width: '13%',
+    width: `${100 / 7}%`,
     aspectRatio: 1,
+    padding: 3,
   },
   dayButton: {
     borderWidth: 1,
