@@ -15,7 +15,7 @@ import ThemedView from '@/components/ThemedView';
 import Colors, { absenceColors } from '@/constants/colors';
 import useThemeStore from '@/store/useThemeStore';
 import useAbsenceStore from '@/store/useAbsenceStore';
-import useAuthStore from '@/store/useAuthStore';
+
 import { Absence, AbsenceType } from '@/types';
 import { toDateString, todayDateString, formatDateUKLong } from '@/utils/dateUtils';
 
@@ -84,8 +84,7 @@ export default function CalendarScreen() {
   const isDesktop = width >= 1100;
   const isSmallPhone = width < 380;
 
-  const { user } = useAuthStore();
-  const canEdit = user?.accessLevel !== 'viewer';
+  const canEdit = true;
   const { absences } = useAbsenceStore();
 
   const [currentDate, setCurrentDate] = useState<Date>(new Date());

@@ -19,7 +19,7 @@ import Colors from '@/constants/colors';
 import useThemeStore from '@/store/useThemeStore';
 import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
-import useAuthStore from '@/store/useAuthStore';
+
 import { Absence, AbsenceDuration, AbsenceStatus, AbsenceType } from '@/types';
 import { useColorScheme } from 'react-native';
 import { toDateString, todayDateString } from '@/utils/dateUtils';
@@ -69,8 +69,7 @@ export default function AbsenceFormScreen() {
   const { width } = useWindowDimensions();
   const isLargeScreen = width >= 900;
 
-  const { user } = useAuthStore();
-  const canEdit = user?.accessLevel !== 'viewer';
+  const canEdit = true;
   const { staff, getStaffById } = useStaffStore();
   const {
     absences,
@@ -194,7 +193,7 @@ export default function AbsenceFormScreen() {
       duration,
       notes: notes.trim(),
       cover: cover.trim() || null,
-      createdBy: user?.name ?? 'Manager',
+      createdBy: 'Manager',
     });
 
     Alert.alert(

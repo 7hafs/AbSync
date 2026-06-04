@@ -1,14 +1,12 @@
 /**
  * Notification preferences store.
  *
- * Stores user notification settings in Supabase so they survive
- * app reinstalls and sync across devices. Falls back to AsyncStorage
- * for offline access.
+ * Stores user notification settings locally in AsyncStorage.
+ * Preferences survive app updates and reinstalls.
  */
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { supabase } from "@/lib/supabase";
 
 export interface NotificationPreferences {
   morningEnabled: boolean;
@@ -24,8 +22,6 @@ interface NotificationState {
   setInstantAlertsEnabled: (enabled: boolean) => void;
   setPreferences: (prefs: NotificationPreferences) => void;
   setLoaded: (loaded: boolean) => void;
-  syncFromSupabase: (userId: string) => Promise<void>;
-  persistToSupabase: (userId: string) => Promise<void>;
 }
 
 const DEFAULT_PREFS: NotificationPreferences = {
@@ -36,7 +32,7 @@ const DEFAULT_PREFS: NotificationPreferences = {
 
 const useNotificationStore = create<NotificationState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       preferences: DEFAULT_PREFS,
       isLoaded: false,
 
@@ -61,78 +57,6 @@ const useNotificationStore = create<NotificationState>()(
       setPreferences: (prefs) => set(() => ({ preferences: prefs })),
 
       setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
-
-      syncFromSupabase: async (userId) => {
-        try {
-          const { data, error } = await supabase
-            .from("notification_preferences")
-            .select("*")
-            .eq("user_id", userId)
-            .single();
-
-          if (error && error.code !== "PGRST116") {
-            console.error(
-              "[notificationStore] syncFromSupabase error:",
-              error.message
-            );
-            return;
-          }
-
-          if (data) {
-            set({
-              preferences: {
-                morningEnabled: data.morning_enabled ?? true,
-                eveningEnabled: data.evening_enabled ?? true,
-                instantAlertsEnabled: data.instant_alerts_enabled ?? false,
-              },
-              isLoaded: true,
-            });
-          } else {
-            // No row yet — upsert defaults
-            await supabase.from("notification_preferences").upsert(
-              {
-                user_id: userId,
-                morning_enabled: true,
-                evening_enabled: true,
-                instant_alerts_enabled: false,
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: "user_id" }
-            );
-            set({ isLoaded: true });
-          }
-        } catch (err) {
-          console.error("[notificationStore] syncFromSupabase error:", err);
-          set({ isLoaded: true });
-        }
-      },
-
-      persistToSupabase: async (userId) => {
-        try {
-          const { preferences } = get();
-          const { error } = await supabase
-            .from("notification_preferences")
-            .upsert(
-              {
-                user_id: userId,
-                morning_enabled: preferences.morningEnabled,
-                evening_enabled: preferences.eveningEnabled,
-                instant_alerts_enabled: preferences.instantAlertsEnabled,
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: "user_id" }
-            );
-
-          if (error) {
-            console.error(
-              "[notificationStore] persistToSupabase error:",
-              error.message
-            );
-          }
-        } catch (err) {
-          console.error("[notificationStore] persistToSupabase error:", err);
-        }
-      },
     }),
     {
       name: "notification-prefs-v2",

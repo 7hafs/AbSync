@@ -27,7 +27,7 @@ import Colors, { absenceColors } from '@/constants/colors';
 import useThemeStore from '@/store/useThemeStore';
 import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
-import useAuthStore from '@/store/useAuthStore';
+
 import { Absence, AbsenceStatus, AbsenceType } from '@/types';
 import { toDateString, todayDateString, formatDateUKLong } from '@/utils/dateUtils';
 
@@ -81,8 +81,7 @@ export default function DayAbsencesScreen() {
   const { width } = useWindowDimensions();
   const isLargeScreen = width >= 960;
 
-  const { user } = useAuthStore();
-  const canEdit = user?.accessLevel !== 'viewer';
+  const canEdit = true;
   const { getStaffById } = useStaffStore();
   const {
     absences,

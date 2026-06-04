@@ -16,7 +16,7 @@ import Colors from "@/constants/colors";
 import { useColorScheme } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import { StaffMember } from "@/types";
-import useAuthStore from "@/store/useAuthStore";
+
 
 export default function StaffFormScreen() {
   const router = useRouter();
@@ -27,8 +27,7 @@ export default function StaffFormScreen() {
   const colors = Colors[colorScheme || "light"];
 
   const { staff, addStaff, updateStaff, deleteStaff, archiveStaff, getStaffById } = useStaffStore();
-  const { user } = useAuthStore();
-  const canEdit = user?.accessLevel !== "viewer";
+  const canEdit = true;
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("");
   const [active, setActive] = useState(true);

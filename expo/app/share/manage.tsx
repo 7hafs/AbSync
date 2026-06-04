@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Redirect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import {
   Check,
   Copy,
@@ -22,7 +22,7 @@ import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
 import Colors from "@/constants/colors";
 import useThemeStore from "@/store/useThemeStore";
-import useAuthStore from "@/store/useAuthStore";
+
 import useShareStore from "@/store/useShareStore";
 import useStaffStore from "@/store/useStaffStore";
 import useAbsenceStore from "@/store/useAbsenceStore";
@@ -32,7 +32,7 @@ export default function ShareManageScreen() {
   const router = useRouter();
   const systemColorScheme = useColorScheme();
   const { isDarkMode } = useThemeStore();
-  const { user, isAuthenticated } = useAuthStore();
+
   const { staff } = useStaffStore();
   const { absences } = useAbsenceStore();
   const { lastGeneratedLink, createShareLink } = useShareStore();
@@ -47,16 +47,11 @@ export default function ShareManageScreen() {
   }, [absences]);
 
   const handleCreateShare = async () => {
-    if (!user) {
-      Alert.alert("Sign in required", "Sign in before sharing the calendar.");
-      return;
-    }
-
     const link = createShareLink({
       mode: viewOnly ? "view" : "edit",
-      sharedBy: user.name,
-      sharedByEmail: user.email,
-      workspaceId: user.workspaceId,
+      sharedBy: "User",
+      sharedByEmail: "user@device",
+      workspaceId: "local-workspace",
       staff,
       absences,
     });
@@ -91,10 +86,6 @@ export default function ShareManageScreen() {
       params: { data: importValue.trim() },
     });
   };
-
-  if (!isAuthenticated || !user) {
-    return <Redirect href="/auth" />;
-  }
 
   return (
     <ThemedView style={styles.container} useGradient>

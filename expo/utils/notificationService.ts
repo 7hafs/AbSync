@@ -2,9 +2,8 @@
  * Absence notification service.
  *
  * Schedules two daily notifications (10:00 AM and 5:00 PM) with
- * privacy-safe absence counts. Uses live Supabase data refreshed on
- * every schedule/reschedule. Preferences are stored in Supabase and
- * sync across devices.
+ * privacy-safe absence counts. Uses live local store data refreshed on
+ * every schedule/reschedule. Preferences are stored locally in AsyncStorage.
  *
  * Notifications:
  * - Morning (10:00): summarizes today & tomorrow absences
@@ -13,8 +12,7 @@
  * - Smart pluralization: "1 absence" vs "2 absences" vs "is" vs "are"
  *
  * Reliability:
- * - Survives app updates, reinstalls, logout/login
- * - Preferences linked to user account via Supabase
+ * - Survives app updates, reinstalls
  * - Duplicate prevention via identifier-based scheduling
  * - Automatic reschedule on app foreground
  */
@@ -22,7 +20,6 @@ import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
 import * as BackgroundFetch from "expo-background-fetch";
 import { Platform } from "react-native";
-import { supabase } from "@/lib/supabase";
 import { todayDateString, toDateString } from "@/utils/dateUtils";
 import useNotificationStore from "@/store/useNotificationStore";
 
@@ -84,48 +81,41 @@ function buildMessage(
   };
 }
 
-/** Count absences for a given date from Supabase, excluding rejected ones. */
-async function countAbsencesForDate(
-  userId: string,
-  dateStr: string
-): Promise<number> {
-  const { count, error } = await supabase
-    .from("absences")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("date", dateStr)
-    .neq("status", "Rejected");
-
-  if (error) {
-    console.error("[notificationService] countAbsencesForDate error:", error.message);
+/** Count absences for a given date from the local absence store. */
+function countAbsencesLocally(dateStr: string): number {
+  try {
+    // Dynamic import to avoid circular dependency at module level
+    const { default: useAbsenceStore } = require("@/store/useAbsenceStore");
+    const absences = useAbsenceStore.getState().absences;
+    return absences.filter(
+      (a: { date: string; status: string }) =>
+        a.date === dateStr && a.status !== "Rejected"
+    ).length;
+  } catch {
     return 0;
   }
-  return count ?? 0;
 }
 
-/** Fetch today + tomorrow absence counts from Supabase. */
-async function fetchAbsenceCounts(userId: string): Promise<{
+/** Fetch today + tomorrow absence counts from local store. */
+function fetchAbsenceCounts(): {
   todayCount: number;
   tomorrowCount: number;
-}> {
+} {
   const today = todayDateString();
   const tomorrowDate = new Date();
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrow = toDateString(tomorrowDate);
 
-  const [todayCount, tomorrowCount] = await Promise.all([
-    countAbsencesForDate(userId, today),
-    countAbsencesForDate(userId, tomorrow),
-  ]);
-
-  return { todayCount, tomorrowCount };
+  return {
+    todayCount: countAbsencesLocally(today),
+    tomorrowCount: countAbsencesLocally(tomorrow),
+  };
 }
 
 // ── Schedule / Reschedule ───────────────────────────────────────────────────
 
 /** Schedule a single daily notification if enabled. */
 async function scheduleOne(
-  userId: string,
   identifier: string,
   hour: number,
   minute: number
@@ -133,7 +123,7 @@ async function scheduleOne(
   // Cancel any existing notification with this identifier first (idempotent)
   await Notifications.cancelScheduledNotificationAsync(identifier);
 
-  const { todayCount, tomorrowCount } = await fetchAbsenceCounts(userId);
+  const { todayCount, tomorrowCount } = fetchAbsenceCounts();
   const { title, body } = buildMessage(todayCount, tomorrowCount);
 
   await Notifications.scheduleNotificationAsync({
@@ -161,8 +151,8 @@ async function scheduleOne(
   );
 }
 
-/** Schedule (or reschedule) both daily notifications for the given user. */
-export async function scheduleDailyNotifications(userId: string): Promise<void> {
+/** Schedule (or reschedule) both daily notifications. */
+export async function scheduleDailyNotifications(_userId?: string): Promise<void> {
   if (Platform.OS === "web") {
     console.log("[notificationService] Notifications not available on web");
     return;
@@ -171,13 +161,13 @@ export async function scheduleDailyNotifications(userId: string): Promise<void> 
   const prefs = useNotificationStore.getState().preferences;
 
   if (prefs.morningEnabled) {
-    await scheduleOne(userId, MORNING_ID, 10, 0);
+    await scheduleOne(MORNING_ID, 10, 0);
   } else {
     await Notifications.cancelScheduledNotificationAsync(MORNING_ID);
   }
 
   if (prefs.eveningEnabled) {
-    await scheduleOne(userId, EVENING_ID, 17, 0);
+    await scheduleOne(EVENING_ID, 17, 0);
   } else {
     await Notifications.cancelScheduledNotificationAsync(EVENING_ID);
   }
@@ -220,15 +210,7 @@ export async function sendInstantAlert(
 
 TaskManager.defineTask(BG_TASK_NAME, async () => {
   try {
-    // Get the user ID from the auth store
-    const { default: useAuthStore } = await import("@/store/useAuthStore");
-    const userId = useAuthStore.getState().user?.id;
-    if (!userId) {
-      console.log("[notificationService] BG task: no user, skipping");
-      return BackgroundFetch.BackgroundFetchResult.NoData;
-    }
-
-    await scheduleDailyNotifications(userId);
+    await scheduleDailyNotifications();
     console.log("[notificationService] BG task: notifications refreshed");
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch (err) {
@@ -280,10 +262,8 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 /**
  * Full initialization: request permissions, schedule daily notifications,
  * register background refresh, and set up tap-to-open handler.
- *
- * Must be called when the user authenticates and notification prefs are loaded.
  */
-export async function initializeNotifications(userId: string): Promise<void> {
+export async function initializeNotifications(_userId?: string): Promise<void> {
   if (Platform.OS === "web") return;
 
   const hasPermission = await requestNotificationPermissions();
@@ -293,7 +273,7 @@ export async function initializeNotifications(userId: string): Promise<void> {
   }
 
   // Schedule the daily notifications with live data
-  await scheduleDailyNotifications(userId);
+  await scheduleDailyNotifications();
 
   // Register background fetch to periodically refresh
   await registerBackgroundFetch();
@@ -302,19 +282,17 @@ export async function initializeNotifications(userId: string): Promise<void> {
   Notifications.addNotificationResponseReceivedListener((response) => {
     const data = response.notification.request.content.data;
     console.log("[notificationService] Notification tapped:", data?.type);
-
-    // Navigation is handled by the app's root layout via linking
   });
 
-  console.log("[notificationService] Initialized for user", userId);
+  console.log("[notificationService] Initialized");
 }
 
 /**
  * Quick test notification — fires immediately with current counts.
  * Used from the settings "Test Notification" button.
  */
-export async function sendTestNotification(userId: string): Promise<void> {
-  const { todayCount, tomorrowCount } = await fetchAbsenceCounts(userId);
+export async function sendTestNotification(): Promise<void> {
+  const { todayCount, tomorrowCount } = fetchAbsenceCounts();
   const { title, body } = buildMessage(todayCount, tomorrowCount);
 
   await Notifications.scheduleNotificationAsync({

@@ -6,8 +6,6 @@ import {
   Platform,
   TouchableOpacity,
   Alert,
-  TextInput,
-  Modal,
   ScrollView,
   ActivityIndicator,
 } from "react-native";
@@ -19,37 +17,48 @@ import {
   ChevronRight,
   Archive,
   Share2,
-  LogOut,
-  ShieldCheck,
   Bell,
-  BellOff,
   Zap,
   Clock,
-  User,
-  Lock,
-  Mail,
-  Eye,
-  EyeOff,
-  Calendar,
+  Download,
+  Upload,
+  Database,
 } from "lucide-react-native";
 import { useRouter } from "expo-router";
+import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system";
 import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
 import useThemeStore from "@/store/useThemeStore";
 import Colors from "@/constants/colors";
 import { useColorScheme } from "react-native";
-import useAuthStore from "@/store/useAuthStore";
-import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
-import { supabase } from "@/lib/supabase";
 import useNotificationStore from "@/store/useNotificationStore";
+import useStaffStore from "@/store/useStaffStore";
+import useAbsenceStore from "@/store/useAbsenceStore";
+import useCalendarStore from "@/store/useCalendarStore";
+import useNotesStore from "@/store/useNotesStore";
+import useRemindersStore from "@/store/useRemindersStore";
 import { sendTestNotification } from "@/utils/notificationService";
+
+interface BackupData {
+  version: number;
+  exportedAt: string;
+  appVersion: string;
+  staff: ReturnType<typeof useStaffStore.getState>["staff"];
+  absences: ReturnType<typeof useAbsenceStore.getState>["absences"];
+  events: ReturnType<typeof useCalendarStore.getState>["events"];
+  notes: ReturnType<typeof useNotesStore.getState>["notes"];
+  reminders: ReturnType<typeof useRemindersStore.getState>["reminders"];
+  notificationPreferences: ReturnType<
+    typeof useNotificationStore.getState
+  >["preferences"];
+  theme: ReturnType<typeof useThemeStore.getState>["isDarkMode"];
+}
 
 export default function SettingsScreen() {
   const router = useRouter();
   const systemColorScheme = useColorScheme();
   const { isDarkMode, setDarkMode } = useThemeStore();
-  const { user, isAuthenticated } = useAuthStore();
-  const { signOut } = useSupabaseAuth();
   const {
     preferences: notifPrefs,
     setMorningEnabled,
@@ -60,19 +69,8 @@ export default function SettingsScreen() {
     isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
 
-  // Profile edit state
-  const [profileVisible, setProfileVisible] = useState(false);
-  const [editName, setEditName] = useState(user?.name ?? "");
-  const [isSavingName, setIsSavingName] = useState(false);
-
-  // Change password state
-  const [passwordVisible, setPasswordVisible] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmNewPassword, setConfirmNewPassword] = useState("");
-  const [showCurrentPw, setShowCurrentPw] = useState(false);
-  const [showNewPw, setShowNewPw] = useState(false);
-  const [isChangingPw, setIsChangingPw] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   const handleToggleDarkMode = () => {
     if (isDarkMode === null) {
@@ -90,196 +88,75 @@ export default function SettingsScreen() {
     return "Light mode";
   };
 
-  const handleSignOut = () => {
+  // ── Backup & Restore ──────────────────────────────────────────────────────
+
+  const handleExportBackup = async () => {
+    setIsExporting(true);
+    try {
+      const backup: BackupData = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        appVersion: "2.0.0",
+        staff: useStaffStore.getState().staff,
+        absences: useAbsenceStore.getState().absences,
+        events: useCalendarStore.getState().events,
+        notes: useNotesStore.getState().notes,
+        reminders: useRemindersStore.getState().reminders,
+        notificationPreferences: useNotificationStore.getState().preferences,
+        theme: useThemeStore.getState().isDarkMode,
+      };
+
+      const json = JSON.stringify(backup, null, 2);
+      const fileName = `absenceflow-backup-${new Date().toISOString().split("T")[0]}.json`;
+      const filePath = `${FileSystem.cacheDirectory}${fileName}`;
+
+      await FileSystem.writeAsStringAsync(filePath, json, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(filePath, {
+          mimeType: "application/json",
+          dialogTitle: "Save Backup",
+          UTI: "public.json",
+        });
+      } else {
+        Alert.alert(
+          "Backup Created",
+          `Saved to ${filePath}. Share is not available on this device.`
+        );
+      }
+    } catch (err) {
+      console.error("[Settings] Export failed:", err);
+      Alert.alert("Export Failed", "Could not create backup file.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImportBackup = async () => {
     Alert.alert(
-      "Sign out",
-      "Your data is saved and will be restored when you sign back in.",
+      "Import Backup",
+      "To import a backup, open the .json backup file from your Files app or another app and share it with AbsenceFlow. The app will detect and restore your data automatically.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Sign Out",
-          style: "destructive",
-          onPress: async () => {
-            await signOut();
+          text: "How to Import",
+          onPress: () => {
+            Alert.alert(
+              "Import Instructions",
+              "1. Locate your backup .json file in Files, iCloud Drive, or another storage app.\n\n2. Tap the file and select 'Share'.\n\n3. Choose AbsenceFlow from the share sheet.\n\n4. The app will open and restore your data."
+            );
           },
         },
       ]
     );
   };
 
-  const handleSaveName = async () => {
-    if (!editName.trim() || !user?.id) return;
-    setIsSavingName(true);
-    try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ name: editName.trim(), updated_at: new Date().toISOString() })
-        .eq("id", user.id);
-
-      if (error) {
-        Alert.alert("Error", error.message);
-      } else {
-        // Update local store
-        useAuthStore.getState().updateUser({ ...user, name: editName.trim() });
-        Alert.alert("Saved", "Your name has been updated.");
-        setProfileVisible(false);
-      }
-    } catch (err) {
-      Alert.alert("Error", "Failed to save name.");
-    } finally {
-      setIsSavingName(false);
-    }
-  };
-
-  const handleChangePassword = async () => {
-    if (!newPassword || newPassword.length < 8) {
-      Alert.alert("Invalid Password", "Password must be at least 8 characters.");
-      return;
-    }
-    if (newPassword !== confirmNewPassword) {
-      Alert.alert("Mismatch", "Passwords do not match.");
-      return;
-    }
-
-    setIsChangingPw(true);
-    try {
-      // First verify current password by attempting sign-in
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: user?.email ?? "",
-        password: currentPassword,
-      });
-
-      if (signInError) {
-        Alert.alert("Error", "Current password is incorrect.");
-        setIsChangingPw(false);
-        return;
-      }
-
-      // Update the password
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (error) {
-        Alert.alert("Error", error.message);
-      } else {
-        Alert.alert("Success", "Your password has been changed.");
-        setPasswordVisible(false);
-        setCurrentPassword("");
-        setNewPassword("");
-        setConfirmNewPassword("");
-      }
-    } catch {
-      Alert.alert("Error", "Failed to change password.");
-    } finally {
-      setIsChangingPw(false);
-    }
-  };
-
-  const formatJoinedDate = (isoString?: string) => {
-    if (!isoString) return "Unknown";
-    try {
-      return new Date(isoString).toLocaleDateString("en-GB", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      });
-    } catch {
-      return "Unknown";
-    }
-  };
-
   return (
     <ThemedView style={styles.container} useGradient>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* ── Account Section ──────────────────────────────────────────────── */}
-        <View style={styles.section}>
-          <ThemedText size="large" weight="bold" style={styles.sectionTitle}>
-            Account
-          </ThemedText>
-
-          <TouchableOpacity
-            style={[
-              styles.settingItem,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-            onPress={() => {
-              setEditName(user?.name ?? "");
-              setProfileVisible(true);
-            }}
-          >
-            <View style={styles.settingContent}>
-              <User size={24} color={colors.primary} />
-              <View style={styles.settingTextContainer}>
-                <ThemedText weight="semibold">
-                  {isAuthenticated && user
-                    ? user.name
-                    : "Not signed in"}
-                </ThemedText>
-                <ThemedText variant="secondary" size="small">
-                  {isAuthenticated && user
-                    ? user.email
-                    : "Sign in to access your account"}
-                </ThemedText>
-              </View>
-            </View>
-            {isAuthenticated ? (
-              <ChevronRight size={20} color={colors.secondaryText} />
-            ) : (
-              <TouchableOpacity
-                onPress={() => router.push("/auth" as any)}
-              >
-                <ChevronRight size={20} color={colors.secondaryText} />
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
-
-          {isAuthenticated ? (
-            <>
-              <TouchableOpacity
-                style={[
-                  styles.settingItem,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                ]}
-                onPress={() => setPasswordVisible(true)}
-              >
-                <View style={styles.settingContent}>
-                  <Lock size={24} color={colors.primary} />
-                  <View style={styles.settingTextContainer}>
-                    <ThemedText weight="semibold">Change Password</ThemedText>
-                    <ThemedText variant="secondary" size="small">
-                      Update your account password
-                    </ThemedText>
-                  </View>
-                </View>
-                <ChevronRight size={20} color={colors.secondaryText} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                testID="settings-sign-out"
-                style={[
-                  styles.settingItem,
-                  styles.signOutItem,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                ]}
-                onPress={handleSignOut}
-              >
-                <View style={styles.settingContent}>
-                  <LogOut size={24} color="#DC2626" />
-                  <View style={styles.settingTextContainer}>
-                    <ThemedText weight="semibold" style={{ color: "#DC2626" }}>
-                      Sign Out
-                    </ThemedText>
-                    <ThemedText variant="secondary" size="small">
-                      Your data is always saved
-                    </ThemedText>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            </>
-          ) : null}
-        </View>
-
         {/* ── Appearance Section ───────────────────────────────────────────── */}
         <View style={styles.section}>
           <ThemedText size="large" weight="bold" style={styles.sectionTitle}>
@@ -396,19 +273,12 @@ export default function SettingsScreen() {
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
             onPress={() => {
-              if (user?.id) {
-                sendTestNotification(user.id).then(() => {
-                  Alert.alert(
-                    "Test Sent",
-                    "A test notification has been sent."
-                  );
-                });
-              } else {
+              sendTestNotification().then(() => {
                 Alert.alert(
-                  "Sign In Required",
-                  "Please sign in to test notifications."
+                  "Test Sent",
+                  "A test notification has been sent."
                 );
-              }
+              });
             }}
           >
             <View style={styles.settingContent}>
@@ -422,6 +292,78 @@ export default function SettingsScreen() {
             </View>
             <ChevronRight size={20} color={colors.secondaryText} />
           </TouchableOpacity>
+        </View>
+
+        {/* ── Backup & Restore Section ──────────────────────────────────────── */}
+        <View style={styles.section}>
+          <ThemedText size="large" weight="bold" style={styles.sectionTitle}>
+            Backup & Restore
+          </ThemedText>
+
+          <TouchableOpacity
+            style={[
+              styles.settingItem,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            onPress={handleExportBackup}
+            disabled={isExporting}
+          >
+            <View style={styles.settingContent}>
+              {isExporting ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Download size={24} color={colors.primary} />
+              )}
+              <View style={styles.settingTextContainer}>
+                <ThemedText weight="semibold">Export Backup</ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  Save all data as a backup file
+                </ThemedText>
+              </View>
+            </View>
+            <ChevronRight size={20} color={colors.secondaryText} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.settingItem,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            onPress={handleImportBackup}
+            disabled={isImporting}
+          >
+            <View style={styles.settingContent}>
+              {isImporting ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Upload size={24} color={colors.primary} />
+              )}
+              <View style={styles.settingTextContainer}>
+                <ThemedText weight="semibold">Import Backup</ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  Restore data from a backup file
+                </ThemedText>
+              </View>
+            </View>
+            <ChevronRight size={20} color={colors.secondaryText} />
+          </TouchableOpacity>
+
+          <View
+            style={[
+              styles.settingItem,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.settingContent}>
+              <Database size={24} color={colors.primary} />
+              <View style={styles.settingTextContainer}>
+                <ThemedText weight="semibold">Storage</ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  All data is stored locally on this device
+                </ThemedText>
+              </View>
+            </View>
+          </View>
         </View>
 
         {/* ── Access & Sharing Section ─────────────────────────────────────── */}
@@ -445,9 +387,7 @@ export default function SettingsScreen() {
                   Shared calendar access
                 </ThemedText>
                 <ThemedText variant="secondary" size="small">
-                  {isAuthenticated
-                    ? "Invite others or join a shared calendar"
-                    : "Sign in to manage shared access"}
+                  Invite others or join a shared calendar
                 </ThemedText>
               </View>
             </View>
@@ -531,277 +471,11 @@ export default function SettingsScreen() {
             size="small"
             style={styles.footerText}
           >
-            AbsenceFlow — Your data is securely stored and restored on sign-in
+            AbsenceFlow — Your data is stored locally and backed up on your
+            device.
           </ThemedText>
         </View>
       </ScrollView>
-
-      {/* ── Edit Name Modal ────────────────────────────────────────────────── */}
-      <Modal
-        visible={profileVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setProfileVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <ThemedText size="large" weight="bold" style={styles.modalTitle}>
-              Edit Profile
-            </ThemedText>
-
-            <View style={styles.inputGroup}>
-              <ThemedText weight="semibold" size="small" style={styles.inputLabel}>
-                Email
-              </ThemedText>
-              <View
-                style={[
-                  styles.inputWrap,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                    borderColor: colors.border,
-                    opacity: 0.6,
-                  },
-                ]}
-              >
-                <Mail size={18} color={colors.secondaryText} />
-                <TextInput
-                  style={[styles.modalInput, { color: colors.text }]}
-                  value={user?.email ?? ""}
-                  editable={false}
-                />
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <ThemedText weight="semibold" size="small" style={styles.inputLabel}>
-                Name
-              </ThemedText>
-              <View
-                style={[
-                  styles.inputWrap,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <User size={18} color={colors.secondaryText} />
-                <TextInput
-                  style={[styles.modalInput, { color: colors.text }]}
-                  value={editName}
-                  onChangeText={setEditName}
-                  placeholder="Your name"
-                  placeholderTextColor={colors.secondaryText}
-                />
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <ThemedText weight="semibold" size="small" style={styles.inputLabel}>
-                Account Created
-              </ThemedText>
-              <View
-                style={[
-                  styles.inputWrap,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                    borderColor: colors.border,
-                    opacity: 0.6,
-                  },
-                ]}
-              >
-                <Calendar size={18} color={colors.secondaryText} />
-                <TextInput
-                  style={[styles.modalInput, { color: colors.text }]}
-                  value={formatJoinedDate(user?.joinedAt)}
-                  editable={false}
-                />
-              </View>
-            </View>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[
-                  styles.modalButton,
-                  { backgroundColor: colors.surfaceVariant },
-                ]}
-                onPress={() => setProfileVisible(false)}
-              >
-                <ThemedText weight="semibold">Cancel</ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.modalButton,
-                  { backgroundColor: colors.primary },
-                ]}
-                onPress={handleSaveName}
-                disabled={isSavingName}
-              >
-                {isSavingName ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <ThemedText style={{ color: "white", fontWeight: "700" }}>
-                    Save
-                  </ThemedText>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Change Password Modal ──────────────────────────────────────────── */}
-      <Modal
-        visible={passwordVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPasswordVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <ThemedText size="large" weight="bold" style={styles.modalTitle}>
-              Change Password
-            </ThemedText>
-
-            <View style={styles.inputGroup}>
-              <ThemedText weight="semibold" size="small" style={styles.inputLabel}>
-                Current Password
-              </ThemedText>
-              <View
-                style={[
-                  styles.inputWrap,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <Lock size={18} color={colors.secondaryText} />
-                <TextInput
-                  style={[styles.modalInput, { color: colors.text }]}
-                  value={currentPassword}
-                  onChangeText={setCurrentPassword}
-                  placeholder="Current password"
-                  placeholderTextColor={colors.secondaryText}
-                  secureTextEntry={!showCurrentPw}
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity
-                  onPress={() => setShowCurrentPw(!showCurrentPw)}
-                >
-                  {showCurrentPw ? (
-                    <EyeOff size={18} color={colors.secondaryText} />
-                  ) : (
-                    <Eye size={18} color={colors.secondaryText} />
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <ThemedText weight="semibold" size="small" style={styles.inputLabel}>
-                New Password
-              </ThemedText>
-              <View
-                style={[
-                  styles.inputWrap,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <Lock size={18} color={colors.secondaryText} />
-                <TextInput
-                  style={[styles.modalInput, { color: colors.text }]}
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  placeholder="At least 8 characters"
-                  placeholderTextColor={colors.secondaryText}
-                  secureTextEntry={!showNewPw}
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity onPress={() => setShowNewPw(!showNewPw)}>
-                  {showNewPw ? (
-                    <EyeOff size={18} color={colors.secondaryText} />
-                  ) : (
-                    <Eye size={18} color={colors.secondaryText} />
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <ThemedText weight="semibold" size="small" style={styles.inputLabel}>
-                Confirm New Password
-              </ThemedText>
-              <View
-                style={[
-                  styles.inputWrap,
-                  {
-                    backgroundColor: colors.surfaceVariant,
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <Lock size={18} color={colors.secondaryText} />
-                <TextInput
-                  style={[styles.modalInput, { color: colors.text }]}
-                  value={confirmNewPassword}
-                  onChangeText={setConfirmNewPassword}
-                  placeholder="Confirm new password"
-                  placeholderTextColor={colors.secondaryText}
-                  secureTextEntry
-                  autoCapitalize="none"
-                />
-              </View>
-            </View>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[
-                  styles.modalButton,
-                  { backgroundColor: colors.surfaceVariant },
-                ]}
-                onPress={() => {
-                  setPasswordVisible(false);
-                  setCurrentPassword("");
-                  setNewPassword("");
-                  setConfirmNewPassword("");
-                }}
-              >
-                <ThemedText weight="semibold">Cancel</ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.modalButton,
-                  { backgroundColor: colors.primary },
-                ]}
-                onPress={handleChangePassword}
-                disabled={isChangingPw}
-              >
-                {isChangingPw ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <ThemedText style={{ color: "white", fontWeight: "700" }}>
-                    Update
-                  </ThemedText>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </ThemedView>
   );
 }
@@ -829,9 +503,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 12,
   },
-  signOutItem: {
-    marginTop: 4,
-  },
   settingContent: {
     flexDirection: "row",
     alignItems: "center",
@@ -846,56 +517,5 @@ const styles = StyleSheet.create({
   },
   footerText: {
     textAlign: "center",
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.35)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  modalCard: {
-    width: "100%",
-    maxWidth: 480,
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 20,
-    gap: 16,
-  },
-  modalTitle: {
-    marginBottom: 4,
-  },
-  inputGroup: {
-    gap: 6,
-  },
-  inputLabel: {
-    marginBottom: 2,
-  },
-  inputWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    minHeight: 50,
-    gap: 10,
-  },
-  modalInput: {
-    flex: 1,
-    fontSize: 16,
-    paddingVertical: 12,
-  },
-  modalButtons: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 8,
-  },
-  modalButton: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });

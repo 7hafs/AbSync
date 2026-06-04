@@ -6,10 +6,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   CalendarDays,
-  ShieldCheck,
   TriangleAlert,
 } from "lucide-react-native";
 import ThemedView from "@/components/ThemedView";
@@ -17,7 +16,7 @@ import ThemedText from "@/components/ThemedText";
 import Colors from "@/constants/colors";
 import useThemeStore from "@/store/useThemeStore";
 import useShareStore from "@/store/useShareStore";
-import useAuthStore from "@/store/useAuthStore";
+
 import useStaffStore from "@/store/useStaffStore";
 import useAbsenceStore from "@/store/useAbsenceStore";
 import { useColorScheme } from "react-native";
@@ -28,7 +27,7 @@ export default function ShareJoinScreen() {
   const systemColorScheme = useColorScheme();
   const { isDarkMode } = useThemeStore();
   const { decodeShareLink } = useShareStore();
-  const { user, isAuthenticated } = useAuthStore();
+
   const { replaceStaff } = useStaffStore();
   const { replaceAbsences } = useAbsenceStore();
   const colorScheme =
@@ -46,15 +45,6 @@ export default function ShareJoinScreen() {
       Alert.alert(
         "Invalid link",
         "This shared calendar link could not be read."
-      );
-      return;
-    }
-
-    if (!isAuthenticated) {
-      Alert.alert(
-        "Sign in required",
-        "Please sign in first to join a shared calendar.",
-        [{ text: "Sign in", onPress: () => router.push("/auth" as any) }]
       );
       return;
     }
@@ -138,20 +128,7 @@ export default function ShareJoinScreen() {
                 </ThemedText>
               </View>
 
-              {!isAuthenticated ? (
-                <View
-                  style={[
-                    styles.noticeCard,
-                    { backgroundColor: colors.surface, borderColor: colors.border },
-                  ]}
-                >
-                  <ShieldCheck size={18} color={colors.primary} />
-                  <ThemedText variant="secondary" style={styles.noticeText}>
-                    Sign in to attach this shared calendar access to your
-                    profile.
-                  </ThemedText>
-                </View>
-              ) : null}
+
 
               <TouchableOpacity
                 testID="share-join-confirm"
