@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { CalendarDays, ChevronLeft, ChevronRight, Flag, Plus, TrendingUp, Users } from 'lucide-react-native';
+import { Calendar, CalendarDays, ChevronLeft, ChevronRight, Clock, Flag, Plus, TrendingUp, Users, UserX } from 'lucide-react-native';
 import { useColorScheme } from 'react-native';
 import ThemedText from '@/components/ThemedText';
 import ThemedView from '@/components/ThemedView';
@@ -18,7 +18,7 @@ import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
 
 import { Absence, AbsenceType } from '@/types';
-import { toDateString, todayDateString, formatDateUKLong, addDays } from '@/utils/dateUtils';
+import { toDateString, fromDateString, todayDateString, formatDateUKLong, addDays } from '@/utils/dateUtils';
 
 function getTypeColor(type: AbsenceType) {
   switch (type) {
@@ -133,6 +133,49 @@ export default function CalendarScreen() {
     ).size;
   })();
 
+  // Who's Off Today
+  const whosOffToday = useMemo(() => {
+    const todayAbsences = absences.filter(
+      (a) => a.date === todayIso && a.type !== 'Public Holiday' && a.status !== 'Rejected'
+    );
+    // Deduplicate by staff name
+    const seen = new Set<string>();
+    const unique: Array<{ name: string; type: AbsenceType }> = [];
+    for (const a of todayAbsences) {
+      if (!seen.has(a.name)) {
+        seen.add(a.name);
+        unique.push({ name: a.name, type: a.type });
+      }
+    }
+    return unique;
+  }, [absences, todayIso]);
+
+  // Upcoming Absences (next 30 days, excluding today)
+  const upcomingAbsences = useMemo(() => {
+    const tomorrow = addDays(new Date(), 1);
+    const thirtyDaysOut = addDays(new Date(), 30);
+    const tomorrowStr = toDateString(tomorrow);
+    const thirtyDaysStr = toDateString(thirtyDaysOut);
+
+    return absences
+      .filter(
+        (a) =>
+          a.date >= tomorrowStr &&
+          a.date <= thirtyDaysStr &&
+          a.type !== 'Public Holiday' &&
+          a.status !== 'Rejected'
+      )
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 8);
+  }, [absences]);
+
+  const formatDateShort = (dateString: string): string => {
+    return fromDateString(dateString).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+    });
+  };
+
   const getDotColor = (count: number) => {
     if (count === 0) return undefined;
     if (count <= 2) return dotColors.green;
@@ -206,6 +249,44 @@ export default function CalendarScreen() {
             <ThemedText variant="secondary" style={styles.dashboardLabel}>This Week</ThemedText>
           </View>
         </View>
+
+        {/* Who's Off Today Widget */}
+        {whosOffToday.length > 0 ? (
+          <View style={[styles.whosOffCard, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: isDesktop ? 1320 : 980 }]}>
+            <View style={styles.whosOffHeader}>
+              <View style={[styles.whosOffIconWrap, { backgroundColor: `${dotColors.red}18` }]}>
+                <UserX size={18} color={dotColors.red} />
+              </View>
+              <View style={styles.whosOffTitleWrap}>
+                <ThemedText style={styles.whosOffTitle}>
+                  Off Today ({whosOffToday.length})
+                </ThemedText>
+              </View>
+            </View>
+            <View style={styles.whosOffNames}>
+              {whosOffToday.map((person) => (
+                <View key={person.name} style={styles.whosOffNameRow}>
+                  <View style={[styles.whosOffDot, { backgroundColor: getTypeColor(person.type) }]} />
+                  <ThemedText style={styles.whosOffNameText}>{person.name}</ThemedText>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : (
+          <View style={[styles.whosOffCard, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: isDesktop ? 1320 : 980 }]}>
+            <View style={styles.whosOffHeader}>
+              <View style={[styles.whosOffIconWrap, { backgroundColor: `${dotColors.green}18` }]}>
+                <UserX size={18} color={dotColors.green} />
+              </View>
+              <View style={styles.whosOffTitleWrap}>
+                <ThemedText style={styles.whosOffTitle}>Off Today (0)</ThemedText>
+              </View>
+            </View>
+            <ThemedText variant="secondary" style={styles.whosOffEmpty}>
+              Everyone's in today
+            </ThemedText>
+          </View>
+        )}
 
         <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: isDesktop ? 1320 : 980 }]}> 
           <View style={styles.weekHeader}>
@@ -331,6 +412,45 @@ export default function CalendarScreen() {
               );
             })}
           </View>
+        </View>
+
+        {/* Upcoming Absences */}
+        <View style={[styles.upcomingCard, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: isDesktop ? 1320 : 980 }]}>
+          <View style={styles.upcomingHeader}>
+            <View style={[styles.upcomingIconWrap, { backgroundColor: `${colors.primary}18` }]}>
+              <Calendar size={18} color={colors.primary} />
+            </View>
+            <ThemedText style={styles.upcomingTitle}>Upcoming Absences</ThemedText>
+          </View>
+          {upcomingAbsences.length > 0 ? (
+            <View style={styles.upcomingList}>
+              {upcomingAbsences.map((a) => (
+                <TouchableOpacity
+                  key={a.id}
+                  style={styles.upcomingRow}
+                  activeOpacity={0.6}
+                  onPress={() => handleOpenDay(a.date)}
+                >
+                  <View style={[styles.upcomingTypeDot, { backgroundColor: getTypeColor(a.type) }]} />
+                  <ThemedText style={styles.upcomingName} numberOfLines={1}>
+                    {a.name}
+                  </ThemedText>
+                  <View style={styles.upcomingDateBadge}>
+                    <Clock size={10} color={colors.secondaryText} />
+                    <ThemedText variant="secondary" style={styles.upcomingDateText}>
+                      {formatDateShort(a.date)}
+                    </ThemedText>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.upcomingEmpty}>
+              <ThemedText variant="secondary" style={styles.upcomingEmptyText}>
+                No upcoming absences in the next 30 days.
+              </ThemedText>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -572,6 +692,124 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: '800' as const,
     color: '#FFFFFF',
+  },
+  whosOffCard: {
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 12,
+    alignSelf: 'center',
+  },
+  whosOffHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  whosOffIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  whosOffTitleWrap: {
+    flex: 1,
+  },
+  whosOffTitle: {
+    fontSize: 16,
+    fontWeight: '800' as const,
+  },
+  whosOffNames: {
+    gap: 8,
+  },
+  whosOffNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  whosOffDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  whosOffNameText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    flex: 1,
+  },
+  whosOffEmpty: {
+    fontSize: 13,
+    fontStyle: 'italic' as const,
+  },
+  upcomingCard: {
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 12,
+    alignSelf: 'center',
+  },
+  upcomingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  upcomingIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upcomingTitle: {
+    fontSize: 16,
+    fontWeight: '800' as const,
+    flex: 1,
+  },
+  upcomingList: {
+    gap: 4,
+  },
+  upcomingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  upcomingTypeDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  upcomingName: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  upcomingDateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(100, 116, 139, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  upcomingDateText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+  },
+  upcomingEmpty: {
+    paddingVertical: 8,
+  },
+  upcomingEmptyText: {
+    fontSize: 13,
+    fontStyle: 'italic' as const,
   },
   fab: {
     position: 'absolute',
