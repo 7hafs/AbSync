@@ -19,7 +19,7 @@ import {
 } from "@/utils/notificationService";
 import Colors from "@/constants/colors";
 import useAuthStore from "@/store/useAuthStore";
-import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { SupabaseAuthProvider, useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { syncProfile } from "@/lib/supabase";
 import {
   fetchAbsences,
@@ -59,9 +59,9 @@ export default function RootLayout() {
   }
 
   return (
-    <AuthProvider>
+    <SupabaseAuthProvider>
       <RootLayoutNav />
-    </AuthProvider>
+    </SupabaseAuthProvider>
   );
 }
 
@@ -74,7 +74,7 @@ function RootLayoutNav() {
     isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
 
-  const { user: rorkUser, isLoading: authLoading } = useAuth();
+  const { user: authUser, isLoading: authLoading } = useSupabaseAuth();
   const authStore = useAuthStore();
   const staffStore = useStaffStore();
   const absenceStore = useAbsenceStore();
@@ -83,16 +83,8 @@ function RootLayoutNav() {
   const remindersStore = useRemindersStore();
   const notificationStore = useNotificationStore();
 
-  // Sync Rork Auth user with local auth store
-  useEffect(() => {
-    if (rorkUser && !authStore.isAuthenticated) {
-      authStore.signIn({
-        id: rorkUser.id,
-        name: rorkUser.name,
-        email: rorkUser.email,
-      });
-    }
-  }, [rorkUser]);
+  // The useSupabaseAuth hook already syncs with useAuthStore
+  // via its own useEffect, so we don't need to duplicate that here.
 
   // Load notification preferences from Supabase when authenticated
   useEffect(() => {
@@ -107,7 +99,12 @@ function RootLayoutNav() {
 
   // Persist notification prefs to Supabase when they change
   useEffect(() => {
-    if (!authStore.isAuthenticated || !authStore.user || !notificationStore.isLoaded) return;
+    if (
+      !authStore.isAuthenticated ||
+      !authStore.user ||
+      !notificationStore.isLoaded
+    )
+      return;
 
     const userId = authStore.user.id;
     const timeout = setTimeout(() => {

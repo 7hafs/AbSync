@@ -6,12 +6,12 @@ import { AuthUser as AppUser } from "@/types";
 /**
  * Local auth state store.
  *
- * This store is the bridge between Rork Auth (hooks/useAuth.tsx)
+ * This store is the bridge between Supabase Auth (hooks/useSupabaseAuth.tsx)
  * and the rest of the app. The Supabase-backed data layer uses
- * the Rork Auth user ID for RLS-scoped queries.
+ * the Supabase Auth user ID for RLS-scoped queries.
  *
  * The email field acts as the unique human-readable account identifier.
- * The id field is the stable Rork Auth user ID (from JWT sub claim).
+ * The id field is the stable Supabase Auth user UUID.
  *
  * Sign out only clears the session — never deletes data from Supabase.
  */

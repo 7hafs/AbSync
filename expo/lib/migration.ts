@@ -3,33 +3,38 @@
  *
  * This module handles the safe migration of existing local data
  * to the Supabase backend. It:
- * 1. Checks if migration has already been performed
+ * 1. Checks if migration has already been performed for this user
  * 2. Reads existing data from AsyncStorage
  * 3. Bulk-inserts into Supabase
- * 4. Marks migration as complete
+ * 4. Marks migration as complete for this user
  *
  * Migration is idempotent — running it multiple times is safe.
+ * The migration key is per-user so that switching from Rork Auth
+ * to Supabase Auth still migrates data under the new user ID.
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import type { Absence, StaffMember } from "@/types";
 
-const MIGRATION_KEY = "supabase_migration_completed_v1";
 const OLD_ABSENCE_KEY = "absence-storage";
 const OLD_STAFF_KEY = "staff-storage";
 
-export async function hasMigrationCompleted(): Promise<boolean> {
+function migrationKey(userId: string): string {
+  return `supabase_migration_completed_v2_${userId}`;
+}
+
+export async function hasMigrationCompleted(userId: string): Promise<boolean> {
   try {
-    const value = await AsyncStorage.getItem(MIGRATION_KEY);
+    const value = await AsyncStorage.getItem(migrationKey(userId));
     return value === "true";
   } catch {
     return false;
   }
 }
 
-export async function markMigrationComplete(): Promise<void> {
-  await AsyncStorage.setItem(MIGRATION_KEY, "true");
+export async function markMigrationComplete(userId: string): Promise<void> {
+  await AsyncStorage.setItem(migrationKey(userId), "true");
 }
 
 /**
@@ -39,9 +44,9 @@ export async function markMigrationComplete(): Promise<void> {
 export async function migrateLocalDataToSupabase(
   userId: string
 ): Promise<{ staffCount: number; absenceCount: number }> {
-  const alreadyMigrated = await hasMigrationCompleted();
+  const alreadyMigrated = await hasMigrationCompleted(userId);
   if (alreadyMigrated) {
-    console.log("[migration] Already migrated, skipping");
+    console.log("[migration] Already migrated for user", userId, "— skipping");
     return { staffCount: 0, absenceCount: 0 };
   }
 
@@ -127,13 +132,9 @@ export async function migrateLocalDataToSupabase(
       }
     }
 
-    if (staffCount > 0 || absenceCount > 0) {
-      await markMigrationComplete();
-      console.log("[migration] Migration completed successfully");
-    } else {
-      // No data to migrate, but mark as done so we don't keep trying
-      await markMigrationComplete();
-    }
+    // Always mark as complete so we don't retry indefinitely
+    await markMigrationComplete(userId);
+    console.log("[migration] Migration completed successfully for user", userId);
 
     return { staffCount, absenceCount };
   } catch (err) {

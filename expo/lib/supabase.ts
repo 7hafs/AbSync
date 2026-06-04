@@ -1,25 +1,28 @@
 import { createClient } from "@supabase/supabase-js";
-import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Database } from "@/src/integrations/supabase/types";
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
+/**
+ * Supabase client configured for native session persistence.
+ *
+ * Uses AsyncStorage for token storage so sessions survive
+ * app restarts, updates, and reinstalls (via iCloud key-value).
+ * Auth state changes are observed by the useSupabaseAuth hook.
+ */
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-  global: {
-    headers: {},
-  },
   auth: {
-    persistSession: false,
-  },
-  accessToken: async () => {
-    const token = await SecureStore.getItemAsync("access_token");
-    return token ?? undefined;
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
   },
 });
 
 /**
- * Sync the user profile row in Supabase after sign-in.
+ * Sync the user profile row in Supabase after sign-in or sign-up.
  * Must be called after every successful authentication.
  */
 export async function syncProfile(user: {
