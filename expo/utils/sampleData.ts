@@ -28,10 +28,31 @@ export const sampleAbsences: Absence[] = [
   { id: 'a4', staffId: '4', name: 'Chloe Green', type: 'Other', date: '2026-04-24', duration: 'AM', status: 'Rejected', cover: null, notes: 'Dentist', createdBy: 'Manager', createdAt: '2026-04-15T00:00:00.000Z' },
 ];
 
+/**
+ * Seed sample data on first launch only.
+ *
+ * Checks if the store already has data (rehydrated from AsyncStorage by Zustand)
+ * before adding any sample records. This prevents sample data from being injected
+ * on every app restart and ensures real user data is never overwritten.
+ */
 export function initializeSampleData(staffStore: any, absenceStore: any) {
-  console.log('[sampleData] initializing sample data');
+  const hasExistingStaff = Array.isArray(staffStore.staff) && staffStore.staff.length > 0;
+  const hasExistingAbsences = Array.isArray(absenceStore.absences) && absenceStore.absences.length > 0;
 
-  if (staffStore.staff.length === 0) {
+  if (hasExistingStaff && hasExistingAbsences) {
+    console.log(
+      '[sampleData] Skipping — existing data found (staff:',
+      staffStore.staff.length,
+      'absences:',
+      absenceStore.absences.length,
+      ')'
+    );
+    return;
+  }
+
+  console.log('[sampleData] Seeding sample data for first launch');
+
+  if (!hasExistingStaff) {
     sampleStaff.forEach((staff: StaffMember) => {
       if (!staffStore.staff.find((s: StaffMember) => s.id === staff.id)) {
         staffStore.addStaff(staff);
@@ -39,7 +60,7 @@ export function initializeSampleData(staffStore: any, absenceStore: any) {
     });
   }
 
-  if (absenceStore.absences.length === 0) {
+  if (!hasExistingAbsences) {
     sampleAbsences.forEach((absence: Absence) => {
       if (!absenceStore.absences.find((a: Absence) => a.id === absence.id)) {
         absenceStore.addAbsence(absence);

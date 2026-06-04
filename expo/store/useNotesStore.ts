@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NoteType } from "@/types";
+import { DB_VERSION } from "@/lib/storageManager";
 
 interface NotesState {
   notes: NoteType[];
@@ -48,7 +49,16 @@ const useNotesStore = create<NotesState>()(
           ),
         })),
 
-      replaceNotes: (notes) => set(() => ({ notes })),
+      replaceNotes: (incoming) => {
+        if (!Array.isArray(incoming) || incoming.length === 0) {
+          const currentCount = get().notes.length;
+          if (currentCount > 0) {
+            console.warn('[useNotesStore] Refusing to replace notes with empty array');
+            return;
+          }
+        }
+        set(() => ({ notes: incoming }));
+      },
       setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
 
       searchNotes: (query) => {
@@ -76,6 +86,8 @@ const useNotesStore = create<NotesState>()(
     {
       name: "notes-storage-v2",
       storage: createJSONStorage(() => AsyncStorage),
+      version: DB_VERSION,
+      migrate: (persisted) => persisted,
       partialize: (state) => ({
         notes: state.notes,
       }),

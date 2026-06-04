@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ReminderType } from "@/types";
+import { DB_VERSION } from "@/lib/storageManager";
 
 interface RemindersState {
   reminders: ReminderType[];
@@ -47,7 +48,16 @@ const useRemindersStore = create<RemindersState>()(
           ),
         })),
 
-      replaceReminders: (reminders) => set(() => ({ reminders })),
+      replaceReminders: (incoming) => {
+        if (!Array.isArray(incoming) || incoming.length === 0) {
+          const currentCount = get().reminders.length;
+          if (currentCount > 0) {
+            console.warn('[useRemindersStore] Refusing to replace reminders with empty array');
+            return;
+          }
+        }
+        set(() => ({ reminders: incoming }));
+      },
       setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
 
       getRemindersForDate: (date) => {
@@ -65,6 +75,8 @@ const useRemindersStore = create<RemindersState>()(
     {
       name: "reminders-storage-v2",
       storage: createJSONStorage(() => AsyncStorage),
+      version: DB_VERSION,
+      migrate: (persisted) => persisted,
       partialize: (state) => ({
         reminders: state.reminders,
       }),

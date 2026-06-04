@@ -16,6 +16,7 @@ import {
   initializeNotifications,
   scheduleDailyNotifications,
 } from "@/utils/notificationService";
+import { startupIntegrityCheck } from "@/lib/storageManager";
 import Colors from "@/constants/colors";
 
 export const unstable_settings = {
@@ -65,18 +66,28 @@ function RootLayoutNav() {
   const remindersStore = useRemindersStore();
   const notificationStore = useNotificationStore();
 
-  // On mount: load local data and seed sample data if empty
+  // On mount: verify data integrity, load local data, and seed sample data if empty
   useEffect(() => {
-    staffStore.setLoaded(true);
-    absenceStore.setLoaded(true);
-    calendarStore.setLoaded(true);
-    notesStore.setLoaded(true);
-    remindersStore.setLoaded(true);
+    const init = async () => {
+      // Step 1: Run integrity check on all persisted stores
+      await startupIntegrityCheck();
 
-    initializeSampleData(staffStore, absenceStore);
+      // Step 2: Mark stores as loaded so Zustand rehydrates from AsyncStorage
+      staffStore.setLoaded(true);
+      absenceStore.setLoaded(true);
+      calendarStore.setLoaded(true);
+      notesStore.setLoaded(true);
+      remindersStore.setLoaded(true);
+      notificationStore.setLoaded(true);
 
-    // Initialize notifications with local data
-    initializeNotifications(LOCAL_USER_ID);
+      // Step 3: Seed sample data ONLY if no real data exists
+      initializeSampleData(staffStore, absenceStore);
+
+      // Step 4: Initialize notifications with local data
+      initializeNotifications(LOCAL_USER_ID);
+    };
+
+    init();
   }, []);
 
   // Reschedule notifications when preferences change

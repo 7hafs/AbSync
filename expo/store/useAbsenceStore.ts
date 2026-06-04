@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Absence, AbsenceDuration, AbsenceStatus } from "@/types";
+import { DB_VERSION } from "@/lib/storageManager";
 
 export const DEFAULT_MAX_ABSENCES_PER_DAY = 2;
 
@@ -168,6 +169,16 @@ const useAbsenceStore = create<AbsenceState>()(
       },
 
       replaceAbsences: (incoming) => {
+        // Safety: never replace with empty data if we already have records
+        if (!Array.isArray(incoming) || incoming.length === 0) {
+          const currentCount = get().absences.length;
+          if (currentCount > 0) {
+            console.warn(
+              '[useAbsenceStore] Refusing to replace ${currentCount} absences with empty array — possible data loss prevented'
+            );
+            return;
+          }
+        }
         // Deduplicate by ID before replacing
         const seen = new Set<string>();
         const deduplicated = incoming.filter((a) => {
@@ -274,6 +285,19 @@ const useAbsenceStore = create<AbsenceState>()(
     {
       name: "absence-storage-v2",
       storage: createJSONStorage(() => AsyncStorage),
+      version: DB_VERSION,
+      migrate: (persisted, version) => {
+        // Future migrations: handle schema changes here when DB_VERSION increments
+        // e.g. if version < 2, add missing fields to old records
+        const state = persisted as { absences?: Absence[]; dbVersion?: number };
+        if (state.absences) {
+          state.absences = state.absences.map((a) => ({
+            ...a,
+            notes: a.notes ?? '',
+          }));
+        }
+        return state as Partial<AbsenceState>;
+      },
       partialize: (state) => ({
         absences: state.absences,
         dbVersion: state.dbVersion,

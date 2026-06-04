@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { EventType } from "@/types";
+import { DB_VERSION } from "@/lib/storageManager";
 
 interface CalendarState {
   events: EventType[];
@@ -44,7 +45,16 @@ const useCalendarStore = create<CalendarState>()(
       setSelectedDate: (date) =>
         set(() => ({ selectedDate: date })),
 
-      replaceEvents: (events) => set(() => ({ events })),
+      replaceEvents: (incoming) => {
+        if (!Array.isArray(incoming) || incoming.length === 0) {
+          const currentCount = get().events.length;
+          if (currentCount > 0) {
+            console.warn('[useCalendarStore] Refusing to replace events with empty array');
+            return;
+          }
+        }
+        set(() => ({ events: incoming }));
+      },
 
       setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
 
@@ -61,6 +71,8 @@ const useCalendarStore = create<CalendarState>()(
     {
       name: "calendar-storage-v2",
       storage: createJSONStorage(() => AsyncStorage),
+      version: DB_VERSION,
+      migrate: (persisted) => persisted,
       partialize: (state) => ({
         events: state.events,
       }),

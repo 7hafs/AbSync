@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StaffMember } from "@/types";
+import { DB_VERSION } from "@/lib/storageManager";
 
 interface StaffState {
   staff: StaffMember[];
@@ -61,7 +62,16 @@ const useStaffStore = create<StaffState>()(
           ),
         })),
 
-      replaceStaff: (staff) => set(() => ({ staff })),
+      replaceStaff: (incoming) => {
+        if (!Array.isArray(incoming) || incoming.length === 0) {
+          const currentCount = get().staff.length;
+          if (currentCount > 0) {
+            console.warn('[useStaffStore] Refusing to replace staff with empty array');
+            return;
+          }
+        }
+        set(() => ({ staff: incoming }));
+      },
 
       setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
 
@@ -89,6 +99,18 @@ const useStaffStore = create<StaffState>()(
     {
       name: "staff-storage-v2",
       storage: createJSONStorage(() => AsyncStorage),
+      version: DB_VERSION,
+      migrate: (persisted) => {
+        const state = persisted as { staff?: StaffMember[] };
+        if (state.staff) {
+          state.staff = state.staff.map((s) => ({
+            ...s,
+            department: s.department ?? '',
+            active: s.active ?? true,
+          }));
+        }
+        return state;
+      },
       partialize: (state) => ({
         staff: state.staff,
       }),

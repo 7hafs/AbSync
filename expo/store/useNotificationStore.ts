@@ -7,6 +7,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { DB_VERSION } from "@/lib/storageManager";
 
 export interface NotificationPreferences {
   morningEnabled: boolean;
@@ -61,6 +62,8 @@ const useNotificationStore = create<NotificationState>()(
     {
       name: "notification-prefs-v2",
       storage: createJSONStorage(() => AsyncStorage),
+      version: DB_VERSION,
+      migrate: (persisted) => persisted,
       partialize: (state) => ({
         preferences: state.preferences,
       }),

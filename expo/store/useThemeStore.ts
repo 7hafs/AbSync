@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useColorScheme } from "react-native";
+import { DB_VERSION } from "@/lib/storageManager";
 
 interface ThemeState {
   isDarkMode: boolean | null; // null means follow system
@@ -35,6 +36,8 @@ const useThemeStore = create<ThemeState>()(
     {
       name: "theme-storage",
       storage: createJSONStorage(() => AsyncStorage),
+      version: DB_VERSION,
+      migrate: (persisted) => persisted,
     }
   )
 );

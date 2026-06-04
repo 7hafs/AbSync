@@ -24,38 +24,25 @@ import {
   Upload,
   Database,
   FileSpreadsheet,
+  ShieldCheck,
+  ShieldOff,
+  RefreshCw,
 } from "lucide-react-native";
 import { exportAbsencesCSV } from "@/utils/csvExport";
 import { useRouter } from "expo-router";
-import * as Sharing from "expo-sharing";
-import * as FileSystem from "expo-file-system";
 import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
 import useThemeStore from "@/store/useThemeStore";
 import Colors from "@/constants/colors";
 import { useColorScheme } from "react-native";
 import useNotificationStore from "@/store/useNotificationStore";
-import useStaffStore from "@/store/useStaffStore";
 import useAbsenceStore from "@/store/useAbsenceStore";
-import useCalendarStore from "@/store/useCalendarStore";
-import useNotesStore from "@/store/useNotesStore";
-import useRemindersStore from "@/store/useRemindersStore";
 import { sendTestNotification } from "@/utils/notificationService";
-
-interface BackupData {
-  version: number;
-  exportedAt: string;
-  appVersion: string;
-  staff: ReturnType<typeof useStaffStore.getState>["staff"];
-  absences: ReturnType<typeof useAbsenceStore.getState>["absences"];
-  events: ReturnType<typeof useCalendarStore.getState>["events"];
-  notes: ReturnType<typeof useNotesStore.getState>["notes"];
-  reminders: ReturnType<typeof useRemindersStore.getState>["reminders"];
-  notificationPreferences: ReturnType<
-    typeof useNotificationStore.getState
-  >["preferences"];
-  theme: ReturnType<typeof useThemeStore.getState>["isDarkMode"];
-}
+import {
+  exportBackupFile,
+  verifyStorageIntegrity,
+  getStorageStats,
+} from "@/lib/storageManager";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -72,7 +59,18 @@ export default function SettingsScreen() {
   const colors = Colors[colorScheme || "light"];
 
   const [isExporting, setIsExporting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
+  const [integrityStatus, setIntegrityStatus] = useState<{
+    checked: boolean;
+    healthy: boolean;
+    errors: number;
+    warnings: number;
+  }>({ checked: false, healthy: true, errors: 0, warnings: 0 });
+  const [storageStats, setStorageStats] = useState<{
+    totalRecords: number;
+    absences: number;
+    staff: number;
+  } | null>(null);
 
   const handleToggleDarkMode = () => {
     if (isDarkMode === null) {
@@ -92,42 +90,26 @@ export default function SettingsScreen() {
 
   // ── Backup & Restore ──────────────────────────────────────────────────────
 
+  const loadStorageStats = async () => {
+    const stats = await getStorageStats();
+    setStorageStats(stats);
+  };
+
+  React.useEffect(() => {
+    loadStorageStats();
+  }, []);
+
   const handleExportBackup = async () => {
     setIsExporting(true);
     try {
-      const backup: BackupData = {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        appVersion: "2.0.0",
-        staff: useStaffStore.getState().staff,
-        absences: useAbsenceStore.getState().absences,
-        events: useCalendarStore.getState().events,
-        notes: useNotesStore.getState().notes,
-        reminders: useRemindersStore.getState().reminders,
-        notificationPreferences: useNotificationStore.getState().preferences,
-        theme: useThemeStore.getState().isDarkMode,
-      };
-
-      const json = JSON.stringify(backup, null, 2);
-      const fileName = `absenceflow-backup-${new Date().toISOString().split("T")[0]}.json`;
-      const filePath = `${FileSystem.cacheDirectory}${fileName}`;
-
-      await FileSystem.writeAsStringAsync(filePath, json, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
-
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(filePath, {
-          mimeType: "application/json",
-          dialogTitle: "Save Backup",
-          UTI: "public.json",
-        });
-      } else {
+      const result = await exportBackupFile();
+      if (result.success) {
         Alert.alert(
-          "Backup Created",
-          `Saved to ${filePath}. Share is not available on this device.`
+          "Backup Exported",
+          "Your backup file is ready. Save it to a safe location like iCloud Drive or Files."
         );
+      } else {
+        Alert.alert("Export Failed", result.message);
       }
     } catch (err) {
       console.error("[Settings] Export failed:", err);
@@ -140,7 +122,7 @@ export default function SettingsScreen() {
   const handleImportBackup = async () => {
     Alert.alert(
       "Import Backup",
-      "To import a backup, open the .json backup file from your Files app or another app and share it with AbsenceFlow. The app will detect and restore your data automatically.",
+      "To restore your data, open a .json backup file from your Files app and share it with AbsenceFlow.\n\nYour current data will be replaced with the backup data. This cannot be undone.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -148,12 +130,41 @@ export default function SettingsScreen() {
           onPress: () => {
             Alert.alert(
               "Import Instructions",
-              "1. Locate your backup .json file in Files, iCloud Drive, or another storage app.\n\n2. Tap the file and select 'Share'.\n\n3. Choose AbsenceFlow from the share sheet.\n\n4. The app will open and restore your data."
+              "1. Locate your backup .json file in Files, iCloud Drive, or another storage app.\n\n2. Tap the file and select 'Share'.\n\n3. Choose AbsenceFlow from the share sheet.\n\n4. The app will open and restore your data. You may need to restart the app."
             );
           },
         },
       ]
     );
+  };
+
+  const handleVerifyIntegrity = async () => {
+    setIsChecking(true);
+    try {
+      const report = await verifyStorageIntegrity();
+      setIntegrityStatus({
+        checked: true,
+        healthy: report.healthy,
+        errors: report.errors.length,
+        warnings: report.warnings.length,
+      });
+      await loadStorageStats();
+      if (report.healthy) {
+        Alert.alert(
+          "Storage Healthy",
+          `All data stores are intact.\n\nRecords: ${storageStats?.totalRecords ?? "..."}\n\n${report.warnings.length > 0 ? `Warnings: ${report.warnings.length}` : "No warnings."}`
+        );
+      } else {
+        Alert.alert(
+          "Storage Issues Detected",
+          `${report.errors.length} error(s) found. Corrupted stores have been reset to prevent crashes.\n\nPlease restore from a backup if data is missing.\n\nErrors:\n${report.errors.join("\n")}`
+        );
+      }
+    } catch (err) {
+      console.error("[Settings] Integrity check failed:", err);
+    } finally {
+      setIsChecking(false);
+    }
   };
 
   return (
@@ -319,7 +330,7 @@ export default function SettingsScreen() {
               <View style={styles.settingTextContainer}>
                 <ThemedText weight="semibold">Export Backup</ThemedText>
                 <ThemedText variant="secondary" size="small">
-                  Save all data as a backup file
+                  Save all data (staff, absences, notes, settings)
                 </ThemedText>
               </View>
             </View>
@@ -332,40 +343,58 @@ export default function SettingsScreen() {
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
             onPress={handleImportBackup}
-            disabled={isImporting}
           >
             <View style={styles.settingContent}>
-              {isImporting ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <Upload size={24} color={colors.primary} />
-              )}
+              <Upload size={24} color={colors.primary} />
               <View style={styles.settingTextContainer}>
                 <ThemedText weight="semibold">Import Backup</ThemedText>
                 <ThemedText variant="secondary" size="small">
-                  Restore data from a backup file
+                  Restore all data from a backup file
                 </ThemedText>
               </View>
             </View>
             <ChevronRight size={20} color={colors.secondaryText} />
           </TouchableOpacity>
 
-          <View
+          <TouchableOpacity
             style={[
               styles.settingItem,
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
+            onPress={handleVerifyIntegrity}
+            disabled={isChecking}
           >
             <View style={styles.settingContent}>
-              <Database size={24} color={colors.primary} />
+              {isChecking ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : integrityStatus.checked ? (
+                integrityStatus.healthy ? (
+                  <ShieldCheck size={24} color="#22C55E" />
+                ) : (
+                  <ShieldOff size={24} color="#EF4444" />
+                )
+              ) : (
+                <Database size={24} color={colors.primary} />
+              )}
               <View style={styles.settingTextContainer}>
-                <ThemedText weight="semibold">Storage</ThemedText>
+                <ThemedText weight="semibold">
+                  {integrityStatus.checked
+                    ? integrityStatus.healthy
+                      ? "Storage Healthy"
+                      : "Storage Issues Detected"
+                    : "Verify Storage Integrity"}
+                </ThemedText>
                 <ThemedText variant="secondary" size="small">
-                  All data is stored locally on this device
+                  {storageStats
+                    ? `${storageStats.totalRecords} records (${storageStats.staff} staff, ${storageStats.absences} absences)`
+                    : "Check data health and record counts"}
                 </ThemedText>
               </View>
             </View>
-          </View>
+            {isChecking ? null : (
+              <RefreshCw size={20} color={colors.secondaryText} />
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* ── Access & Sharing Section ─────────────────────────────────────── */}
@@ -518,8 +547,8 @@ export default function SettingsScreen() {
             size="small"
             style={styles.footerText}
           >
-            AbsenceFlow — Your data is stored locally and backed up on your
-            device.
+            AbsenceFlow — Your data is stored locally on your device and
+            protected against updates. Export regular backups for added safety.
           </ThemedText>
         </View>
       </ScrollView>
@@ -553,9 +582,11 @@ const styles = StyleSheet.create({
   settingContent: {
     flexDirection: "row",
     alignItems: "center",
+    flex: 1,
   },
   settingTextContainer: {
     marginLeft: 16,
+    flex: 1,
   },
   footer: {
     marginTop: 8,
