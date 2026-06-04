@@ -100,25 +100,38 @@ const useAbsenceStore = create<AbsenceState>()(
       dbVersion: 0,
 
       addAbsence: (absence) =>
-        set((state) => ({
-          absences: [...state.absences, absence],
-        })),
+        set((state) => {
+          // Deduplicate: skip if an absence with the same ID already exists
+          if (state.absences.some((a) => a.id === absence.id)) {
+            console.log('[useAbsenceStore] Skipping duplicate absence ID:', absence.id);
+            return state;
+          }
+          return { absences: [...state.absences, absence] };
+        }),
 
       createAbsences: (input) => {
         const createdAt = new Date().toISOString();
-        const nextAbsences: Absence[] = input.dates.map((date) => ({
-          id: createAbsenceId(date, input.staffId, input.duration),
-          staffId: input.staffId,
-          name: input.name,
-          type: input.type,
-          date,
-          duration: input.duration,
-          status: "Pending" as const,
-          cover: input.cover ?? null,
-          notes: input.notes,
-          createdBy: input.createdBy,
-          createdAt,
-        }));
+        const nextAbsences: Absence[] = input.dates.map((date) => {
+          let id: string;
+          // Ensure unique ID — retry if random collision (extremely rare)
+          do {
+            id = createAbsenceId(date, input.staffId, input.duration);
+          } while (get().absences.some((a) => a.id === id));
+
+          return {
+            id,
+            staffId: input.staffId,
+            name: input.name,
+            type: input.type,
+            date,
+            duration: input.duration,
+            status: "Pending" as const,
+            cover: input.cover ?? null,
+            notes: input.notes,
+            createdBy: input.createdBy,
+            createdAt,
+          };
+        });
 
         set((state) => ({
           absences: [...state.absences, ...nextAbsences],
@@ -154,7 +167,19 @@ const useAbsenceStore = create<AbsenceState>()(
         }));
       },
 
-      replaceAbsences: (absences) => set(() => ({ absences })),
+      replaceAbsences: (incoming) => {
+        // Deduplicate by ID before replacing
+        const seen = new Set<string>();
+        const deduplicated = incoming.filter((a) => {
+          if (seen.has(a.id)) {
+            console.log('[useAbsenceStore] Dropping duplicate absence ID during replace:', a.id);
+            return false;
+          }
+          seen.add(a.id);
+          return true;
+        });
+        set(() => ({ absences: deduplicated }));
+      },
 
       setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
       setDbVersion: (version) => set(() => ({ dbVersion: version })),

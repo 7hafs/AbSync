@@ -43,14 +43,14 @@ export default function WeekView({ currentDate, onSelectDate }: WeekViewProps) {
           <ThemedText variant="secondary" size="small">Time</ThemedText>
         </View>
         
-        {weekDates.map((date, index) => {
+        {weekDates.map((date) => {
           const dateStr = formatDate(date);
           const isToday = dateStr === today;
           const isSelected = dateStr === selectedDate;
           
           return (
             <View 
-              key={index} 
+              key={dateStr} 
               style={[
                 styles.dayColumn,
                 isSelected && { backgroundColor: colors.surfaceVariant },
@@ -75,21 +75,21 @@ export default function WeekView({ currentDate, onSelectDate }: WeekViewProps) {
       </View>
       
       <ScrollView>
-        {timeSlots.map((time, timeIndex) => (
-          <View key={timeIndex} style={styles.timeRow}>
+        {timeSlots.map((time) => (
+          <View key={time} style={styles.timeRow}>
             <View style={styles.timeColumn}>
               <ThemedText variant="secondary" size="small">{time}</ThemedText>
             </View>
             
-            {weekDates.map((date, dateIndex) => {
+            {weekDates.map((date) => {
               const dateStr = formatDate(date);
               const eventsForSlot = getEventsForDateAndTime(dateStr, time);
               
               return (
-                <View key={dateIndex} style={styles.timeSlot}>
-                  {eventsForSlot.map((event, eventIndex) => (
+                <View key={dateStr} style={styles.timeSlot}>
+                  {eventsForSlot.map((event) => (
                     <View 
-                      key={eventIndex} 
+                      key={event.id} 
                       style={[
                         styles.eventItem,
                         { backgroundColor: colors.primary },

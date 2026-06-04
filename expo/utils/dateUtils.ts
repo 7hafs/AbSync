@@ -38,6 +38,12 @@ export function todayDateString(): string {
 }
 
 /**
+ * Alias for toDateString — format a Date as a "YYYY-MM-DD" calendar-date
+ * string using LOCAL time. Used by calendar view components.
+ */
+export const formatDate = toDateString;
+
+/**
  * Format a date string for UK display: "DD/MM/YYYY"
  */
 export function formatDateUK(dateString: string): string {

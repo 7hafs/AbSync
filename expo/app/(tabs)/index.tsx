@@ -194,7 +194,7 @@ export default function CalendarScreen() {
                       const typeColor = getTypeColor(absence.type);
                       return (
                         <View
-                          key={absence.id}
+                          key={`session-${absence.id}`}
                           style={[styles.eventBar, { backgroundColor: `${typeColor}33`, borderLeftColor: typeColor }]}
                         >
                           <ThemedText numberOfLines={1} style={[styles.eventText, { color: typeColor }]}>
@@ -204,7 +204,7 @@ export default function CalendarScreen() {
                       );
                     })}
                     {list.length > maxEventsPerSession ? (
-                      <ThemedText variant="secondary" style={styles.moreText}>
+                      <ThemedText key={`more-${list.length}`} variant="secondary" style={styles.moreText}>
                         +{list.length - maxEventsPerSession}
                       </ThemedText>
                     ) : null}

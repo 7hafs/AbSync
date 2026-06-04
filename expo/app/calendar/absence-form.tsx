@@ -22,14 +22,14 @@ import useStaffStore from '@/store/useStaffStore';
 
 import { Absence, AbsenceDuration, AbsenceStatus, AbsenceType } from '@/types';
 import { useColorScheme } from 'react-native';
-import { toDateString, todayDateString } from '@/utils/dateUtils';
+import { toDateString, fromDateString, todayDateString } from '@/utils/dateUtils';
 
 const ABSENCE_TYPES: AbsenceType[] = ['Holiday', 'Sick Leave', 'Appointment', 'Training'];
 const DURATIONS: AbsenceDuration[] = ['Full', 'AM', 'PM'];
 const STATUSES: AbsenceStatus[] = ['Pending', 'Approved', 'Rejected'];
 
 function formatDateLabel(date: string) {
-  return new Date(date).toLocaleDateString('en-GB', {
+  return fromDateString(date).toLocaleDateString('en-GB', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',

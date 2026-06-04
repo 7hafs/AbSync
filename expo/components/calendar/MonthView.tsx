@@ -87,8 +87,8 @@ export default function MonthView({ currentDate, onSelectDate }: MonthViewProps)
   return (
     <ThemedView style={styles.container}>
       <View style={styles.weekDaysContainer}>
-        {weekDays.map((day, index) => (
-          <View key={index} style={styles.weekDayCell}>
+        {weekDays.map((day) => (
+          <View key={day} style={styles.weekDayCell}>
             <ThemedText variant="secondary" size="small">
               {day}
             </ThemedText>
@@ -98,7 +98,7 @@ export default function MonthView({ currentDate, onSelectDate }: MonthViewProps)
       
       <View style={styles.daysContainer}>
         {calendarDays.map((day, index) => (
-          <View key={index} style={styles.dayCell}>
+          <View key={day ? day.date : `empty-${index}`} style={styles.dayCell}>
             {day ? (
               <TouchableOpacity
                 style={[
