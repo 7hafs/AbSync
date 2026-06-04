@@ -10,8 +10,13 @@ import useAbsenceStore from "@/store/useAbsenceStore";
 import useCalendarStore from "@/store/useCalendarStore";
 import useNotesStore from "@/store/useNotesStore";
 import useRemindersStore from "@/store/useRemindersStore";
+import useNotificationStore from "@/store/useNotificationStore";
 import { initializeSampleData } from "@/utils/sampleData";
-import { initializeNotifications } from "@/utils/notificationService";
+import {
+  initializeNotifications,
+  cancelAllDailyNotifications,
+  scheduleDailyNotifications,
+} from "@/utils/notificationService";
 import Colors from "@/constants/colors";
 import useAuthStore from "@/store/useAuthStore";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
@@ -76,6 +81,7 @@ function RootLayoutNav() {
   const calendarStore = useCalendarStore();
   const notesStore = useNotesStore();
   const remindersStore = useRemindersStore();
+  const notificationStore = useNotificationStore();
 
   // Sync Rork Auth user with local auth store
   useEffect(() => {
@@ -87,6 +93,37 @@ function RootLayoutNav() {
       });
     }
   }, [rorkUser]);
+
+  // Load notification preferences from Supabase when authenticated
+  useEffect(() => {
+    if (!authStore.isAuthenticated || !authStore.user) return;
+
+    const userId = authStore.user.id;
+    notificationStore.syncFromSupabase(userId).then(() => {
+      // After prefs are loaded, initialize notifications
+      initializeNotifications(userId);
+    });
+  }, [authStore.isAuthenticated, authStore.user?.id]);
+
+  // Persist notification prefs to Supabase when they change
+  useEffect(() => {
+    if (!authStore.isAuthenticated || !authStore.user || !notificationStore.isLoaded) return;
+
+    const userId = authStore.user.id;
+    const timeout = setTimeout(() => {
+      notificationStore.persistToSupabase(userId);
+      // Reschedule notifications to reflect updated prefs
+      scheduleDailyNotifications(userId);
+    }, 500);
+
+    return () => clearTimeout(timeout);
+  }, [
+    notificationStore.preferences.morningEnabled,
+    notificationStore.preferences.eveningEnabled,
+    notificationStore.preferences.instantAlertsEnabled,
+    authStore.isAuthenticated,
+    notificationStore.isLoaded,
+  ]);
 
   // Load data from Supabase when authenticated
   useEffect(() => {
@@ -153,15 +190,13 @@ function RootLayoutNav() {
         absences: absences.length,
         events: events.length,
       });
+
+      // Refresh notifications with latest counts after data load
+      scheduleDailyNotifications(userId);
     }
 
     loadData();
   }, [authStore.isAuthenticated, authStore.user?.id]);
-
-  // Initialize notifications
-  useEffect(() => {
-    initializeNotifications();
-  }, []);
 
   // Auth routing
   useEffect(() => {
@@ -177,6 +212,8 @@ function RootLayoutNav() {
     });
 
     if (!authStore.isAuthenticated && !isAuthRoute && !isShareRoute) {
+      // Cancel all notifications when user is not authenticated
+      cancelAllDailyNotifications();
       router.replace("/auth" as any);
       return;
     }

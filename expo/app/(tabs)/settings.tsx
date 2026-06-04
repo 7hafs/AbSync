@@ -17,6 +17,10 @@ import {
   Share2,
   LogOut,
   ShieldCheck,
+  Bell,
+  BellOff,
+  Zap,
+  Clock,
 } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import ThemedView from "@/components/ThemedView";
@@ -26,6 +30,8 @@ import Colors from "@/constants/colors";
 import { useColorScheme } from "react-native";
 import useAuthStore from "@/store/useAuthStore";
 import { useAuth } from "@/hooks/useAuth";
+import useNotificationStore from "@/store/useNotificationStore";
+import { sendTestNotification } from "@/utils/notificationService";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -33,6 +39,12 @@ export default function SettingsScreen() {
   const { isDarkMode, setDarkMode } = useThemeStore();
   const { user, isAuthenticated, signOut: localSignOut } = useAuthStore();
   const { signOut: rorkSignOut } = useAuth();
+  const {
+    preferences: notifPrefs,
+    setMorningEnabled,
+    setEveningEnabled,
+    setInstantAlertsEnabled,
+  } = useNotificationStore();
   const colorScheme =
     isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
@@ -104,6 +116,108 @@ export default function SettingsScreen() {
             thumbColor={Platform.OS === "android" ? colors.primary : ""}
           />
         </View>
+      </View>
+
+      <View style={styles.section}>
+        <ThemedText size="large" weight="bold" style={styles.sectionTitle}>
+          Notifications
+        </ThemedText>
+
+        <View
+          style={[
+            styles.settingItem,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.settingContent}>
+            <Clock size={24} color={colors.primary} />
+            <View style={styles.settingTextContainer}>
+              <ThemedText weight="semibold">10:00 AM Summary</ThemedText>
+              <ThemedText variant="secondary" size="small">
+                Daily morning absence summary
+              </ThemedText>
+            </View>
+          </View>
+          <Switch
+            value={notifPrefs.morningEnabled}
+            onValueChange={(val) => setMorningEnabled(val)}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={Platform.OS === "android" ? colors.primary : ""}
+          />
+        </View>
+
+        <View
+          style={[
+            styles.settingItem,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.settingContent}>
+            <Clock size={24} color={colors.primary} />
+            <View style={styles.settingTextContainer}>
+              <ThemedText weight="semibold">5:00 PM Summary</ThemedText>
+              <ThemedText variant="secondary" size="small">
+                Daily evening absence summary
+              </ThemedText>
+            </View>
+          </View>
+          <Switch
+            value={notifPrefs.eveningEnabled}
+            onValueChange={(val) => setEveningEnabled(val)}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={Platform.OS === "android" ? colors.primary : ""}
+          />
+        </View>
+
+        <View
+          style={[
+            styles.settingItem,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.settingContent}>
+            <Zap size={24} color={colors.primary} />
+            <View style={styles.settingTextContainer}>
+              <ThemedText weight="semibold">Real-time Alerts</ThemedText>
+              <ThemedText variant="secondary" size="small">
+                Instant notifications for absence changes
+              </ThemedText>
+            </View>
+          </View>
+          <Switch
+            value={notifPrefs.instantAlertsEnabled}
+            onValueChange={(val) => setInstantAlertsEnabled(val)}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={Platform.OS === "android" ? colors.primary : ""}
+          />
+        </View>
+
+        <TouchableOpacity
+          style={[
+            styles.settingItem,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+          onPress={() => {
+            if (user?.id) {
+              sendTestNotification(user.id).then(() => {
+                Alert.alert("Test Sent", "A test notification has been sent.");
+              });
+            } else {
+              Alert.alert("Sign In Required", "Please sign in to test notifications.");
+            }
+          }}
+        >
+          <View style={styles.settingContent}>
+            <Bell size={24} color={colors.primary} />
+            <View style={styles.settingTextContainer}>
+              <ThemedText weight="semibold">Test Notification</ThemedText>
+              <ThemedText variant="secondary" size="small">
+                Send a test summary with current counts
+              </ThemedText>
+            </View>
+          </View>
+          <ChevronRight size={20} color={colors.secondaryText} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.section}>
