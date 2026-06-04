@@ -131,6 +131,10 @@ function RootLayoutNav() {
         name="settings/archived-staff"
         options={{ title: "Archived Staff" }}
       />
+      <Stack.Screen
+        name="settings/about"
+        options={{ title: "Support & About" }}
+      />
     </Stack>
   );
 }

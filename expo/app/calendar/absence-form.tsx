@@ -24,9 +24,28 @@ import { Absence, AbsenceDuration, AbsenceStatus, AbsenceType } from '@/types';
 import { useColorScheme } from 'react-native';
 import { toDateString, fromDateString, todayDateString } from '@/utils/dateUtils';
 
-const ABSENCE_TYPES: AbsenceType[] = ['Holiday', 'Sick Leave', 'Appointment', 'Training'];
+const ABSENCE_TYPES: AbsenceType[] = ['Holiday', 'Sickness', 'Training', 'Unpaid Leave', 'Other'];
 const DURATIONS: AbsenceDuration[] = ['Full', 'AM', 'PM'];
 const STATUSES: AbsenceStatus[] = ['Pending', 'Approved', 'Rejected'];
+
+function getTypeColor(type: AbsenceType) {
+  switch (type) {
+    case 'Holiday':
+      return absenceColors.holiday;
+    case 'Sickness':
+      return absenceColors.sickness;
+    case 'Training':
+      return absenceColors.training;
+    case 'Unpaid Leave':
+      return absenceColors.unpaidLeave;
+    case 'Other':
+      return absenceColors.other;
+    case 'Public Holiday':
+      return absenceColors.publicHoliday;
+    default:
+      return absenceColors.pending;
+  }
+}
 
 function formatDateLabel(date: string) {
   return fromDateString(date).toLocaleDateString('en-GB', {
@@ -197,8 +216,8 @@ export default function AbsenceFormScreen() {
     });
 
     Alert.alert(
-      'Absence created',
-      `${datesToSave.length} request${datesToSave.length > 1 ? 's' : ''} saved as Pending.`
+      'Absence Saved',
+      `${datesToSave.length} absence request${datesToSave.length > 1 ? 's' : ''} saved successfully as Pending.`
     );
     router.back();
   };
@@ -369,6 +388,7 @@ export default function AbsenceFormScreen() {
             <View style={styles.optionGrid}>
               {ABSENCE_TYPES.map((item) => {
                 const active = item === type;
+                const itemColor = getTypeColor(item);
                 return (
                   <TouchableOpacity
                     key={item}
@@ -376,10 +396,11 @@ export default function AbsenceFormScreen() {
                     style={[
                       styles.optionButton,
                       { borderColor: colors.border, backgroundColor: colors.surface },
-                      active && { backgroundColor: colors.primary, borderColor: colors.primary },
+                      active && { backgroundColor: itemColor, borderColor: itemColor },
                     ]}
                     onPress={() => setType(item)}
                   >
+                    <View style={[styles.typeDotSmall, { backgroundColor: itemColor }]} />
                     <ThemedText style={[styles.optionText, active && styles.optionTextActive]}>{item}</ThemedText>
                   </TouchableOpacity>
                 );
@@ -666,6 +687,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
     alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  typeDotSmall: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   optionText: {
     fontSize: 14,

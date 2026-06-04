@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Alert,
   Platform,
@@ -16,6 +16,7 @@ import {
   ChevronRight,
   CircleAlert,
   Clock3,
+  Filter,
   Plus,
   Trash2,
   User,
@@ -35,12 +36,14 @@ function getTypeColor(type: AbsenceType) {
   switch (type) {
     case 'Holiday':
       return absenceColors.holiday;
-    case 'Sick Leave':
-      return absenceColors.sickLeave;
-    case 'Appointment':
-      return absenceColors.appointment;
+    case 'Sickness':
+      return absenceColors.sickness;
     case 'Training':
       return absenceColors.training;
+    case 'Unpaid Leave':
+      return absenceColors.unpaidLeave;
+    case 'Other':
+      return absenceColors.other;
     case 'Public Holiday':
       return absenceColors.publicHoliday;
     default:
@@ -88,6 +91,9 @@ export default function DayAbsencesScreen() {
     deleteAbsence,
     updateAbsenceStatus,
   } = useAbsenceStore();
+
+  type FilterMode = 'all' | 'current' | 'upcoming' | 'completed';
+  const [filterMode, setFilterMode] = useState<FilterMode>('all');
 
   const date = typeof params.date === 'string' ? params.date : todayDateString();
 
@@ -200,6 +206,37 @@ export default function DayAbsencesScreen() {
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, isLargeScreen && styles.contentLarge]}>
+        <View style={styles.filterRow}>
+          {(['all', 'current', 'upcoming', 'completed'] as FilterMode[]).map((mode) => {
+            const active = mode === filterMode;
+            const labels: Record<FilterMode, string> = {
+              all: 'All',
+              current: 'Current',
+              upcoming: 'Upcoming',
+              completed: 'Completed',
+            };
+            return (
+              <TouchableOpacity
+                key={mode}
+                testID={`filter-${mode}`}
+                style={[
+                  styles.filterChip,
+                  { borderColor: colors.border },
+                  active && { backgroundColor: colors.primary, borderColor: colors.primary },
+                ]}
+                onPress={() => setFilterMode(mode)}
+              >
+                {mode === 'all' ? (
+                  <Filter size={12} color={active ? 'white' : colors.secondaryText} />
+                ) : null}
+                <ThemedText style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                  {labels[mode]}
+                </ThemedText>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         <View style={styles.listWrap}>
           {dayAbsences.length > 0 ? (
             <View style={styles.sessionSections}>
@@ -467,6 +504,28 @@ const styles = StyleSheet.create({
   },
   contentLarge: {
     alignItems: 'center',
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+    flexWrap: 'wrap',
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  filterChipTextActive: {
+    color: 'white',
   },
   listWrap: {
     width: '100%',

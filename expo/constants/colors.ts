@@ -5,15 +5,22 @@ const mediumGray = '#D5DCE5';
 
 export const absenceColors = {
   holiday: '#0891B2',
-  sickLeave: '#DC2626',
-  appointment: '#EA580C',
+  sickness: '#DC2626',
   training: '#DB2777',
+  unpaidLeave: '#EA580C',
+  other: '#6366F1',
   publicHoliday: '#B45309',
   pending: '#64748B',
   approved: '#0F766E',
   rejected: '#B91C1C',
   amSlot: 'rgba(16, 185, 129, 0.12)',
   pmSlot: 'rgba(99, 102, 241, 0.12)',
+};
+
+export const dotColors = {
+  green: '#22C55E',
+  amber: '#F59E0B',
+  red: '#EF4444',
 };
 
 export default {

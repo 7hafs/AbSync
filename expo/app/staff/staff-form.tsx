@@ -67,8 +67,10 @@ export default function StaffFormScreen() {
 
     if (isEditing) {
       updateStaff(staffData);
+      Alert.alert('Staff Updated', `${name.trim()} has been updated successfully.`);
     } else {
       addStaff(staffData);
+      Alert.alert('Staff Added', `${name.trim()} has been added successfully.`);
     }
 
     router.back();

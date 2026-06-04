@@ -8,27 +8,30 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { CalendarDays, ChevronLeft, ChevronRight, Flag, Plus, Users } from 'lucide-react-native';
+import { CalendarDays, ChevronLeft, ChevronRight, Flag, Plus, TrendingUp, Users } from 'lucide-react-native';
 import { useColorScheme } from 'react-native';
 import ThemedText from '@/components/ThemedText';
 import ThemedView from '@/components/ThemedView';
-import Colors, { absenceColors } from '@/constants/colors';
+import Colors, { absenceColors, dotColors } from '@/constants/colors';
 import useThemeStore from '@/store/useThemeStore';
 import useAbsenceStore from '@/store/useAbsenceStore';
+import useStaffStore from '@/store/useStaffStore';
 
 import { Absence, AbsenceType } from '@/types';
-import { toDateString, todayDateString, formatDateUKLong } from '@/utils/dateUtils';
+import { toDateString, todayDateString, formatDateUKLong, addDays } from '@/utils/dateUtils';
 
 function getTypeColor(type: AbsenceType) {
   switch (type) {
     case 'Holiday':
       return absenceColors.holiday;
-    case 'Sick Leave':
-      return absenceColors.sickLeave;
-    case 'Appointment':
-      return absenceColors.appointment;
+    case 'Sickness':
+      return absenceColors.sickness;
     case 'Training':
       return absenceColors.training;
+    case 'Unpaid Leave':
+      return absenceColors.unpaidLeave;
+    case 'Other':
+      return absenceColors.other;
     case 'Public Holiday':
       return absenceColors.publicHoliday;
     default:
@@ -52,7 +55,7 @@ function formatEventTitle(absence: Absence) {
     return absence.name;
   }
 
-  return `${absence.type} – ${absence.name}${absence.duration === 'Full' ? '' : ` (${absence.duration})`}`;
+  return `${absence.type} \u2013 ${absence.name}${absence.duration === 'Full' ? '' : ` (${absence.duration})`}`;
 }
 
 function getMonthGrid(baseDate: Date): Array<number | null> {
@@ -86,6 +89,7 @@ export default function CalendarScreen() {
 
   const canEdit = true;
   const { absences } = useAbsenceStore();
+  const { staff } = useStaffStore();
 
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -97,6 +101,44 @@ export default function CalendarScreen() {
 
   const getAbsencesForDate = (date: string) => absences.filter((absence) => absence.date === date);
   const todayIso = todayDateString();
+  const tomorrowIso = toDateString(addDays(new Date(), 1));
+
+  // Dashboard stats
+  const activeStaffCount = staff.filter((s) => s.active).length;
+  const absentTodayCount = new Set(
+    absences
+      .filter((a) => a.date === todayIso && a.type !== 'Public Holiday' && a.status !== 'Rejected')
+      .map((a) => a.staffId)
+  ).size;
+  const absentTomorrowCount = new Set(
+    absences
+      .filter((a) => a.date === tomorrowIso && a.type !== 'Public Holiday' && a.status !== 'Rejected')
+      .map((a) => a.staffId)
+  ).size;
+  const upcomingWeekCount = (() => {
+    const today = new Date();
+    const weekEnd = addDays(today, 7);
+    const todayStr = toDateString(today);
+    const weekEndStr = toDateString(weekEnd);
+    return new Set(
+      absences
+        .filter(
+          (a) =>
+            a.date >= todayStr &&
+            a.date <= weekEndStr &&
+            a.type !== 'Public Holiday' &&
+            a.status !== 'Rejected'
+        )
+        .map((a) => a.staffId)
+    ).size;
+  })();
+
+  const getDotColor = (count: number) => {
+    if (count === 0) return undefined;
+    if (count <= 2) return dotColors.green;
+    if (count <= 5) return dotColors.amber;
+    return dotColors.red;
+  };
 
   const handleOpenDay = (date: string) => {
     router.push({ pathname: '/calendar/day-absences' as never, params: { date } });
@@ -134,23 +176,34 @@ export default function CalendarScreen() {
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}>
-        <View style={[styles.summaryTable, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.summaryCell}>
-            <Users size={14} color={colors.primary} />
-            <ThemedText style={styles.summaryValue}>{absences.filter((absence) => absence.date === todayIso && absence.type !== 'Public Holiday' && absence.status !== 'Rejected').length}</ThemedText>
-            <ThemedText variant="secondary" style={styles.summaryLabel}>Away today</ThemedText>
+        <View style={styles.dashboardRow}>
+          <View style={[styles.dashboardCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.dashboardIcon, { backgroundColor: `${colors.primary}18` }]}>
+              <Users size={18} color={colors.primary} />
+            </View>
+            <ThemedText style={styles.dashboardValue}>{activeStaffCount}</ThemedText>
+            <ThemedText variant="secondary" style={styles.dashboardLabel}>Total Employees</ThemedText>
           </View>
-          <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
-          <View style={styles.summaryCell}>
-            <Users size={14} color={absenceColors.appointment} />
-            <ThemedText style={styles.summaryValue}>{absences.filter((absence) => new Date(absence.date).getMonth() === month && absence.type !== 'Public Holiday' && absence.status !== 'Rejected').length}</ThemedText>
-            <ThemedText variant="secondary" style={styles.summaryLabel}>This month</ThemedText>
+          <View style={[styles.dashboardCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.dashboardIcon, { backgroundColor: `${dotColors.red}18` }]}>
+              <Users size={18} color={dotColors.red} />
+            </View>
+            <ThemedText style={styles.dashboardValue}>{absentTodayCount}</ThemedText>
+            <ThemedText variant="secondary" style={styles.dashboardLabel}>Absent Today</ThemedText>
           </View>
-          <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
-          <View style={styles.summaryCell}>
-            <CalendarDays size={14} color={absenceColors.publicHoliday} />
-            <ThemedText style={styles.summaryValue}>{absences.filter((absence) => absence.type === 'Public Holiday' && new Date(absence.date).getMonth() === month).length}</ThemedText>
-            <ThemedText variant="secondary" style={styles.summaryLabel}>Holidays</ThemedText>
+          <View style={[styles.dashboardCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.dashboardIcon, { backgroundColor: `${dotColors.amber}18` }]}>
+              <Users size={18} color={dotColors.amber} />
+            </View>
+            <ThemedText style={styles.dashboardValue}>{absentTomorrowCount}</ThemedText>
+            <ThemedText variant="secondary" style={styles.dashboardLabel}>Absent Tomorrow</ThemedText>
+          </View>
+          <View style={[styles.dashboardCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.dashboardIcon, { backgroundColor: `${dotColors.green}18` }]}>
+              <TrendingUp size={18} color={dotColors.green} />
+            </View>
+            <ThemedText style={styles.dashboardValue}>{upcomingWeekCount}</ThemedText>
+            <ThemedText variant="secondary" style={styles.dashboardLabel}>This Week</ThemedText>
           </View>
         </View>
 
@@ -181,6 +234,7 @@ export default function CalendarScreen() {
                   .map((absence) => absence.name)
               ).size;
               const isShortStaffed = staffOffCount >= 2;
+              const dotColor = getDotColor(staffOffCount);
               const cellMinHeight = isDesktop ? 150 : isTablet ? 130 : isSmallPhone ? 86 : 100;
               const maxEventsPerSession = isDesktop ? 3 : isTablet ? 2 : 1;
 
@@ -227,21 +281,26 @@ export default function CalendarScreen() {
                   onPress={() => handleOpenDay(date)}
                 >
                   <View style={styles.dayTopRow}>
-                    <View
-                      style={[
-                        styles.dayNumberWrap,
-                        isToday && { backgroundColor: colors.primary },
-                      ]}
-                    >
-                      <ThemedText
+                    <View style={styles.dayTopLeft}>
+                      <View
                         style={[
-                          styles.dayNumber,
-                          isToday && styles.dayNumberToday,
-                          publicHoliday && !isToday && styles.dayNumberOnHoliday,
+                          styles.dayNumberWrap,
+                          isToday && { backgroundColor: colors.primary },
                         ]}
                       >
-                        {day}
-                      </ThemedText>
+                        <ThemedText
+                          style={[
+                            styles.dayNumber,
+                            isToday && styles.dayNumberToday,
+                            publicHoliday && !isToday && styles.dayNumberOnHoliday,
+                          ]}
+                        >
+                          {day}
+                        </ThemedText>
+                      </View>
+                      {dotColor && !publicHoliday ? (
+                        <View style={[styles.dotIndicator, { backgroundColor: dotColor }]} />
+                      ) : null}
                     </View>
                     {isShortStaffed ? (
                       <View style={styles.flagBadge} testID={`calendar-flag-${date}`}>
@@ -350,33 +409,45 @@ const styles = StyleSheet.create({
   contentDesktop: {
     alignItems: 'center',
   },
-  summaryTable: {
+  dashboardRow: {
     flexDirection: 'row',
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    alignItems: 'center',
+    gap: 8,
     width: '100%',
     maxWidth: 1320,
   },
-  summaryCell: {
+  dashboardCard: {
     flex: 1,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
     alignItems: 'center',
-    gap: 2,
-    paddingVertical: 2,
+    gap: 6,
   },
-  summaryValue: {
-    fontSize: 18,
+  dashboardIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dashboardValue: {
+    fontSize: 24,
     fontWeight: '800' as const,
   },
-  summaryLabel: {
-    fontSize: 11,
+  dashboardLabel: {
+    fontSize: 10,
+    textAlign: 'center',
   },
-  summaryDivider: {
-    width: 1,
-    alignSelf: 'stretch',
-    marginVertical: 4,
+  dotIndicator: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  dayTopLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   calendarCard: {
     width: '100%',

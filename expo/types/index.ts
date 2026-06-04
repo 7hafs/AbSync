@@ -19,7 +19,7 @@ export type AuthUser = {
 
 export type CalendarShareMode = 'edit' | 'view';
 
-export type AbsenceType = 'Holiday' | 'Sick Leave' | 'Appointment' | 'Training' | 'Public Holiday';
+export type AbsenceType = 'Holiday' | 'Sickness' | 'Training' | 'Unpaid Leave' | 'Other' | 'Public Holiday';
 export type AbsenceDuration = 'Full' | 'AM' | 'PM';
 export type AbsenceStatus = 'Pending' | 'Approved' | 'Rejected';
 

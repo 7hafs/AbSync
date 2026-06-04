@@ -23,9 +23,9 @@ const publicHolidays2026: Absence[] = [
 export const sampleAbsences: Absence[] = [
   ...publicHolidays2026,
   { id: 'a1', staffId: '1', name: 'Sarah Ahmed', type: 'Holiday', date: '2026-04-21', duration: 'Full', status: 'Pending', cover: 'James', notes: 'Family trip', createdBy: 'Manager', createdAt: '2026-04-12T00:00:00.000Z' },
-  { id: 'a2', staffId: '2', name: 'Adam Lewis', type: 'Sick Leave', date: '2026-04-21', duration: 'AM', status: 'Approved', cover: null, notes: 'GP appointment', createdBy: 'Manager', createdAt: '2026-04-13T00:00:00.000Z' },
+  { id: 'a2', staffId: '2', name: 'Adam Lewis', type: 'Sickness', date: '2026-04-21', duration: 'AM', status: 'Approved', cover: null, notes: 'GP appointment', createdBy: 'Manager', createdAt: '2026-04-13T00:00:00.000Z' },
   { id: 'a3', staffId: '3', name: 'Maya Patel', type: 'Training', date: '2026-04-24', duration: 'PM', status: 'Approved', cover: null, notes: 'Leadership workshop', createdBy: 'Manager', createdAt: '2026-04-13T00:00:00.000Z' },
-  { id: 'a4', staffId: '4', name: 'Chloe Green', type: 'Appointment', date: '2026-04-24', duration: 'AM', status: 'Rejected', cover: null, notes: 'Dentist', createdBy: 'Manager', createdAt: '2026-04-15T00:00:00.000Z' },
+  { id: 'a4', staffId: '4', name: 'Chloe Green', type: 'Other', date: '2026-04-24', duration: 'AM', status: 'Rejected', cover: null, notes: 'Dentist', createdBy: 'Manager', createdAt: '2026-04-15T00:00:00.000Z' },
 ];
 
 export function initializeSampleData(staffStore: any, absenceStore: any) {

@@ -57,7 +57,7 @@ export default function ReportsScreen() {
           .filter((absence) => absence.type === 'Holiday')
           .reduce((sum, absence) => sum + getDaysValue(absence), 0);
         const sickDays = employeeAbsences
-          .filter((absence) => absence.type === 'Sick Leave')
+          .filter((absence) => absence.type === 'Sickness')
           .reduce((sum, absence) => sum + getDaysValue(absence), 0);
         const totalDays = employeeAbsences.reduce((sum, absence) => sum + getDaysValue(absence), 0);
 
@@ -74,7 +74,7 @@ export default function ReportsScreen() {
 
   const monthlyTotalDays = filteredAbsences.reduce((sum, absence) => sum + getDaysValue(absence), 0);
   const monthlySickDays = filteredAbsences
-    .filter((absence) => absence.type === 'Sick Leave')
+    .filter((absence) => absence.type === 'Sickness')
     .reduce((sum, absence) => sum + getDaysValue(absence), 0);
   const employeesWithAbsence = employeeRows.filter((row) => row.total > 0).length;
 
@@ -117,7 +117,7 @@ export default function ReportsScreen() {
               <ThemedText variant="secondary">Total days off</ThemedText>
             </View>
             <View style={[styles.statCard, { backgroundColor: colors.surfaceVariant }]}> 
-              <Stethoscope size={18} color={absenceColors.sickLeave} />
+              <Stethoscope size={18} color={absenceColors.sickness} />
               <ThemedText style={styles.statValue}>{monthlySickDays.toFixed(1)}</ThemedText>
               <ThemedText variant="secondary">Sick days</ThemedText>
             </View>

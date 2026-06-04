@@ -23,7 +23,9 @@ import {
   Download,
   Upload,
   Database,
+  FileSpreadsheet,
 } from "lucide-react-native";
+import { exportAbsencesCSV } from "@/utils/csvExport";
 import { useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system";
@@ -446,6 +448,25 @@ export default function SettingsScreen() {
             About
           </ThemedText>
 
+          <TouchableOpacity
+            style={[
+              styles.settingItem,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            onPress={() => router.push("/settings/about" as any)}
+          >
+            <View style={styles.settingContent}>
+              <Info size={24} color={colors.primary} />
+              <View style={styles.settingTextContainer}>
+                <ThemedText weight="semibold">Support & About</ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  App version, support contact, and release notes
+                </ThemedText>
+              </View>
+            </View>
+            <ChevronRight size={20} color={colors.secondaryText} />
+          </TouchableOpacity>
+
           <View
             style={[
               styles.settingItem,
@@ -462,6 +483,32 @@ export default function SettingsScreen() {
               </View>
             </View>
           </View>
+
+          <TouchableOpacity
+            style={[
+              styles.settingItem,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            onPress={async () => {
+              const absences = useAbsenceStore.getState().absences;
+              const result = await exportAbsencesCSV(absences);
+              Alert.alert(
+                result.success ? "Export Complete" : "Export Failed",
+                result.message
+              );
+            }}
+          >
+            <View style={styles.settingContent}>
+              <FileSpreadsheet size={24} color={colors.primary} />
+              <View style={styles.settingTextContainer}>
+                <ThemedText weight="semibold">Export Absences CSV</ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  Export all absence records as a spreadsheet
+                </ThemedText>
+              </View>
+            </View>
+            <ChevronRight size={20} color={colors.secondaryText} />
+          </TouchableOpacity>
         </View>
 
         {/* ── Footer ───────────────────────────────────────────────────────── */}
