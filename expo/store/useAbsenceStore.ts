@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Absence, AbsenceDuration, AbsenceStatus } from "@/types";
 import { DB_VERSION } from "@/lib/storageManager";
+import { upsertAbsence, upsertAbsences, deleteAbsenceFromSupabase } from "@/lib/dataService";
 
 export const DEFAULT_MAX_ABSENCES_PER_DAY = 2;
 
@@ -138,16 +139,22 @@ const useAbsenceStore = create<AbsenceState>()(
           absences: [...state.absences, ...nextAbsences],
         }));
 
-        // Return created IDs for the caller to sync with Supabase
+        // Sync to Supabase
+        upsertAbsences(nextAbsences);
+
+        // Return created IDs for the caller
         return nextAbsences.map((a) => a.id);
       },
 
-      updateAbsence: (updatedAbsence) =>
+      updateAbsence: (updatedAbsence) => {
         set((state) => ({
           absences: state.absences.map((absence) =>
             absence.id === updatedAbsence.id ? updatedAbsence : absence
           ),
-        })),
+        }));
+        // Sync to Supabase
+        upsertAbsence(updatedAbsence);
+      },
 
       updateAbsenceStatus: (id, status) =>
         set((state) => ({
@@ -166,6 +173,8 @@ const useAbsenceStore = create<AbsenceState>()(
             return false;
           }),
         }));
+        // Sync to Supabase
+        deleteAbsenceFromSupabase(id);
       },
 
       replaceAbsences: (incoming) => {

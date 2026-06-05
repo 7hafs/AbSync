@@ -8,6 +8,7 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import {
   Moon,
@@ -27,6 +28,11 @@ import {
   ShieldCheck,
   ShieldOff,
   RefreshCw,
+  LogOut,
+  User,
+  Mail,
+  Lock,
+  Edit3,
 } from "lucide-react-native";
 import { exportAbsencesCSV } from "@/utils/csvExport";
 import { useRouter } from "expo-router";
@@ -38,6 +44,7 @@ import { useColorScheme } from "react-native";
 import useNotificationStore from "@/store/useNotificationStore";
 import useAbsenceStore from "@/store/useAbsenceStore";
 import { sendTestNotification } from "@/utils/notificationService";
+import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import {
   exportBackupFile,
   verifyStorageIntegrity,
@@ -54,6 +61,7 @@ export default function SettingsScreen() {
     setEveningEnabled,
     setInstantAlertsEnabled,
   } = useNotificationStore();
+  const { profile, signOut } = useSupabaseAuth();
   const colorScheme =
     isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
@@ -170,6 +178,109 @@ export default function SettingsScreen() {
   return (
     <ThemedView style={styles.container} useGradient>
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* ── Account Section ──────────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <ThemedText size="large" weight="bold" style={styles.sectionTitle}>
+            Account
+          </ThemedText>
+
+          <View
+            style={[
+              styles.accountCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.accountAvatar}>
+              <User size={28} color={colors.primary} />
+            </View>
+            <View style={styles.accountInfo}>
+              <ThemedText weight="bold" style={styles.accountName}>
+                {profile?.name || "User"}
+              </ThemedText>
+              <View style={styles.accountEmailRow}>
+                <Mail size={14} color={colors.secondaryText} />
+                <ThemedText variant="secondary" size="small">
+                  {profile?.email || ""}
+                </ThemedText>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.settingItem,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            onPress={() => {
+              Alert.alert(
+                "Change Password",
+                "A password reset email will be sent to your account email address.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Send Reset Email",
+                    onPress: async () => {
+                      if (profile?.email) {
+                        const { supabase } = require("@/lib/supabase");
+                        const { error } = await supabase.auth.resetPasswordForEmail(profile.email);
+                        if (error) {
+                          Alert.alert("Error", error.message);
+                        } else {
+                          Alert.alert("Email Sent", "Check your inbox for the password reset link.");
+                        }
+                      }
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <View style={styles.settingContent}>
+              <Lock size={22} color={colors.primary} />
+              <View style={styles.settingTextContainer}>
+                <ThemedText weight="semibold">Change Password</ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  Send a password reset email
+                </ThemedText>
+              </View>
+            </View>
+            <ChevronRight size={20} color={colors.secondaryText} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.settingItem,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            onPress={() => {
+              Alert.alert(
+                "Sign Out",
+                "Are you sure you want to sign out? Your data will remain safe on the server and will be restored when you sign back in.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Sign Out",
+                    style: "destructive",
+                    onPress: () => signOut(),
+                  },
+                ]
+              );
+            }}
+          >
+            <View style={styles.settingContent}>
+              <LogOut size={22} color="#EF4444" />
+              <View style={styles.settingTextContainer}>
+                <ThemedText weight="semibold" style={{ color: "#EF4444" }}>
+                  Sign Out
+                </ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  Sign out of your account
+                </ThemedText>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </View>
+
         {/* ── Appearance Section ───────────────────────────────────────────── */}
         <View style={styles.section}>
           <ThemedText size="large" weight="bold" style={styles.sectionTitle}>
@@ -547,8 +658,9 @@ export default function SettingsScreen() {
             size="small"
             style={styles.footerText}
           >
-            AbsenceFlow — Your data is stored locally on your device and
-            protected against updates. Export regular backups for added safety.
+            AbsenceFlow — Your data is securely stored and synced to your
+            account. Sign in on any device to access your data. Export regular
+            backups for added safety.
           </ThemedText>
         </View>
       </ScrollView>
@@ -595,5 +707,34 @@ const styles = StyleSheet.create({
   },
   footerText: {
     textAlign: "center",
+  },
+  accountCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 18,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+    gap: 14,
+  },
+  accountAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "rgba(15, 118, 110, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accountInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  accountName: {
+    fontSize: 17,
+  },
+  accountEmailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
 });

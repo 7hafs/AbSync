@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ReminderType } from "@/types";
 import { DB_VERSION } from "@/lib/storageManager";
+import { upsertReminder, deleteReminderFromSupabase } from "@/lib/dataService";
 
 interface RemindersState {
   reminders: ReminderType[];
@@ -24,22 +25,31 @@ const useRemindersStore = create<RemindersState>()(
       reminders: [],
       isLoaded: false,
 
-      addReminder: (reminder) =>
+      addReminder: (reminder) => {
         set((state) => ({
           reminders: [...state.reminders, reminder],
-        })),
+        }));
+        // Sync to Supabase
+        upsertReminder(reminder);
+      },
 
-      updateReminder: (updatedReminder) =>
+      updateReminder: (updatedReminder) => {
         set((state) => ({
           reminders: state.reminders.map((r) =>
             r.id === updatedReminder.id ? updatedReminder : r
           ),
-        })),
+        }));
+        // Sync to Supabase
+        upsertReminder(updatedReminder);
+      },
 
-      deleteReminder: (id) =>
+      deleteReminder: (id) => {
         set((state) => ({
           reminders: state.reminders.filter((r) => r.id !== id),
-        })),
+        }));
+        // Sync to Supabase
+        deleteReminderFromSupabase(id);
+      },
 
       toggleComplete: (id) =>
         set((state) => ({

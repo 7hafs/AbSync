@@ -8,6 +8,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { DB_VERSION } from "@/lib/storageManager";
+import { upsertNotificationPreferences } from "@/lib/dataService";
 
 export interface NotificationPreferences {
   morningEnabled: boolean;
@@ -38,24 +39,37 @@ const useNotificationStore = create<NotificationState>()(
       isLoaded: false,
 
       setMorningEnabled: (enabled) => {
-        set((state) => ({
-          preferences: { ...state.preferences, morningEnabled: enabled },
-        }));
+        set((state) => {
+          const newPrefs = { ...state.preferences, morningEnabled: enabled };
+          // Sync to Supabase (fire-and-forget)
+          upsertNotificationPreferences(newPrefs);
+          return { preferences: newPrefs };
+        });
       },
 
       setEveningEnabled: (enabled) => {
-        set((state) => ({
-          preferences: { ...state.preferences, eveningEnabled: enabled },
-        }));
+        set((state) => {
+          const newPrefs = { ...state.preferences, eveningEnabled: enabled };
+          // Sync to Supabase (fire-and-forget)
+          upsertNotificationPreferences(newPrefs);
+          return { preferences: newPrefs };
+        });
       },
 
       setInstantAlertsEnabled: (enabled) => {
-        set((state) => ({
-          preferences: { ...state.preferences, instantAlertsEnabled: enabled },
-        }));
+        set((state) => {
+          const newPrefs = { ...state.preferences, instantAlertsEnabled: enabled };
+          // Sync to Supabase (fire-and-forget)
+          upsertNotificationPreferences(newPrefs);
+          return { preferences: newPrefs };
+        });
       },
 
-      setPreferences: (prefs) => set(() => ({ preferences: prefs })),
+      setPreferences: (prefs) => {
+        set(() => ({ preferences: prefs }));
+        // Sync to Supabase
+        upsertNotificationPreferences(prefs);
+      },
 
       setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
     }),

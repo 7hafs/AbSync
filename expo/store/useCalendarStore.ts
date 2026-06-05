@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { EventType } from "@/types";
 import { DB_VERSION } from "@/lib/storageManager";
+import { upsertCalendarEvent, deleteCalendarEventFromSupabase } from "@/lib/dataService";
 
 interface CalendarState {
   events: EventType[];
@@ -25,22 +26,31 @@ const useCalendarStore = create<CalendarState>()(
       selectedDate: null,
       isLoaded: false,
 
-      addEvent: (event) =>
+      addEvent: (event) => {
         set((state) => ({
           events: [...state.events, event],
-        })),
+        }));
+        // Sync to Supabase
+        upsertCalendarEvent(event);
+      },
 
-      updateEvent: (updatedEvent) =>
+      updateEvent: (updatedEvent) => {
         set((state) => ({
           events: state.events.map((e) =>
             e.id === updatedEvent.id ? updatedEvent : e
           ),
-        })),
+        }));
+        // Sync to Supabase
+        upsertCalendarEvent(updatedEvent);
+      },
 
-      deleteEvent: (id) =>
+      deleteEvent: (id) => {
         set((state) => ({
           events: state.events.filter((e) => e.id !== id),
-        })),
+        }));
+        // Sync to Supabase
+        deleteCalendarEventFromSupabase(id);
+      },
 
       setSelectedDate: (date) =>
         set(() => ({ selectedDate: date })),

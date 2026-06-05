@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StaffMember } from "@/types";
 import { DB_VERSION } from "@/lib/storageManager";
+import { upsertStaff, deleteStaffFromSupabase } from "@/lib/dataService";
 
 interface StaffState {
   staff: StaffMember[];
@@ -33,20 +34,28 @@ const useStaffStore = create<StaffState>()(
         set((state) => ({
           staff: [...state.staff, member],
         }));
+        // Sync to Supabase
+        upsertStaff(member);
         return member;
       },
 
-      updateStaff: (updatedStaff) =>
+      updateStaff: (updatedStaff) => {
         set((state) => ({
           staff: state.staff.map((s) =>
             s.id === updatedStaff.id ? updatedStaff : s
           ),
-        })),
+        }));
+        // Sync to Supabase
+        upsertStaff(updatedStaff);
+      },
 
-      deleteStaff: (id) =>
+      deleteStaff: (id) => {
         set((state) => ({
           staff: state.staff.filter((s) => s.id !== id),
-        })),
+        }));
+        // Sync to Supabase
+        deleteStaffFromSupabase(id);
+      },
 
       archiveStaff: (id) =>
         set((state) => ({

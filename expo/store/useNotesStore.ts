@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NoteType } from "@/types";
 import { DB_VERSION } from "@/lib/storageManager";
+import { upsertNote, deleteNoteFromSupabase } from "@/lib/dataService";
 
 interface NotesState {
   notes: NoteType[];
@@ -25,22 +26,31 @@ const useNotesStore = create<NotesState>()(
       notes: [],
       isLoaded: false,
 
-      addNote: (note) =>
+      addNote: (note) => {
         set((state) => ({
           notes: [...state.notes, note],
-        })),
+        }));
+        // Sync to Supabase
+        upsertNote(note);
+      },
 
-      updateNote: (updatedNote) =>
+      updateNote: (updatedNote) => {
         set((state) => ({
           notes: state.notes.map((n) =>
             n.id === updatedNote.id ? updatedNote : n
           ),
-        })),
+        }));
+        // Sync to Supabase
+        upsertNote(updatedNote);
+      },
 
-      deleteNote: (id) =>
+      deleteNote: (id) => {
         set((state) => ({
           notes: state.notes.filter((n) => n.id !== id),
-        })),
+        }));
+        // Sync to Supabase
+        deleteNoteFromSupabase(id);
+      },
 
       togglePinNote: (id) =>
         set((state) => ({

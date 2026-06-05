@@ -170,7 +170,8 @@ export default function AboutScreen() {
             style={styles.footerText}
           >
             AbsenceFlow is designed for small teams to track staff absences
-            simply and efficiently. All data is stored locally on your device.
+            simply and efficiently. Your data is securely stored and synced to
+            your account, accessible from any device.
           </ThemedText>
         </View>
       </ScrollView>
