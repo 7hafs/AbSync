@@ -219,7 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsProcessing(true);
       try {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: "rork-lxwo9f6yr6sjgzxbuwjkz://reset-password",
+          redirectTo: "rork-lxwo9f6yr6sjgzxbuwjkz://auth/reset-password",
         });
 
         if (error) {

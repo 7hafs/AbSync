@@ -98,6 +98,7 @@ function AuthGate() {
         <Stack.Screen name="auth/login" />
         <Stack.Screen name="auth/register" />
         <Stack.Screen name="auth/forgot-password" />
+        <Stack.Screen name="auth/reset-password" />
       </Stack>
     );
   }
