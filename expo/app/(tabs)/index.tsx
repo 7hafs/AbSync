@@ -111,31 +111,6 @@ export default function CalendarScreen() {
   const getAbsencesForDate = (date: string) =>
     absences.filter((absence) => absence.date === date);
 
-  // Week summary stats
-  const weekStats = useMemo(() => {
-    let amCount = 0;
-    let pmCount = 0;
-    let fullCount = 0;
-    const seenStaff = new Set<string>();
-
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(mondayOfWeek);
-      d.setDate(d.getDate() + i);
-      const ds = toDateString(d);
-      const dayAbs = absences.filter(
-        (a) => a.date === ds && a.type !== 'Public Holiday' && a.status !== 'Rejected',
-      );
-      for (const a of dayAbs) {
-        seenStaff.add(a.staffId);
-        if (a.duration === 'AM') amCount++;
-        else if (a.duration === 'PM') pmCount++;
-        else if (a.duration === 'Full') fullCount++;
-      }
-    }
-
-    return { amCount, pmCount, fullCount, totalCount: seenStaff.size };
-  }, [absences, mondayOfWeek]);
-
   // Dashboard stats
   const activeStaffCount = staff.filter((s) => s.active).length;
   const absentTodayCount = new Set(
@@ -327,27 +302,7 @@ export default function CalendarScreen() {
           </View>
         </View>
 
-        {/* Week summary cards (only in week view) */}
-        {viewMode === 'week' && (
-          <View style={styles.weekSummaryRow}>
-            <View style={[styles.weekSummaryCard, { backgroundColor: '#F0FDF4', borderColor: '#DCFCE7' }]}>
-              <ThemedText style={[styles.weekSummaryVal, { color: '#16A34A' }]}>{weekStats.amCount}</ThemedText>
-              <ThemedText variant="secondary" style={styles.weekSummaryLabel}>AM Absences</ThemedText>
-            </View>
-            <View style={[styles.weekSummaryCard, { backgroundColor: '#EFF6FF', borderColor: '#DBEAFE' }]}>
-              <ThemedText style={[styles.weekSummaryVal, { color: '#2563EB' }]}>{weekStats.pmCount}</ThemedText>
-              <ThemedText variant="secondary" style={styles.weekSummaryLabel}>PM Absences</ThemedText>
-            </View>
-            <View style={[styles.weekSummaryCard, { backgroundColor: '#FFF7ED', borderColor: '#FFEDD5' }]}>
-              <ThemedText style={[styles.weekSummaryVal, { color: '#EA580C' }]}>{weekStats.fullCount}</ThemedText>
-              <ThemedText variant="secondary" style={styles.weekSummaryLabel}>Full Day</ThemedText>
-            </View>
-            <View style={[styles.weekSummaryCard, { backgroundColor: '#F5F3FF', borderColor: '#EDE9FE' }]}>
-              <ThemedText style={[styles.weekSummaryVal, { color: '#6D28D9' }]}>{weekStats.totalCount}</ThemedText>
-              <ThemedText variant="secondary" style={styles.weekSummaryLabel}>Total Staff</ThemedText>
-            </View>
-          </View>
-        )}
+
 
         {/* Calendar View */}
         {viewMode === 'month' ? (
@@ -454,60 +409,62 @@ export default function CalendarScreen() {
           </View>
         )}
 
-        {/* Upcoming Absences */}
-        <View style={[styles.upcomingCard, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: isDesktop ? 1320 : 980 }]}>
-          <View style={styles.upcomingHeader}>
-            <View style={[styles.upcomingIconWrap, { backgroundColor: `${colors.primary}18` }]}>
-              <Calendar size={18} color={colors.primary} />
+        {/* Upcoming Absences — only in Month view */}
+        {viewMode === 'month' && (
+          <View style={[styles.upcomingCard, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: isDesktop ? 1320 : 980 }]}>
+            <View style={styles.upcomingHeader}>
+              <View style={[styles.upcomingIconWrap, { backgroundColor: `${colors.primary}18` }]}>
+                <Calendar size={18} color={colors.primary} />
+              </View>
+              <ThemedText style={styles.upcomingTitle}>Upcoming Absences</ThemedText>
             </View>
-            <ThemedText style={styles.upcomingTitle}>Upcoming Absences</ThemedText>
-          </View>
-          {(() => {
-            const tomorrow = addDays(new Date(), 1);
-            const thirtyDaysOut = addDays(new Date(), 30);
-            const upcoming = absences
-              .filter(
-                (a) =>
-                  a.date >= toDateString(tomorrow) &&
-                  a.date <= toDateString(thirtyDaysOut) &&
-                  a.type !== 'Public Holiday' &&
-                  a.status !== 'Rejected',
-              )
-              .sort((a, b) => a.date.localeCompare(b.date))
-              .slice(0, 8);
+            {(() => {
+              const tomorrow = addDays(new Date(), 1);
+              const thirtyDaysOut = addDays(new Date(), 30);
+              const upcoming = absences
+                .filter(
+                  (a) =>
+                    a.date >= toDateString(tomorrow) &&
+                    a.date <= toDateString(thirtyDaysOut) &&
+                    a.type !== 'Public Holiday' &&
+                    a.status !== 'Rejected',
+                )
+                .sort((a, b) => a.date.localeCompare(b.date))
+                .slice(0, 8);
 
-            if (upcoming.length === 0) {
+              if (upcoming.length === 0) {
+                return (
+                  <View style={styles.upcomingEmpty}>
+                    <ThemedText variant="secondary" style={styles.upcomingEmptyText}>
+                      No upcoming absences in the next 30 days.
+                    </ThemedText>
+                  </View>
+                );
+              }
               return (
-                <View style={styles.upcomingEmpty}>
-                  <ThemedText variant="secondary" style={styles.upcomingEmptyText}>
-                    No upcoming absences in the next 30 days.
-                  </ThemedText>
+                <View style={styles.upcomingList}>
+                  {upcoming.map((a) => (
+                    <TouchableOpacity
+                      key={a.id}
+                      style={styles.upcomingRow}
+                      activeOpacity={0.6}
+                      onPress={() => handleOpenDay(a.date)}
+                    >
+                      <View style={[styles.upcomingTypeDot, { backgroundColor: getTypeColor(a.type) }]} />
+                      <ThemedText style={styles.upcomingName} numberOfLines={1}>{a.name}</ThemedText>
+                      <View style={styles.upcomingDateBadge}>
+                        <Clock size={10} color={colors.secondaryText} />
+                        <ThemedText variant="secondary" style={styles.upcomingDateText}>
+                          {formatDateUK(a.date)}
+                        </ThemedText>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               );
-            }
-            return (
-              <View style={styles.upcomingList}>
-                {upcoming.map((a) => (
-                  <TouchableOpacity
-                    key={a.id}
-                    style={styles.upcomingRow}
-                    activeOpacity={0.6}
-                    onPress={() => handleOpenDay(a.date)}
-                  >
-                    <View style={[styles.upcomingTypeDot, { backgroundColor: getTypeColor(a.type) }]} />
-                    <ThemedText style={styles.upcomingName} numberOfLines={1}>{a.name}</ThemedText>
-                    <View style={styles.upcomingDateBadge}>
-                      <Clock size={10} color={colors.secondaryText} />
-                      <ThemedText variant="secondary" style={styles.upcomingDateText}>
-                        {formatDateUK(a.date)}
-                      </ThemedText>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            );
-          })()}
-        </View>
+            })()}
+          </View>
+        )}
       </ScrollView>
 
       {/* FAB */}
@@ -605,23 +562,7 @@ const styles = StyleSheet.create({
   },
   dashboardValue: { fontSize: 22, fontWeight: '800' as const },
   dashboardLabel: { fontSize: 10, textAlign: 'center' as const },
-  weekSummaryRow: {
-    flexDirection: 'row' as const,
-    gap: 8,
-    width: '100%',
-    maxWidth: 1320,
-  },
-  weekSummaryCard: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    gap: 2,
-  },
-  weekSummaryVal: { fontSize: 20, fontWeight: '800' as const },
-  weekSummaryLabel: { fontSize: 10, textAlign: 'center' as const },
+
   calendarCard: {
     width: '100%',
     borderWidth: 1,
