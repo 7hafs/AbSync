@@ -18,6 +18,7 @@ import {
 import { startupIntegrityCheck } from "@/lib/storageManager";
 import { AuthProvider, useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { loadAllFromSupabase, migrateIfNeeded } from "@/lib/syncService";
+import { fetchCalendarView } from "@/lib/dataService";
 import Colors from "@/constants/colors";
 
 export const unstable_settings = {
@@ -188,6 +189,17 @@ function AuthenticatedApp() {
 
     if (data.notifPrefs) {
       notificationStore.setPreferences(data.notifPrefs);
+    }
+
+    // Step 5b: Load calendar view preference from Supabase
+    try {
+      const savedView = await fetchCalendarView();
+      if (savedView && ['day', 'week', 'month'].includes(savedView)) {
+        calendarStore.setCalendarView(savedView);
+        console.log("[_layout] Loaded calendar view preference:", savedView);
+      }
+    } catch (e) {
+      console.warn("[_layout] Failed to load calendar view preference:", e);
     }
 
     // Step 6: Seed public holidays only — no sample staff or absences

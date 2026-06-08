@@ -206,6 +206,7 @@ export type Database = {
       profiles: {
         Row: {
           access_level: string | null
+          calendar_view: string | null
           created_at: string | null
           email: string | null
           id: string
@@ -215,6 +216,7 @@ export type Database = {
         }
         Insert: {
           access_level?: string | null
+          calendar_view?: string | null
           created_at?: string | null
           email?: string | null
           id: string
@@ -224,6 +226,7 @@ export type Database = {
         }
         Update: {
           access_level?: string | null
+          calendar_view?: string | null
           created_at?: string | null
           email?: string | null
           id?: string

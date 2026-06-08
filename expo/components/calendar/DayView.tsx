@@ -1,446 +1,315 @@
-import React, { useMemo } from "react";
-import { View, StyleSheet, ScrollView, TouchableOpacity, useColorScheme } from "react-native";
-import ThemedText from "@/components/ThemedText";
-import ThemedView from "@/components/ThemedView";
-import { formatDate, getDayName } from "@/utils/dateUtils";
-import useCalendarStore from "@/store/useCalendarStore";
-import useNotesStore from "@/store/useNotesStore";
-import useRemindersStore from "@/store/useRemindersStore";
-import useAbsenceStore from "@/store/useAbsenceStore";
-import useStaffStore from "@/store/useStaffStore";
-import Colors from "@/constants/colors";
-import useThemeStore from "@/store/useThemeStore";
-import { EventType, NoteType, ReminderType } from "@/types";
-import { FileText, Clock, UserX, ChevronLeft, ChevronRight } from "lucide-react-native";
-import { useRouter } from "expo-router";
+import React, { useMemo } from 'react';
+import {
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  useWindowDimensions,
+} from 'react-native';
+import ThemedText from '@/components/ThemedText';
+import { absenceColors } from '@/constants/colors';
+import { Absence, AbsenceType } from '@/types';
+import {
+  toDateString,
+  todayDateString,
+  formatDateUKLong,
+  fromDateString,
+} from '@/utils/dateUtils';
+
+const TYPE_COLORS: Record<AbsenceType, string> = {
+  Holiday: absenceColors.holiday,
+  Sickness: absenceColors.sickness,
+  Training: absenceColors.training,
+  'Unpaid Leave': absenceColors.unpaidLeave,
+  Other: absenceColors.other,
+  'Public Holiday': absenceColors.publicHoliday,
+};
+
+function getTypeColor(type: AbsenceType): string {
+  return TYPE_COLORS[type] ?? absenceColors.pending;
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}
 
 interface DayViewProps {
   currentDate: Date;
-  onEventPress: (event: EventType) => void;
-  onDateChange?: (date: Date) => void;
+  absences: Absence[];
+  onSelectDate: (date: string) => void;
+  onAddAbsence: (date: string, session: 'AM' | 'PM') => void;
 }
 
-export default function DayView({ currentDate, onEventPress, onDateChange }: DayViewProps) {
-  const router = useRouter();
-  const systemColorScheme = useColorScheme();
-  const { isDarkMode } = useThemeStore();
-  const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
-  const colors = Colors[colorScheme || "light"];
-  
-  const { events } = useCalendarStore();
-  const { notes } = useNotesStore();
-  const { reminders } = useRemindersStore();
-  const { absences } = useAbsenceStore();
-  const { staff } = useStaffStore();
-  
-  const dateStr = useMemo(() => formatDate(currentDate), [currentDate]);
-  const dayName = useMemo(() => getDayName(currentDate), [currentDate]);
-  
-  const eventsForDay = useMemo(() => {
-    return events.filter(event => event.date === dateStr);
-  }, [events, dateStr]);
-  
-  const notesForDay = useMemo(() => {
-    return notes.filter(note => note.date === dateStr);
-  }, [notes, dateStr]);
-  
-  const remindersForDay = useMemo(() => {
-    return reminders.filter(reminder => reminder.date === dateStr);
-  }, [reminders, dateStr]);
-  
-  const absencesForDay = useMemo(() => {
-    return absences.filter((a) => a.date === dateStr && a.type !== 'Public Holiday' && a.status !== 'Rejected');
+interface StaffEntry {
+  id: string;
+  name: string;
+  type: AbsenceType;
+  duration: 'AM' | 'PM' | 'Full';
+  status: string;
+}
+
+export default function DayView({
+  currentDate,
+  absences,
+  onSelectDate,
+  onAddAbsence,
+}: DayViewProps) {
+  const { width } = useWindowDimensions();
+  const isWide = width >= 640;
+  const dateStr = toDateString(currentDate);
+  const todayStr = todayDateString();
+  const isToday = dateStr === todayStr;
+
+  const dayAbsences = useMemo(() => {
+    return absences
+      .filter((a) => a.date === dateStr)
+      .filter((a) => a.type !== 'Public Holiday' && a.status !== 'Rejected');
   }, [absences, dateStr]);
-  
-  const hasConflict = useMemo(() => absencesForDay.length > 2, [absencesForDay]);
-  
-  const changeDay = (direction: number) => {
-    const newDate = new Date(currentDate);
-    newDate.setDate(newDate.getDate() + direction);
-    if (onDateChange) {
-      onDateChange(newDate);
-    }
-  };
-  
-  const amEvents = useMemo(() => {
-    return eventsForDay.filter(event => event.timeOfDay === 'AM' || (!event.timeOfDay && event.startTime && parseInt(event.startTime.split(':')[0]) < 12));
-  }, [eventsForDay]);
-  
-  const pmEvents = useMemo(() => {
-    return eventsForDay.filter(event => event.timeOfDay === 'PM' || (!event.timeOfDay && event.startTime && parseInt(event.startTime.split(':')[0]) >= 12));
-  }, [eventsForDay]);
-  
-  const handleNotePress = (note: NoteType) => {
-    router.push({
-      pathname: "/notes/note-editor",
-      params: { id: note.id },
-    });
-  };
-  
-  const handleReminderPress = (reminder: ReminderType) => {
-    router.push({
-      pathname: "/reminders/reminder-form",
-      params: { id: reminder.id },
-    });
-  };
-  
-  const handleAddNote = () => {
-    router.push({
-      pathname: "/notes/note-editor",
-      params: { date: dateStr },
-    });
-  };
-  
-  const handleAddReminder = () => {
-    router.push({
-      pathname: "/reminders/reminder-form",
-      params: { date: dateStr },
-    });
-  };
-  
-  return (
-    <ThemedView style={styles.container}>
-      <View style={[
-        styles.header,
-        hasConflict && { backgroundColor: "#FF5722" }
-      ]}>
-        <View style={styles.dateNavigation}>
-          <TouchableOpacity 
-            style={[styles.navButton, { backgroundColor: hasConflict ? "rgba(255,255,255,0.2)" : colors.surfaceVariant }]}
-            onPress={() => changeDay(-1)}
-          >
-            <ChevronLeft size={24} color={hasConflict ? "white" : colors.text} />
-          </TouchableOpacity>
-          <View style={styles.dateInfo}>
-            <ThemedText 
-              size="large" 
-              weight="bold"
-              style={hasConflict && { color: "white" }}
-            >
-              {dayName}
-            </ThemedText>
-            {hasConflict && (
-              <ThemedText style={styles.conflictWarning}>
-                ⚠️ High Absence Alert: {absencesForDay.length} absent
-              </ThemedText>
-            )}
-          </View>
-          <TouchableOpacity 
-            style={[styles.navButton, { backgroundColor: hasConflict ? "rgba(255,255,255,0.2)" : colors.surfaceVariant }]}
-            onPress={() => changeDay(1)}
-          >
-            <ChevronRight size={24} color={hasConflict ? "white" : colors.text} />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity 
-            style={[styles.addButton, { backgroundColor: colors.surfaceVariant }]} 
-            onPress={handleAddNote}
-          >
-            <FileText size={16} color={colors.primary} />
-            <ThemedText style={styles.addButtonText}>Add Note</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.addButton, { backgroundColor: colors.surfaceVariant }]} 
-            onPress={handleAddReminder}
-          >
-            <Clock size={16} color={colors.primary} />
-            <ThemedText style={styles.addButtonText}>Add Reminder</ThemedText>
-          </TouchableOpacity>
+
+  const amList = useMemo(
+    () =>
+      dayAbsences
+        .filter((a) => a.duration === 'AM' || a.duration === 'Full')
+        .map((a) => ({ id: a.id, name: a.name, type: a.type, duration: a.duration as 'AM' | 'Full', status: a.status })),
+    [dayAbsences],
+  );
+
+  const pmList = useMemo(
+    () =>
+      dayAbsences
+        .filter((a) => a.duration === 'PM' || a.duration === 'Full')
+        .map((a) => ({ id: a.id, name: a.name, type: a.type, duration: a.duration as 'PM' | 'Full', status: a.status })),
+    [dayAbsences],
+  );
+
+  const renderSection = (title: string, list: StaffEntry[], color: string, bgColor: string) => (
+    <View style={[styles.section, { backgroundColor: bgColor, borderColor: `${color}22` }]}>
+      <View style={[styles.sectionHeader, { backgroundColor: `${color}18` }]}>
+        <ThemedText style={[styles.sectionTitle, { color }]}>{title}</ThemedText>
+        <View style={[styles.sectionCount, { backgroundColor: `${color}22` }]}>
+          <ThemedText style={[styles.sectionCountText, { color }]}>{list.length}</ThemedText>
         </View>
       </View>
-      
-      {absencesForDay.length > 0 && (
-        <View style={styles.absencesContainer}>
-          <ThemedText weight="semibold" style={styles.sectionTitle}>
-            Absences/Vacations
+      {list.length === 0 ? (
+        <View style={styles.sectionEmpty}>
+          <ThemedText variant="secondary" style={styles.emptyText}>
+            No {title.toLowerCase()} absences
           </ThemedText>
-          {absencesForDay.map((absence) => {
-            const staffMember = staff.find(s => s.id === absence.staffId);
-            return (
-              <View 
-                key={absence.id} 
-                style={[styles.absenceItem, { backgroundColor: colors.surfaceVariant }]}
-              >
-                <UserX size={16} color={colors.primary} />
-                <View style={styles.absenceInfo}>
-                  <ThemedText weight="semibold">
-                    {absence.name}
-                  </ThemedText>
-                  <ThemedText variant="secondary" size="small">
-                    {absence.type}{absence.duration !== 'Full' ? ` (${absence.duration})` : ''}
-                  </ThemedText>
-                </View>
+        </View>
+      ) : (
+        <View style={styles.sectionList}>
+          {list.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.staffCard}
+              onPress={() => onSelectDate(dateStr)}
+              activeOpacity={0.6}
+            >
+              <View style={[styles.avatar, { backgroundColor: `${getTypeColor(item.type)}22` }]}>
+                <ThemedText style={[styles.avatarText, { color: getTypeColor(item.type) }]}>
+                  {getInitials(item.name)}
+                </ThemedText>
               </View>
-            );
-          })}
+              <View style={styles.staffInfo}>
+                <ThemedText style={styles.staffName}>{item.name}</ThemedText>
+                <ThemedText variant="secondary" style={styles.staffType}>
+                  {item.type}{item.duration !== 'Full' ? ` (${item.duration})` : ''}
+                </ThemedText>
+              </View>
+              <View style={[styles.statusBadge, { backgroundColor: `${getTypeColor(item.type)}18` }]}>
+                <ThemedText style={[styles.statusBadgeText, { color: getTypeColor(item.type) }]}>
+                  {item.status}
+                </ThemedText>
+              </View>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
-      
-      {(notesForDay.length > 0 || remindersForDay.length > 0) && (
-        <View style={styles.itemsContainer}>
-          {notesForDay.length > 0 && (
-            <View style={styles.sectionContainer}>
-              <ThemedText weight="semibold" style={styles.sectionTitle}>
-                Notes
-              </ThemedText>
-              {notesForDay.map((note) => (
-                <TouchableOpacity 
-                  key={note.id} 
-                  style={[styles.noteItem, { backgroundColor: colors.surfaceVariant }]}
-                  onPress={() => handleNotePress(note)}
-                >
-                  <FileText size={16} color={colors.primary} />
-                  <ThemedText style={styles.itemTitle} numberOfLines={1}>
-                    {note.title}
-                  </ThemedText>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-          
-          {remindersForDay.length > 0 && (
-            <View style={styles.sectionContainer}>
-              <ThemedText weight="semibold" style={styles.sectionTitle}>
-                Reminders
-              </ThemedText>
-              {remindersForDay.map((reminder) => (
-                <TouchableOpacity 
-                  key={reminder.id} 
-                  style={[
-                    styles.reminderItem, 
-                    { 
-                      backgroundColor: colors.surfaceVariant,
-                      opacity: reminder.isCompleted ? 0.6 : 1
-                    }
-                  ]}
-                  onPress={() => handleReminderPress(reminder)}
-                >
-                  <Clock size={16} color={colors.primary} />
-                  <ThemedText 
-                    style={[
-                      styles.itemTitle, 
-                      reminder.isCompleted && styles.completedText
-                    ]} 
-                    numberOfLines={1}
-                  >
-                    {reminder.title}
-                  </ThemedText>
-                  {reminder.time && (
-                    <ThemedText variant="secondary" size="small">
-                      {reminder.time}
-                    </ThemedText>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+    </View>
+  );
+
+  return (
+    <View style={styles.container}>
+      {/* Day header */}
+      <View style={[styles.dayHeader, isToday && styles.dayHeaderToday]}>
+        <ThemedText style={styles.dateFull}>{formatDateUKLong(dateStr)}</ThemedText>
+        <ThemedText variant="secondary" style={styles.entriesCount}>
+          {dayAbsences.length} {dayAbsences.length === 1 ? 'absence' : 'absences'}
+        </ThemedText>
+      </View>
+
+      {/* Quick stats */}
+      <View style={styles.statsRow}>
+        <View style={[styles.statCard, { backgroundColor: '#F0FDF4' }]}>
+          <ThemedText style={[styles.statValue, { color: '#16A34A' }]}>{amList.length}</ThemedText>
+          <ThemedText variant="secondary" style={styles.statLabel}>AM</ThemedText>
+        </View>
+        <View style={[styles.statCard, { backgroundColor: '#EFF6FF' }]}>
+          <ThemedText style={[styles.statValue, { color: '#2563EB' }]}>{pmList.length}</ThemedText>
+          <ThemedText variant="secondary" style={styles.statLabel}>PM</ThemedText>
+        </View>
+        <TouchableOpacity
+          style={[styles.statCard, styles.addCard, { borderColor: '#0F766E' }]}
+          onPress={() => onAddAbsence(dateStr, 'AM')}
+          activeOpacity={0.7}
+        >
+          <ThemedText style={[styles.addIcon, { color: '#0F766E' }]}>+</ThemedText>
+          <ThemedText variant="secondary" style={styles.addLabel}>Add</ThemedText>
+        </TouchableOpacity>
+      </View>
+
+      {/* AM/PM sections */}
+      <View style={[styles.sectionsWrap, isWide && styles.sectionsWide]}>
+        {renderSection('AM · Morning', amList, '#F59E0B', 'rgba(255, 184, 77, 0.06)')}
+        {renderSection('PM · Afternoon', pmList, '#3B82F6', 'rgba(59, 130, 246, 0.06)')}
+      </View>
+
+      {dayAbsences.length === 0 && (
+        <View style={styles.emptyState}>
+          <ThemedText variant="secondary" style={styles.emptyText}>
+            No absences recorded for this day. Tap the "+ Add" button above to create one.
+          </ThemedText>
         </View>
       )}
-      
-      <ScrollView>
-        <View style={styles.periodSection}>
-          <View style={[styles.periodHeader, { backgroundColor: colors.primary }]}>
-            <ThemedText style={{ color: 'white' }} weight="bold">AM</ThemedText>
-          </View>
-          
-          {amEvents.length > 0 ? (
-            amEvents.map((event) => {
-              const person = event.personId ? staff.find(s => s.id === event.personId) : null;
-              return (
-                <TouchableOpacity
-                  key={event.id}
-                  style={[
-                    styles.eventCard,
-                    { backgroundColor: colors.surfaceVariant },
-                  ]}
-                  onPress={() => onEventPress(event)}
-                >
-                  <View style={styles.eventCardContent}>
-                    <ThemedText weight="semibold">{event.title}</ThemedText>
-                    {event.startTime && event.endTime && (
-                      <ThemedText variant="secondary" size="small">
-                        {event.startTime} - {event.endTime}
-                      </ThemedText>
-                    )}
-                    {person && (
-                      <ThemedText variant="secondary" size="small">
-                        {person.name}
-                      </ThemedText>
-                    )}
-                  </View>
-                </TouchableOpacity>
-              );
-            })
-          ) : (
-            <View style={styles.emptyPeriod}>
-              <ThemedText variant="secondary" size="small">No AM events</ThemedText>
-            </View>
-          )}
-        </View>
-        
-        <View style={styles.periodSection}>
-          <View style={[styles.periodHeader, { backgroundColor: colors.primary }]}>
-            <ThemedText style={{ color: 'white' }} weight="bold">PM</ThemedText>
-          </View>
-          
-          {pmEvents.length > 0 ? (
-            pmEvents.map((event) => {
-              const person = event.personId ? staff.find(s => s.id === event.personId) : null;
-              return (
-                <TouchableOpacity
-                  key={event.id}
-                  style={[
-                    styles.eventCard,
-                    { backgroundColor: colors.surfaceVariant },
-                  ]}
-                  onPress={() => onEventPress(event)}
-                >
-                  <View style={styles.eventCardContent}>
-                    <ThemedText weight="semibold">{event.title}</ThemedText>
-                    {event.startTime && event.endTime && (
-                      <ThemedText variant="secondary" size="small">
-                        {event.startTime} - {event.endTime}
-                      </ThemedText>
-                    )}
-                    {person && (
-                      <ThemedText variant="secondary" size="small">
-                        {person.name}
-                      </ThemedText>
-                    )}
-                  </View>
-                </TouchableOpacity>
-              );
-            })
-          ) : (
-            <View style={styles.emptyPeriod}>
-              <ThemedText variant="secondary" size="small">No PM events</ThemedText>
-            </View>
-          )}
-        </View>
-      </ScrollView>
-    </ThemedView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-  },
-  header: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEEEEE",
-  },
-  dateNavigation: {
-    flexDirection: "row",
-    alignItems: "center",
     gap: 12,
-    marginBottom: 12,
   },
-  navButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  dateInfo: {
-    flex: 1,
-    alignItems: "center",
-  },
-  conflictWarning: {
-    color: "white",
-    fontSize: 12,
-    marginTop: 4,
-    fontWeight: "600" as const,
-  },
-  headerActions: {
-    flexDirection: "row",
-    marginTop: 12,
-  },
-  addButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
+  dayHeader: {
+    alignItems: 'center',
     paddingVertical: 8,
-    borderRadius: 8,
-    marginRight: 8,
   },
-  addButtonText: {
-    marginLeft: 6,
+  dayHeaderToday: {},
+  dateFull: {
+    fontSize: 18,
+    fontWeight: '800' as const,
   },
-  itemsContainer: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEEEEE",
+  entriesCount: {
+    fontSize: 13,
+    marginTop: 2,
   },
-  sectionContainer: {
-    marginBottom: 12,
+  statsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  statCard: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    gap: 2,
+  },
+  statValue: {
+    fontSize: 22,
+    fontWeight: '800' as const,
+  },
+  statLabel: {
+    fontSize: 10,
+  },
+  addCard: {
+    backgroundColor: '#F0FDFA',
+    borderWidth: 2,
+    borderStyle: 'dashed' as const,
+    justifyContent: 'center',
+  },
+  addIcon: {
+    fontSize: 22,
+    fontWeight: '700' as const,
+  },
+  addLabel: {
+    fontSize: 10,
+  },
+  sectionsWrap: {
+    gap: 12,
+  },
+  sectionsWide: {
+    flexDirection: 'row',
+  },
+  section: {
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden' as const,
+    flex: 1,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   sectionTitle: {
-    marginBottom: 8,
+    fontSize: 13,
+    fontWeight: '800' as const,
+    letterSpacing: 0.3,
   },
-  noteItem: {
-    flexDirection: "row",
-    alignItems: "center",
+  sectionCount: {
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  sectionCountText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  sectionEmpty: {
+    padding: 14,
+  },
+  sectionList: {
     padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
+    gap: 8,
   },
-  reminderItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
+  staffCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.6)',
   },
-  itemTitle: {
-    marginLeft: 8,
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+  },
+  staffInfo: {
     flex: 1,
   },
-  completedText: {
-    textDecorationLine: "line-through",
+  staffName: {
+    fontSize: 13,
+    fontWeight: '700' as const,
   },
-  absencesContainer: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEEEEE",
+  staffType: {
+    fontSize: 11,
   },
-  absenceItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  absenceInfo: {
-    marginLeft: 8,
-    flex: 1,
-  },
-  periodSection: {
-    marginBottom: 24,
-  },
-  periodHeader: {
-    padding: 12,
-    alignItems: "center",
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 8,
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 8,
   },
-  eventCard: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 8,
-    overflow: "hidden",
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
   },
-  eventCardContent: {
-    padding: 16,
+  emptyState: {
+    paddingVertical: 20,
+    alignItems: 'center',
   },
-  emptyPeriod: {
-    marginHorizontal: 16,
-    padding: 24,
-    alignItems: "center",
+  emptyText: {
+    fontSize: 13,
+    textAlign: 'center',
   },
 });

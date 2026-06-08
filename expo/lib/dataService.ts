@@ -367,6 +367,38 @@ export async function deleteReminderFromSupabase(id: string): Promise<void> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// USER PREFERENCES (calendar view, etc.)
+// ═════════════════════════════════════════════════════════════════════════════
+
+export type CalendarViewPref = 'day' | 'week' | 'month';
+
+export async function fetchCalendarView(): Promise<CalendarViewPref> {
+  const userId = await getUserIdAsync();
+  if (!userId) return 'week';
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("calendar_view")
+    .eq("id", userId)
+    .single();
+
+  if (error || !data?.calendar_view) return 'week';
+  return data.calendar_view as CalendarViewPref;
+}
+
+export async function upsertCalendarView(view: CalendarViewPref): Promise<void> {
+  const userId = await getUserIdAsync();
+  if (!userId) return;
+
+  const { error } = await supabase
+    .from("profiles")
+    .upsert({ id: userId, calendar_view: view }, { onConflict: "id" });
+  if (error) {
+    console.error("[dataService] upsertCalendarView error:", error.message);
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // NOTIFICATION PREFERENCES
 // ═════════════════════════════════════════════════════════════════════════════
 

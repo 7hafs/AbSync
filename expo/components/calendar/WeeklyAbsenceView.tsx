@@ -1,22 +1,204 @@
 import React, { useMemo } from 'react';
-import { View, StyleSheet, TouchableOpacity, ScrollView, useWindowDimensions } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  useWindowDimensions,
+} from 'react-native';
 import ThemedText from '@/components/ThemedText';
-import ThemedView from '@/components/ThemedView';
-import { absenceColors, dotColors } from '@/constants/colors';
-import { Absence, AbsenceType } from '@/types';
-import { toDateString, getWeekDates, fromDateString, todayDateString } from '@/utils/dateUtils';
+import { absenceColors } from '@/constants/colors';
+import { Absence, AbsenceType, AbsenceDuration } from '@/types';
+import {
+  toDateString,
+  todayDateString,
+  getWeekDatesFromDate,
+} from '@/utils/dateUtils';
 
-function getTypeColor(type: AbsenceType) {
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const TYPE_COLORS: Record<AbsenceType, string> = {
+  Holiday: absenceColors.holiday,
+  Sickness: absenceColors.sickness,
+  Training: absenceColors.training,
+  'Unpaid Leave': absenceColors.unpaidLeave,
+  Other: absenceColors.other,
+  'Public Holiday': absenceColors.publicHoliday,
+};
+
+function getTypeColor(type: AbsenceType): string {
+  return TYPE_COLORS[type] ?? absenceColors.pending;
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}
+
+function getTypeBadge(type: AbsenceType): string {
   switch (type) {
-    case 'Holiday': return absenceColors.holiday;
-    case 'Sickness': return absenceColors.sickness;
-    case 'Training': return absenceColors.training;
-    case 'Unpaid Leave': return absenceColors.unpaidLeave;
-    case 'Other': return absenceColors.other;
-    case 'Public Holiday': return absenceColors.publicHoliday;
-    default: return absenceColors.pending;
+    case 'Holiday': return 'AL';
+    case 'Sickness': return 'S';
+    case 'Training': return 'T';
+    case 'Unpaid Leave': return 'UL';
+    case 'Other': return 'O';
+    case 'Public Holiday': return 'PH';
+    default: return '?';
   }
 }
+
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+const DAY_LABELS_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
+
+// ── Sub-components ───────────────────────────────────────────────────────────
+
+interface SummaryCardsProps {
+  amCount: number;
+  pmCount: number;
+  fullDayCount: number;
+  totalCount: number;
+}
+
+function SummaryCards({ amCount, pmCount, fullDayCount, totalCount }: SummaryCardsProps) {
+  return (
+    <View style={styles.summaryRow}>
+      <View style={[styles.summaryCard, { backgroundColor: '#F0FDF4' }]}>
+        <ThemedText style={[styles.summaryValue, { color: '#16A34A' }]}>{amCount}</ThemedText>
+        <ThemedText variant="secondary" style={styles.summaryLabel}>AM Absences</ThemedText>
+      </View>
+      <View style={[styles.summaryCard, { backgroundColor: '#EFF6FF' }]}>
+        <ThemedText style={[styles.summaryValue, { color: '#2563EB' }]}>{pmCount}</ThemedText>
+        <ThemedText variant="secondary" style={styles.summaryLabel}>PM Absences</ThemedText>
+      </View>
+      <View style={[styles.summaryCard, { backgroundColor: '#FFF7ED' }]}>
+        <ThemedText style={[styles.summaryValue, { color: '#EA580C' }]}>{fullDayCount}</ThemedText>
+        <ThemedText variant="secondary" style={styles.summaryLabel}>Full Day</ThemedText>
+      </View>
+      <View style={[styles.summaryCard, { backgroundColor: '#F5F3FF' }]}>
+        <ThemedText style={[styles.summaryValue, { color: '#6D28D9' }]}>{totalCount}</ThemedText>
+        <ThemedText variant="secondary" style={styles.summaryLabel}>Total</ThemedText>
+      </View>
+    </View>
+  );
+}
+
+interface DayCardProps {
+  date: Date;
+  dateStr: string;
+  dayIndex: number;
+  isToday: boolean;
+  isWeekend: boolean;
+  amList: Array<{ id: string; name: string; type: AbsenceType }>;
+  pmList: Array<{ id: string; name: string; type: AbsenceType }>;
+  isCompact: boolean;
+  onPressDay: () => void;
+  onPressStaff: (absenceId: string) => void;
+}
+
+function DayCard({
+  date,
+  dateStr,
+  dayIndex,
+  isToday,
+  isWeekend,
+  amList,
+  pmList,
+  isCompact,
+  onPressDay,
+  onPressStaff,
+}: DayCardProps) {
+  const maxVisible = isCompact ? 1 : 3;
+  
+  const renderStaffList = (
+    list: Array<{ id: string; name: string; type: AbsenceType }>,
+  ) => {
+    if (list.length === 0) {
+      return <ThemedText variant="secondary" style={styles.noAbsences}>—</ThemedText>;
+    }
+    return (
+      <View style={styles.staffList}>
+        {list.slice(0, maxVisible).map((item) => (
+          <TouchableOpacity
+            key={item.id}
+            style={styles.staffRow}
+            onPress={() => onPressStaff(item.id)}
+            activeOpacity={0.6}
+          >
+            <View style={[styles.avatar, { backgroundColor: `${getTypeColor(item.type)}22` }]}>
+              <ThemedText style={[styles.avatarText, { color: getTypeColor(item.type) }]}>
+                {getInitials(item.name)}
+              </ThemedText>
+            </View>
+            <ThemedText style={styles.staffName} numberOfLines={1}>{item.name}</ThemedText>
+            <View style={[styles.typeBadge, { backgroundColor: `${getTypeColor(item.type)}18` }]}>
+              <ThemedText style={[styles.typeBadgeText, { color: getTypeColor(item.type) }]}>
+                {getTypeBadge(item.type)}
+              </ThemedText>
+            </View>
+          </TouchableOpacity>
+        ))}
+        {list.length > maxVisible && (
+          <ThemedText variant="secondary" style={styles.moreLabel}>
+            +{list.length - maxVisible} more
+          </ThemedText>
+        )}
+      </View>
+    );
+  };
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.dayCard,
+        isToday && styles.dayCardToday,
+        isWeekend && styles.dayCardWeekend,
+      ]}
+      onPress={onPressDay}
+      activeOpacity={0.7}
+    >
+      {/* Day header */}
+      <View style={styles.dayCardHeader}>
+        <ThemedText style={[styles.dayLabel, isWeekend && styles.dayLabelWeekend]}>
+          {isCompact ? DAY_LABELS[dayIndex] : DAY_LABELS_FULL[dayIndex]}
+        </ThemedText>
+        <View style={[styles.dayNumWrap, isToday && styles.dayNumWrapToday]}>
+          <ThemedText style={[styles.dayNum, isToday && styles.dayNumToday]}>
+            {date.getDate()}
+          </ThemedText>
+        </View>
+      </View>
+
+      {/* AM Section */}
+      <View style={[styles.sessionBlock, styles.amBlock]}>
+        <View style={styles.sessionHeaderRow}>
+          <ThemedText style={styles.sessionLabelAM}>AM</ThemedText>
+          {amList.length > 0 && (
+            <View style={[styles.sessionCountBadge, { backgroundColor: '#DCFCE7' }]}>
+              <ThemedText style={[styles.sessionCount, { color: '#16A34A' }]}>{amList.length}</ThemedText>
+            </View>
+          )}
+        </View>
+        {renderStaffList(amList)}
+      </View>
+
+      {/* PM Section */}
+      <View style={[styles.sessionBlock, styles.pmBlock]}>
+        <View style={styles.sessionHeaderRow}>
+          <ThemedText style={styles.sessionLabelPM}>PM</ThemedText>
+          {pmList.length > 0 && (
+            <View style={[styles.sessionCountBadge, { backgroundColor: '#DBEAFE' }]}>
+              <ThemedText style={[styles.sessionCount, { color: '#2563EB' }]}>{pmList.length}</ThemedText>
+            </View>
+          )}
+        </View>
+        {renderStaffList(pmList)}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ── Main Component ───────────────────────────────────────────────────────────
 
 interface WeeklyCalendarViewProps {
   currentDate: Date;
@@ -32,237 +214,307 @@ export default function WeeklyCalendarView({
   onAddAbsence,
 }: WeeklyCalendarViewProps) {
   const { width } = useWindowDimensions();
-  const isSmallPhone = width < 380;
-  const isTablet = width >= 768;
+  const isCompact = width < 640;
+  const isSmall = width < 420;
 
-  const weekDates = useMemo(() => getWeekDates(new Date(currentDate)), [currentDate]);
+  const weekDates = useMemo(() => getWeekDatesFromDate(currentDate), [currentDate]);
   const todayStr = todayDateString();
 
-  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const dayData = useMemo(() => {
+    return weekDates.map((date, idx) => {
+      const dateStr = toDateString(date);
+      const dayAbsences = absences.filter(
+        (a) => a.date === dateStr && a.type !== 'Public Holiday' && a.status !== 'Rejected',
+      );
 
-  const getAbsencesForDate = (date: string) =>
-    absences.filter((a) => a.date === date);
+      const amList = dayAbsences
+        .filter((a) => a.duration === 'AM' || a.duration === 'Full')
+        .map((a) => ({ id: a.id, name: a.name, type: a.type }));
 
-  return (
-    <ScrollView contentContainerStyle={styles.scrollContent}>
-      {/* Day column headers */}
-      <View style={styles.weekRow}>
-        <View style={styles.timeGutter} />
-        {weekDates.map((date, idx) => {
-          const dateStr = toDateString(date);
-          const isToday = dateStr === todayStr;
-          return (
-            <TouchableOpacity
-              key={dateStr}
-              style={[styles.dayHeader, isToday && styles.dayHeaderToday]}
-              onPress={() => onSelectDate(dateStr)}
-              activeOpacity={0.7}
-            >
-              <ThemedText style={[styles.dayLabel, isToday && styles.dayLabelToday]}>
-                {dayLabels[idx]}
-              </ThemedText>
-              <View style={[styles.dayNumWrap, isToday && styles.dayNumWrapToday]}>
-                <ThemedText style={[styles.dayNum, isToday && styles.dayNumToday]}>
-                  {date.getDate()}
-                </ThemedText>
+      const pmList = dayAbsences
+        .filter((a) => a.duration === 'PM' || a.duration === 'Full')
+        .map((a) => ({ id: a.id, name: a.name, type: a.type }));
+
+      const isToday = dateStr === todayStr;
+      const isWeekend = idx >= 5;
+
+      return { date, dateStr, idx, amList, pmList, isToday, isWeekend };
+    });
+  }, [weekDates, absences, todayStr]);
+
+  const summaryData = useMemo(() => {
+    let am = 0;
+    let pm = 0;
+    let fullDay = 0;
+    const seenStaff = new Set<string>();
+
+    for (const d of dayData) {
+      const dayAbsences = absences.filter(
+        (a) => a.date === d.dateStr && a.type !== 'Public Holiday' && a.status !== 'Rejected',
+      );
+      for (const a of dayAbsences) {
+        seenStaff.add(a.staffId);
+        if (a.duration === 'AM') am++;
+        else if (a.duration === 'PM') pm++;
+        else if (a.duration === 'Full') fullDay++;
+      }
+    }
+    // Total = unique staff absences this week
+    const total = seenStaff.size;
+
+    return { amCount: am, pmCount: pm, fullDayCount: fullDay, totalCount: total };
+  }, [dayData, absences]);
+
+  if (isSmall) {
+    // Mobile: horizontal scroll
+    return (
+      <View style={styles.container}>
+        <SummaryCards {...summaryData} />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+          <View style={styles.dayCardsRow}>
+            {dayData.map((d) => (
+              <View key={d.dateStr} style={styles.dayCardWrapper}>
+                <DayCard
+                  date={d.date}
+                  dateStr={d.dateStr}
+                  dayIndex={d.idx}
+                  isToday={d.isToday}
+                  isWeekend={d.isWeekend}
+                  amList={d.amList}
+                  pmList={d.pmList}
+                  isCompact={true}
+                  onPressDay={() => onSelectDate(d.dateStr)}
+                  onPressStaff={(id) => {
+                    const ab = absences.find((a) => a.id === id);
+                    if (ab) onSelectDate(ab.date);
+                  }}
+                />
               </View>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* AM / PM rows per day */}
-      <View style={styles.weekBody}>
-        {/* AM Row */}
-        <View style={styles.sessionRow}>
-          <View style={styles.timeGutter}>
-            <ThemedText style={styles.sessionLabel}>AM</ThemedText>
+            ))}
           </View>
-          {weekDates.map((date) => {
-            const dateStr = toDateString(date);
-            const dayAbsences = getAbsencesForDate(dateStr);
-            const amList = dayAbsences.filter(
-              (a) => a.type !== 'Public Holiday' && a.status !== 'Rejected' && (a.duration === 'AM' || a.duration === 'Full')
-            );
-            const holiday = dayAbsences.find((a) => a.type === 'Public Holiday');
-
-            return (
-              <TouchableOpacity
-                key={`am-${dateStr}`}
-                style={styles.dayCell}
-                onPress={() => onAddAbsence(dateStr, 'AM')}
-                activeOpacity={0.6}
-              >
-                {holiday ? (
-                  <View style={[styles.holidayPill, { backgroundColor: `${absenceColors.publicHoliday}22` }]}>
-                    <ThemedText style={[styles.holidayText, { color: absenceColors.publicHoliday }]} numberOfLines={1}>
-                      {holiday.name}
-                    </ThemedText>
-                  </View>
-                ) : amList.length > 0 ? (
-                  amList.slice(0, isTablet ? 5 : isSmallPhone ? 2 : 3).map((a) => (
-                    <View
-                      key={a.id}
-                      style={[styles.namePill, { backgroundColor: `${getTypeColor(a.type)}22`, borderLeftColor: getTypeColor(a.type) }]}
-                    >
-                      <ThemedText style={[styles.namePillText, { color: getTypeColor(a.type) }]} numberOfLines={1}>
-                        {a.name}
-                      </ThemedText>
-                    </View>
-                  ))
-                ) : null}
-                {(amList.length > (isTablet ? 5 : isSmallPhone ? 2 : 3)) && (
-                  <ThemedText variant="secondary" style={styles.moreLabel}>
-                    +{amList.length - (isTablet ? 5 : isSmallPhone ? 2 : 3)} more
-                  </ThemedText>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* PM Row */}
-        <View style={styles.sessionRow}>
-          <View style={styles.timeGutter}>
-            <ThemedText style={styles.sessionLabel}>PM</ThemedText>
-          </View>
-          {weekDates.map((date) => {
-            const dateStr = toDateString(date);
-            const dayAbsences = getAbsencesForDate(dateStr);
-            const pmList = dayAbsences.filter(
-              (a) => a.type !== 'Public Holiday' && a.status !== 'Rejected' && (a.duration === 'PM' || a.duration === 'Full')
-            );
-            const holiday = dayAbsences.find((a) => a.type === 'Public Holiday');
-
-            return (
-              <TouchableOpacity
-                key={`pm-${dateStr}`}
-                style={styles.dayCell}
-                onPress={() => onAddAbsence(dateStr, 'PM')}
-                activeOpacity={0.6}
-              >
-                {!holiday && pmList.length > 0 ? (
-                  pmList.slice(0, isTablet ? 5 : isSmallPhone ? 2 : 3).map((a) => (
-                    <View
-                      key={a.id}
-                      style={[styles.namePill, { backgroundColor: `${getTypeColor(a.type)}22`, borderLeftColor: getTypeColor(a.type) }]}
-                    >
-                      <ThemedText style={[styles.namePillText, { color: getTypeColor(a.type) }]} numberOfLines={1}>
-                        {a.name}
-                      </ThemedText>
-                    </View>
-                  ))
-                ) : null}
-                {(pmList.length > (isTablet ? 5 : isSmallPhone ? 2 : 3)) && (
-                  <ThemedText variant="secondary" style={styles.moreLabel}>
-                    +{pmList.length - (isTablet ? 5 : isSmallPhone ? 2 : 3)} more
-                  </ThemedText>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        </ScrollView>
       </View>
-    </ScrollView>
+    );
+  }
+
+  // Tablet/Desktop: full grid
+  return (
+    <View style={styles.container}>
+      <SummaryCards {...summaryData} />
+      <View style={styles.dayCardsGrid}>
+        {dayData.map((d) => (
+          <DayCard
+            key={d.dateStr}
+            date={d.date}
+            dateStr={d.dateStr}
+            dayIndex={d.idx}
+            isToday={d.isToday}
+            isWeekend={d.isWeekend}
+            amList={d.amList}
+            pmList={d.pmList}
+            isCompact={isCompact}
+            onPressDay={() => onSelectDate(d.dateStr)}
+            onPressStaff={(id) => {
+              const ab = absences.find((a) => a.id === id);
+              if (ab) onSelectDate(ab.date);
+            }}
+          />
+        ))}
+      </View>
+    </View>
   );
 }
 
+// ── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  scrollContent: {
-    paddingBottom: 20,
+  container: {
+    gap: 12,
   },
-  weekRow: {
+  // Summary cards
+  summaryRow: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(148, 163, 184, 0.2)',
+    gap: 8,
   },
-  timeGutter: {
-    width: 36,
-    paddingVertical: 8,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: 4,
-  },
-  dayHeader: {
+  summaryCard: {
     flex: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     alignItems: 'center',
-    paddingVertical: 8,
-    gap: 2,
+    gap: 4,
   },
-  dayHeaderToday: {
-    backgroundColor: 'rgba(15, 118, 110, 0.08)',
-    borderRadius: 10,
+  summaryValue: {
+    fontSize: 22,
+    fontWeight: '800' as const,
+  },
+  summaryLabel: {
+    fontSize: 10,
+    textAlign: 'center',
+  },
+  // Day cards
+  horizontalScroll: {
+    flexGrow: 0,
+  },
+  dayCardsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 16,
+  },
+  dayCardWrapper: {
+    width: 160,
+  },
+  dayCardsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    gap: 8,
+  },
+  dayCard: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.15)',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  dayCardToday: {
+    borderColor: '#0F766E',
+    borderWidth: 2,
+    backgroundColor: '#F0FDFA',
+  },
+  dayCardWeekend: {
+    backgroundColor: '#F8FAFC',
+  },
+  // Day card header
+  dayCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(148, 163, 184, 0.1)',
   },
   dayLabel: {
     fontSize: 11,
     fontWeight: '700' as const,
-    letterSpacing: 0.3,
     textTransform: 'uppercase' as const,
+    letterSpacing: 0.3,
+    color: '#475569',
   },
-  dayLabelToday: {
-    color: '#0F766E',
+  dayLabelWeekend: {
+    color: '#94A3B8',
   },
   dayNumWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(15, 118, 110, 0.06)',
   },
   dayNumWrapToday: {
     backgroundColor: '#0F766E',
   },
   dayNum: {
-    fontSize: 14,
-    fontWeight: '600' as const,
+    fontSize: 12,
+    fontWeight: '700' as const,
   },
   dayNumToday: {
     color: 'white',
     fontWeight: '800' as const,
   },
-  weekBody: {
-    gap: 2,
+  // Session blocks
+  sessionBlock: {
+    gap: 4,
+    minHeight: 30,
   },
-  sessionRow: {
+  amBlock: {},
+  pmBlock: {},
+  sessionHeaderRow: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(148, 163, 184, 0.08)',
-    minHeight: 64,
+    alignItems: 'center',
+    gap: 6,
   },
-  sessionLabel: {
-    fontSize: 10,
+  sessionLabelAM: {
+    fontSize: 9,
     fontWeight: '800' as const,
     letterSpacing: 0.5,
-    paddingTop: 6,
-  },
-  dayCell: {
-    flex: 1,
-    padding: 3,
-    gap: 2,
-  },
-  namePill: {
-    borderRadius: 6,
+    color: '#16A34A',
+    backgroundColor: '#F0FDF4',
     paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderLeftWidth: 3,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden' as const,
   },
-  namePillText: {
-    fontSize: 10,
+  sessionLabelPM: {
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 0.5,
+    color: '#2563EB',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden' as const,
+  },
+  sessionCountBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  sessionCount: {
+    fontSize: 9,
     fontWeight: '700' as const,
   },
-  holidayPill: {
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    flex: 1,
+  // Staff list
+  staffList: {
+    gap: 3,
+  },
+  staffRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 2,
+  },
+  avatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  holidayText: {
+  avatarText: {
+    fontSize: 8,
+    fontWeight: '800' as const,
+  },
+  staffName: {
     fontSize: 10,
-    fontWeight: '700' as const,
+    fontWeight: '600' as const,
+    flex: 1,
+  },
+  typeBadge: {
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  typeBadgeText: {
+    fontSize: 8,
+    fontWeight: '800' as const,
+    letterSpacing: 0.2,
+  },
+  noAbsences: {
+    fontSize: 10,
+    paddingVertical: 2,
   },
   moreLabel: {
     fontSize: 9,
-    paddingLeft: 4,
+    paddingLeft: 26,
   },
 });

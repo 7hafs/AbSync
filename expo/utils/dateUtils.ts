@@ -133,3 +133,68 @@ export const generateTimeSlots = (): string[] => {
   }
   return slots;
 };
+
+/**
+ * Get the ISO week number (1-53) for a given date.
+ * Uses the ISO 8601 definition: weeks start on Monday, and
+ * the first week of the year contains the first Thursday.
+ */
+export function getISOWeekNumber(date: Date): number {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+}
+
+/**
+ * Get the Monday of the week containing the given date.
+ * Returns a new Date set to Monday at noon local time.
+ */
+export function getMondayOfWeek(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(12, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Format a week range for display: "02–08 June 2026"
+ */
+export function formatWeekRange(monday: Date): string {
+  const sunday = new Date(monday);
+  sunday.setDate(sunday.getDate() + 6);
+  
+  const sameMonth = monday.getMonth() === sunday.getMonth();
+  const sameYear = monday.getFullYear() === sunday.getFullYear();
+  
+  const mondayDay = monday.getDate();
+  const sundayDay = sunday.getDate();
+  const mondayMonth = monday.toLocaleDateString('en-GB', { month: 'long' });
+  const sundayMonth = sunday.toLocaleDateString('en-GB', { month: 'long' });
+  const year = monday.getFullYear();
+  
+  if (sameMonth && sameYear) {
+    return `${String(mondayDay).padStart(2, '0')}–${String(sundayDay).padStart(2, '0')} ${mondayMonth} ${year}`;
+  }
+  if (sameYear) {
+    return `${String(mondayDay).padStart(2, '0')} ${mondayMonth} – ${String(sundayDay).padStart(2, '0')} ${sundayMonth} ${year}`;
+  }
+  return `${String(mondayDay).padStart(2, '0')} ${mondayMonth} ${monday.getFullYear()} – ${String(sundayDay).padStart(2, '0')} ${sundayMonth} ${year}`;
+}
+
+/**
+ * Get the week dates (Monday-Sunday) for a given date's week.
+ */
+export function getWeekDatesFromDate(date: Date): Date[] {
+  const monday = getMondayOfWeek(date);
+  const dates: Date[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(d.getDate() + i);
+    dates.push(d);
+  }
+  return dates;
+}

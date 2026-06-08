@@ -1,18 +1,24 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { EventType } from "@/types";
+import { EventType, CalendarViewType } from "@/types";
 import { DB_VERSION } from "@/lib/storageManager";
-import { upsertCalendarEvent, deleteCalendarEventFromSupabase } from "@/lib/dataService";
+import {
+  upsertCalendarEvent,
+  deleteCalendarEventFromSupabase,
+  upsertCalendarView,
+} from "@/lib/dataService";
 
 interface CalendarState {
   events: EventType[];
   selectedDate: string | null;
+  calendarView: CalendarViewType;
   isLoaded: boolean;
   addEvent: (event: EventType) => void;
   updateEvent: (event: EventType) => void;
   deleteEvent: (id: string) => void;
   setSelectedDate: (date: string | null) => void;
+  setCalendarView: (view: CalendarViewType) => void;
   replaceEvents: (events: EventType[]) => void;
   setLoaded: (loaded: boolean) => void;
   getEventsForDate: (date: string) => EventType[];
@@ -24,13 +30,13 @@ const useCalendarStore = create<CalendarState>()(
     (set, get) => ({
       events: [],
       selectedDate: null,
+      calendarView: "week" as CalendarViewType,
       isLoaded: false,
 
       addEvent: (event) => {
         set((state) => ({
           events: [...state.events, event],
         }));
-        // Sync to Supabase
         upsertCalendarEvent(event);
       },
 
@@ -40,7 +46,6 @@ const useCalendarStore = create<CalendarState>()(
             e.id === updatedEvent.id ? updatedEvent : e
           ),
         }));
-        // Sync to Supabase
         upsertCalendarEvent(updatedEvent);
       },
 
@@ -48,12 +53,16 @@ const useCalendarStore = create<CalendarState>()(
         set((state) => ({
           events: state.events.filter((e) => e.id !== id),
         }));
-        // Sync to Supabase
         deleteCalendarEventFromSupabase(id);
       },
 
       setSelectedDate: (date) =>
         set(() => ({ selectedDate: date })),
+
+      setCalendarView: (view) => {
+        set(() => ({ calendarView: view }));
+        upsertCalendarView(view);
+      },
 
       replaceEvents: (incoming) => {
         if (!Array.isArray(incoming) || incoming.length === 0) {
@@ -79,12 +88,13 @@ const useCalendarStore = create<CalendarState>()(
       },
     }),
     {
-      name: "calendar-storage-v2",
+      name: "calendar-storage-v3",
       storage: createJSONStorage(() => AsyncStorage),
-      version: DB_VERSION,
+      version: DB_VERSION + 1,
       migrate: (persisted) => persisted,
       partialize: (state) => ({
         events: state.events,
+        calendarView: state.calendarView,
       }),
     }
   )
