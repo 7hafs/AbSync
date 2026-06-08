@@ -258,25 +258,46 @@ export default function WeeklyCalendarView({
     <View style={styles.container}>
       <SummaryCards {...summaryData} />
 
-      {/* 7-column grid — always visible */}
-      <View style={styles.weekGrid}>
-        {dayData.map((d) => (
-          <DayColumn
-            key={d.dateStr}
-            date={d.date}
-            dateStr={d.dateStr}
-            dayIndex={d.idx}
-            isToday={d.isToday}
-            isWeekend={d.isWeekend}
-            amList={d.amList}
-            pmList={d.pmList}
-            onPressDay={() => onSelectDate(d.dateStr)}
-            onPressStaff={(id) => {
-              const ab = absences.find((a) => a.id === id);
-              if (ab) onSelectDate(ab.date);
-            }}
-          />
-        ))}
+      {/* Week grid — two rows: Mon–Thu top, Fri–Sun bottom */}
+      <View style={styles.weekGridOuter}>
+        <View style={styles.weekGridRow}>
+          {dayData.slice(0, 4).map((d) => (
+            <DayColumn
+              key={d.dateStr}
+              date={d.date}
+              dateStr={d.dateStr}
+              dayIndex={d.idx}
+              isToday={d.isToday}
+              isWeekend={d.isWeekend}
+              amList={d.amList}
+              pmList={d.pmList}
+              onPressDay={() => onSelectDate(d.dateStr)}
+              onPressStaff={(id) => {
+                const ab = absences.find((a) => a.id === id);
+                if (ab) onSelectDate(ab.date);
+              }}
+            />
+          ))}
+        </View>
+        <View style={styles.weekGridRow}>
+          {dayData.slice(4).map((d) => (
+            <DayColumn
+              key={d.dateStr}
+              date={d.date}
+              dateStr={d.dateStr}
+              dayIndex={d.idx}
+              isToday={d.isToday}
+              isWeekend={d.isWeekend}
+              amList={d.amList}
+              pmList={d.pmList}
+              onPressDay={() => onSelectDate(d.dateStr)}
+              onPressStaff={(id) => {
+                const ab = absences.find((a) => a.id === id);
+                if (ab) onSelectDate(ab.date);
+              }}
+            />
+          ))}
+        </View>
       </View>
     </View>
   );
@@ -309,8 +330,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textAlign: 'center' as const,
   },
-  // Week grid — 7 columns
-  weekGrid: {
+  // Week grid — two rows: Mon–Thu top, Fri–Sun bottom
+  weekGridOuter: {
+    gap: 4,
+  },
+  weekGridRow: {
     flexDirection: 'row',
     gap: 4,
   },
