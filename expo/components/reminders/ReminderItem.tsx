@@ -7,6 +7,7 @@ import Colors from "@/constants/colors";
 import { useColorScheme } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import { ReminderType } from "@/types";
+import { formatDateUK } from "@/utils/dateUtils";
 
 interface ReminderItemProps {
   reminder: ReminderType;
@@ -24,7 +25,7 @@ export default function ReminderItem({
   const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
   
-  const formattedDate = new Date(reminder.date).toLocaleDateString();
+  const formattedDate = formatDateUK(reminder.date);
   
   return (
     <TouchableOpacity onPress={() => onPress(reminder)}>

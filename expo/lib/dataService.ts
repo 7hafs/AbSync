@@ -47,12 +47,19 @@ function absenceToInsert(a: Absence): TablesInsert<"absences"> {
     locked: a.locked ?? false,
     created_by: a.createdBy,
     created_at: a.createdAt,
+    documents: a.documents ? JSON.stringify(a.documents) : null,
     user_id: "", // filled by caller
   };
 }
 
 /** Convert Supabase row to local Absence shape. */
 function absenceFromRow(row: SupabaseAbsence): Absence {
+  let documents: Absence["documents"] = undefined;
+  if (row.documents) {
+    try {
+      documents = JSON.parse(row.documents as string) as Absence["documents"];
+    } catch { /* ignore parse errors */ }
+  }
   return {
     id: row.id,
     staffId: row.staff_id,
@@ -66,6 +73,7 @@ function absenceFromRow(row: SupabaseAbsence): Absence {
     locked: row.locked ?? false,
     createdBy: row.created_by,
     createdAt: row.created_at ?? new Date().toISOString(),
+    documents,
   };
 }
 
@@ -122,6 +130,8 @@ function staffToInsert(s: StaffMember): TablesInsert<"staff_members"> {
     id: s.id,
     name: s.name,
     department: s.department ?? null,
+    employee_id: s.employeeId ?? null,
+    email: s.email ?? null,
     active: s.active,
     created_at: s.createdAt,
     user_id: "",
@@ -133,6 +143,8 @@ function staffFromRow(row: SupabaseStaffMember): StaffMember {
     id: row.id,
     name: row.name,
     department: row.department ?? undefined,
+    employeeId: (row as Record<string, unknown>).employee_id as string ?? undefined,
+    email: (row as Record<string, unknown>).email as string ?? undefined,
     active: row.active ?? true,
     createdAt: row.created_at ?? new Date().toISOString(),
   };

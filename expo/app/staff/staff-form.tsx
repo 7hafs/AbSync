@@ -26,10 +26,12 @@ export default function StaffFormScreen() {
   const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
 
-  const { staff, addStaff, updateStaff, deleteStaff, archiveStaff, getStaffById } = useStaffStore();
+  const { addStaff, updateStaff, deleteStaff, archiveStaff, getStaffById } = useStaffStore();
   const canEdit = true;
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
+  const [email, setEmail] = useState("");
   const [active, setActive] = useState(true);
 
   const staffId = typeof params.id === "string" ? params.id : undefined;
@@ -41,6 +43,8 @@ export default function StaffFormScreen() {
       if (existingStaff) {
         setName(existingStaff.name);
         setDepartment(existingStaff.department || "");
+        setEmployeeId(existingStaff.employeeId || "");
+        setEmail(existingStaff.email || "");
         setActive(existingStaff.active);
       }
     }
@@ -57,10 +61,43 @@ export default function StaffFormScreen() {
       return;
     }
 
+    // Check for duplicate employee ID or email
+    if (employeeId.trim()) {
+      const duplicate = getStaffById
+        ? undefined
+        : undefined;
+      const allStaff = useStaffStore.getState().staff;
+      const dupById = allStaff.find(
+        (s) => s.employeeId === employeeId.trim() && s.id !== staffId
+      );
+      if (dupById) {
+        Alert.alert(
+          "Duplicate Employee ID",
+          `The employee ID "${employeeId.trim()}" is already used by ${dupById.name}.`,
+        );
+        return;
+      }
+    }
+    if (email.trim()) {
+      const allStaff = useStaffStore.getState().staff;
+      const dupByEmail = allStaff.find(
+        (s) => s.email?.toLowerCase() === email.trim().toLowerCase() && s.id !== staffId
+      );
+      if (dupByEmail) {
+        Alert.alert(
+          "Duplicate Email",
+          `The email "${email.trim()}" is already used by ${dupByEmail.name}.`,
+        );
+        return;
+      }
+    }
+
     const staffData: StaffMember = {
       id: staffId || Date.now().toString(),
       name: name.trim(),
       department: department.trim() || undefined,
+      employeeId: employeeId.trim() || undefined,
+      email: email.trim() || undefined,
       active,
       createdAt: staffId ? getStaffById(staffId)?.createdAt || new Date().toISOString() : new Date().toISOString(),
     };
@@ -134,7 +171,7 @@ export default function StaffFormScreen() {
             isEditing ? (
               <TouchableOpacity onPress={handleDelete}>
                 <ThemedText style={[styles.deleteButton, { color: "#FF3B30" }]}>
-                  <ThemedText>Delete</ThemedText>
+                  Delete
                 </ThemedText>
               </TouchableOpacity>
             ) : null,
@@ -143,9 +180,7 @@ export default function StaffFormScreen() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.section}>
-          <ThemedText style={styles.label}>
-            <ThemedText>Name *</ThemedText>
-          </ThemedText>
+          <ThemedText style={styles.label}>Name *</ThemedText>
           <TextInput
             style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
             placeholder="Enter staff name"
@@ -156,9 +191,32 @@ export default function StaffFormScreen() {
         </View>
 
         <View style={styles.section}>
-          <ThemedText style={styles.label}>
-            <ThemedText>Department</ThemedText>
-          </ThemedText>
+          <ThemedText style={styles.label}>Employee ID</ThemedText>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+            placeholder="Enter employee ID (optional)"
+            placeholderTextColor={colors.secondaryText}
+            value={employeeId}
+            onChangeText={setEmployeeId}
+            autoCapitalize="characters"
+          />
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText style={styles.label}>Email</ThemedText>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+            placeholder="Enter email address (optional)"
+            placeholderTextColor={colors.secondaryText}
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText style={styles.label}>Department</ThemedText>
           <TextInput
             style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
             placeholder="Enter department (optional)"
@@ -170,9 +228,7 @@ export default function StaffFormScreen() {
 
         <View style={styles.section}>
           <View style={styles.row}>
-            <ThemedText style={styles.label}>
-              <ThemedText>Active</ThemedText>
-            </ThemedText>
+            <ThemedText style={styles.label}>Active</ThemedText>
             <Switch value={active} onValueChange={setActive} />
           </View>
         </View>
@@ -184,7 +240,7 @@ export default function StaffFormScreen() {
           onPress={handleSave}
         >
           <ThemedText style={styles.saveButtonText}>
-            <ThemedText>{isEditing ? "Update" : "Add"} Staff</ThemedText>
+            {isEditing ? "Update" : "Add"} Staff
           </ThemedText>
         </TouchableOpacity>
         ) : (
@@ -199,7 +255,7 @@ export default function StaffFormScreen() {
             onPress={handleArchive}
           >
             <ThemedText style={[styles.archiveButtonText, { color: colors.text }]}>
-              <ThemedText>Archive Staff Member</ThemedText>
+              Archive Staff Member
             </ThemedText>
           </TouchableOpacity>
         )}

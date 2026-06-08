@@ -296,13 +296,12 @@ const useAbsenceStore = create<AbsenceState>()(
       storage: createJSONStorage(() => AsyncStorage),
       version: DB_VERSION,
       migrate: (persisted, version) => {
-        // Future migrations: handle schema changes here when DB_VERSION increments
-        // e.g. if version < 2, add missing fields to old records
         const state = persisted as { absences?: Absence[]; dbVersion?: number };
         if (state.absences) {
           state.absences = state.absences.map((a) => ({
             ...a,
             notes: a.notes ?? '',
+            documents: a.documents ?? undefined,
           }));
         }
         return state as Partial<AbsenceState>;

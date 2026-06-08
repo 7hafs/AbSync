@@ -2,6 +2,8 @@ export type StaffMember = {
   id: string;
   name: string;
   department?: string;
+  employeeId?: string;
+  email?: string;
   active: boolean;
   createdAt: string;
 };
@@ -23,6 +25,15 @@ export type AbsenceType = 'Holiday' | 'Sickness' | 'Training' | 'Unpaid Leave' |
 export type AbsenceDuration = 'Full' | 'AM' | 'PM';
 export type AbsenceStatus = 'Pending' | 'Approved' | 'Rejected';
 
+export type AbsenceDocument = {
+  id: string;
+  name: string;
+  uri: string;
+  type: string;
+  size: number;
+  uploadedAt: string;
+};
+
 export type Absence = {
   id: string;
   staffId: string;
@@ -36,6 +47,7 @@ export type Absence = {
   locked?: boolean;
   createdBy: string;
   createdAt: string;
+  documents?: AbsenceDocument[];
 };
 
 export type CalendarSharePayload = {

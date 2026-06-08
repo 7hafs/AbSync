@@ -251,6 +251,10 @@ function AuthenticatedApp() {
         options={{ presentation: "modal", title: "Staff" }}
       />
       <Stack.Screen
+        name="staff/bulk-import"
+        options={{ presentation: "modal", title: "Bulk Import" }}
+      />
+      <Stack.Screen
         name="settings/archived-staff"
         options={{ title: "Archived Staff" }}
       />

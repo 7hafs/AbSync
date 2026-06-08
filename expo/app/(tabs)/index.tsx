@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Calendar, CalendarDays, ChevronLeft, ChevronRight, Clock, Flag, Plus, TrendingUp, Users, UserX } from 'lucide-react-native';
+import { Calendar, CalendarDays, ChevronLeft, ChevronRight, Clock, Flag, Plus, TrendingUp, Users, UserX, LayoutGrid, Columns } from 'lucide-react-native';
 import { useColorScheme } from 'react-native';
 import ThemedText from '@/components/ThemedText';
 import ThemedView from '@/components/ThemedView';
@@ -16,9 +16,10 @@ import Colors, { absenceColors, dotColors } from '@/constants/colors';
 import useThemeStore from '@/store/useThemeStore';
 import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
+import WeeklyAbsenceView from '@/components/calendar/WeeklyAbsenceView';
 
 import { Absence, AbsenceType } from '@/types';
-import { toDateString, fromDateString, todayDateString, formatDateUKLong, addDays } from '@/utils/dateUtils';
+import { toDateString, fromDateString, todayDateString, formatDateUKLong, formatDateUK, addDays } from '@/utils/dateUtils';
 
 function getTypeColor(type: AbsenceType) {
   switch (type) {
@@ -76,6 +77,8 @@ function getMonthGrid(baseDate: Date): Array<number | null> {
   return grid;
 }
 
+type CalendarViewMode = 'month' | 'week';
+
 export default function CalendarScreen() {
   const router = useRouter();
   const systemColorScheme = useColorScheme();
@@ -94,6 +97,7 @@ export default function CalendarScreen() {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [summaryVisible, setSummaryVisible] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<CalendarViewMode>('month');
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -138,7 +142,6 @@ export default function CalendarScreen() {
     const todayAbsences = absences.filter(
       (a) => a.date === todayIso && a.type !== 'Public Holiday' && a.status !== 'Rejected'
     );
-    // Deduplicate by staff name
     const seen = new Set<string>();
     const unique: Array<{ name: string; type: AbsenceType }> = [];
     for (const a of todayAbsences) {
@@ -170,10 +173,7 @@ export default function CalendarScreen() {
   }, [absences]);
 
   const formatDateShort = (dateString: string): string => {
-    return fromDateString(dateString).toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-    });
+    return formatDateUK(dateString);
   };
 
   const getDotColor = (count: number) => {
@@ -188,37 +188,89 @@ export default function CalendarScreen() {
   };
 
   const handleAdd = (date: string, duration: 'AM' | 'PM') => {
-    if (!canEdit) {
-      return;
-    }
-
+    if (!canEdit) return;
     router.push({ pathname: '/calendar/absence-form' as never, params: { date, session: duration } });
   };
   void handleAdd;
 
+  const handlePrevPeriod = () => {
+    if (viewMode === 'month') {
+      setCurrentDate(new Date(year, month - 1, 1));
+    } else {
+      const newDate = new Date(currentDate);
+      newDate.setDate(newDate.getDate() - 7);
+      setCurrentDate(newDate);
+    }
+  };
+
+  const handleNextPeriod = () => {
+    if (viewMode === 'month') {
+      setCurrentDate(new Date(year, month + 1, 1));
+    } else {
+      const newDate = new Date(currentDate);
+      newDate.setDate(newDate.getDate() + 7);
+      setCurrentDate(newDate);
+    }
+  };
+
+  const headerTitle = viewMode === 'month'
+    ? currentDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+    : (() => {
+        const weekStart = new Date(currentDate);
+        const day = weekStart.getDay();
+        const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(weekStart.setDate(diff));
+        const sunday = new Date(monday);
+        sunday.setDate(sunday.getDate() + 6);
+        return `${formatDateUK(toDateString(monday))} – ${formatDateUK(toDateString(sunday))}`;
+      })();
+
   return (
     <ThemedView style={styles.container} useGradient>
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingHorizontal: isDesktop ? 32 : 12 }]}>
-        <TouchableOpacity
-          testID="calendar-prev-month"
-          style={[styles.headerIconButton, { backgroundColor: colors.surfaceVariant }]}
-          onPress={() => setCurrentDate(new Date(year, month - 1, 1))}
-        >
-          <ChevronLeft size={18} color={colors.text} />
-        </TouchableOpacity>
-        <ThemedText style={[styles.title, { fontSize: isDesktop ? 22 : isTablet ? 20 : 17 }]}>
-          {currentDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
-        </ThemedText>
-        <TouchableOpacity
-          testID="calendar-next-month"
-          style={[styles.headerIconButton, { backgroundColor: colors.surfaceVariant }]}
-          onPress={() => setCurrentDate(new Date(year, month + 1, 1))}
-        >
-          <ChevronRight size={18} color={colors.text} />
-        </TouchableOpacity>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            testID="calendar-prev-month"
+            style={[styles.headerIconButton, { backgroundColor: colors.surfaceVariant }]}
+            onPress={handlePrevPeriod}
+          >
+            <ChevronLeft size={18} color={colors.text} />
+          </TouchableOpacity>
+          <ThemedText style={[styles.title, { fontSize: isDesktop ? 22 : isTablet ? 20 : 17 }]}>
+            {headerTitle}
+          </ThemedText>
+          <TouchableOpacity
+            testID="calendar-next-month"
+            style={[styles.headerIconButton, { backgroundColor: colors.surfaceVariant }]}
+            onPress={handleNextPeriod}
+          >
+            <ChevronRight size={18} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        {/* View mode switcher */}
+        <View style={[styles.viewSwitcher, { backgroundColor: colors.surfaceVariant }]}>
+          <TouchableOpacity
+            testID="view-mode-month"
+            style={[styles.viewSwitcherBtn, viewMode === 'month' && { backgroundColor: colors.primary }]}
+            onPress={() => setViewMode('month')}
+          >
+            <LayoutGrid size={14} color={viewMode === 'month' ? 'white' : colors.secondaryText} />
+            <ThemedText style={[styles.viewSwitcherText, viewMode === 'month' && { color: 'white' }]}>Month</ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="view-mode-week"
+            style={[styles.viewSwitcherBtn, viewMode === 'week' && { backgroundColor: colors.primary }]}
+            onPress={() => setViewMode('week')}
+          >
+            <Columns size={14} color={viewMode === 'week' ? 'white' : colors.secondaryText} />
+            <ThemedText style={[styles.viewSwitcherText, viewMode === 'week' && { color: 'white' }]}>Week</ThemedText>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}>
+        {/* Dashboard stats */}
         <View style={styles.dashboardRow}>
           <View style={[styles.dashboardCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.dashboardIcon, { backgroundColor: `${colors.primary}18` }]}>
@@ -288,131 +340,143 @@ export default function CalendarScreen() {
           </View>
         )}
 
-        <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: isDesktop ? 1320 : 980 }]}> 
-          <View style={styles.weekHeader}>
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label) => (
-              <View key={label} style={styles.weekCell}>
-                <ThemedText variant="secondary" style={styles.weekText}>{label}</ThemedText>
-              </View>
-            ))}
-          </View>
+        {/* Calendar — Month or Week View */}
+        {viewMode === 'month' ? (
+          <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: isDesktop ? 1320 : 980 }]}> 
+            <View style={styles.weekHeader}>
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label) => (
+                <View key={label} style={styles.weekCell}>
+                  <ThemedText variant="secondary" style={styles.weekText}>{label}</ThemedText>
+                </View>
+              ))}
+            </View>
 
-          <View style={styles.grid}>
-            {monthGrid.map((day, index) => {
-              if (day === null) {
-                return <View key={`empty-${index}`} style={[styles.dayCard, styles.emptyDay]} />;
-              }
-
-              const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              const dayAbsences = getAbsencesForDate(date);
-              const amAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected' && (absence.duration === 'AM' || absence.duration === 'Full'));
-              const pmAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected' && (absence.duration === 'PM' || absence.duration === 'Full'));
-              const isToday = date === todayIso;
-              const publicHoliday = dayAbsences.find((absence) => absence.type === 'Public Holiday');
-              const staffOffCount = new Set(
-                dayAbsences
-                  .filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected')
-                  .map((absence) => absence.name)
-              ).size;
-              const isShortStaffed = staffOffCount >= 2;
-              const dotColor = getDotColor(staffOffCount);
-              const cellMinHeight = isDesktop ? 150 : isTablet ? 130 : isSmallPhone ? 86 : 100;
-              const maxEventsPerSession = isDesktop ? 3 : isTablet ? 2 : 1;
-
-              const renderSessionPills = (list: Absence[]) => {
-                if (list.length === 0) {
-                  return null;
+            <View style={styles.grid}>
+              {monthGrid.map((day, index) => {
+                if (day === null) {
+                  return <View key={`empty-${index}`} style={[styles.dayCard, styles.emptyDay]} />;
                 }
-                return (
-                  <View style={styles.sessionPills}>
-                    {list.slice(0, maxEventsPerSession).map((absence) => {
-                      const typeColor = getTypeColor(absence.type);
-                      return (
-                        <View
-                          key={`session-${absence.id}`}
-                          style={[styles.eventBar, { backgroundColor: `${typeColor}33`, borderLeftColor: typeColor }]}
-                        >
-                          <ThemedText numberOfLines={1} style={[styles.eventText, { color: typeColor }]}>
-                            {absence.name}
-                          </ThemedText>
-                        </View>
-                      );
-                    })}
-                    {list.length > maxEventsPerSession ? (
-                      <ThemedText key={`more-${list.length}`} variant="secondary" style={styles.moreText}>
-                        +{list.length - maxEventsPerSession}
-                      </ThemedText>
-                    ) : null}
-                  </View>
-                );
-              };
 
-              return (
-                <TouchableOpacity
-                  key={date}
-                  testID={`calendar-day-${date}`}
-                  activeOpacity={0.7}
-                  style={[
-                    styles.dayCard,
-                    {
-                      backgroundColor: publicHoliday ? `${absenceColors.publicHoliday}26` : 'transparent',
-                      minHeight: cellMinHeight,
-                    },
-                  ]}
-                  onPress={() => handleOpenDay(date)}
-                >
-                  <View style={styles.dayTopRow}>
-                    <View style={styles.dayTopLeft}>
-                      <View
-                        style={[
-                          styles.dayNumberWrap,
-                          isToday && { backgroundColor: colors.primary },
-                        ]}
-                      >
-                        <ThemedText
-                          style={[
-                            styles.dayNumber,
-                            isToday && styles.dayNumberToday,
-                            publicHoliday && !isToday && styles.dayNumberOnHoliday,
-                          ]}
-                        >
-                          {day}
+                const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const dayAbsences = getAbsencesForDate(date);
+                const amAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected' && (absence.duration === 'AM' || absence.duration === 'Full'));
+                const pmAbsences = dayAbsences.filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected' && (absence.duration === 'PM' || absence.duration === 'Full'));
+                const isToday = date === todayIso;
+                const publicHoliday = dayAbsences.find((absence) => absence.type === 'Public Holiday');
+                const staffOffCount = new Set(
+                  dayAbsences
+                    .filter((absence) => absence.type !== 'Public Holiday' && absence.status !== 'Rejected')
+                    .map((absence) => absence.name)
+                ).size;
+                const isShortStaffed = staffOffCount >= 2;
+                const dotColor = getDotColor(staffOffCount);
+                const cellMinHeight = isDesktop ? 150 : isTablet ? 130 : isSmallPhone ? 86 : 100;
+                const maxEventsPerSession = isDesktop ? 3 : isTablet ? 2 : 1;
+
+                const renderSessionPills = (list: Absence[]) => {
+                  if (list.length === 0) {
+                    return null;
+                  }
+                  return (
+                    <View style={styles.sessionPills}>
+                      {list.slice(0, maxEventsPerSession).map((absence) => {
+                        const typeColor = getTypeColor(absence.type);
+                        return (
+                          <View
+                            key={`session-${absence.id}`}
+                            style={[styles.eventBar, { backgroundColor: `${typeColor}33`, borderLeftColor: typeColor }]}
+                          >
+                            <ThemedText numberOfLines={1} style={[styles.eventText, { color: typeColor }]}>
+                              {absence.name}
+                            </ThemedText>
+                          </View>
+                        );
+                      })}
+                      {list.length > maxEventsPerSession ? (
+                        <ThemedText key={`more-${list.length}`} variant="secondary" style={styles.moreText}>
+                          +{list.length - maxEventsPerSession}
                         </ThemedText>
-                      </View>
-                      {dotColor && !publicHoliday ? (
-                        <View style={[styles.dotIndicator, { backgroundColor: dotColor }]} />
                       ) : null}
                     </View>
-                    {isShortStaffed ? (
-                      <View style={styles.flagBadge} testID={`calendar-flag-${date}`}>
-                        <Flag size={9} color="#FFFFFF" fill="#FFFFFF" />
-                        <ThemedText style={styles.flagText}>{staffOffCount}</ThemedText>
+                  );
+                };
+
+                return (
+                  <TouchableOpacity
+                    key={date}
+                    testID={`calendar-day-${date}`}
+                    activeOpacity={0.7}
+                    style={[
+                      styles.dayCard,
+                      {
+                        backgroundColor: publicHoliday ? `${absenceColors.publicHoliday}26` : 'transparent',
+                        minHeight: cellMinHeight,
+                      },
+                    ]}
+                    onPress={() => handleOpenDay(date)}
+                  >
+                    <View style={styles.dayTopRow}>
+                      <View style={styles.dayTopLeft}>
+                        <View
+                          style={[
+                            styles.dayNumberWrap,
+                            isToday && { backgroundColor: colors.primary },
+                          ]}
+                        >
+                          <ThemedText
+                            style={[
+                              styles.dayNumber,
+                              isToday && styles.dayNumberToday,
+                              publicHoliday && !isToday && styles.dayNumberOnHoliday,
+                            ]}
+                          >
+                            {day}
+                          </ThemedText>
+                        </View>
+                        {dotColor && !publicHoliday ? (
+                          <View style={[styles.dotIndicator, { backgroundColor: dotColor }]} />
+                        ) : null}
+                      </View>
+                      {isShortStaffed ? (
+                        <View style={styles.flagBadge} testID={`calendar-flag-${date}`}>
+                          <Flag size={9} color="#FFFFFF" fill="#FFFFFF" />
+                          <ThemedText style={styles.flagText}>{staffOffCount}</ThemedText>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    {publicHoliday ? (
+                      <View style={styles.holidayBlock}>
+                        <ThemedText style={[styles.holidayLabel, { color: absenceColors.publicHoliday }]} numberOfLines={1}>
+                          {publicHoliday.name}
+                        </ThemedText>
                       </View>
                     ) : null}
-                  </View>
-
-                  {publicHoliday ? (
-                    <View style={styles.holidayBlock}>
-                      <ThemedText style={[styles.holidayLabel, { color: absenceColors.publicHoliday }]} numberOfLines={1}>
-                        {publicHoliday.name}
-                      </ThemedText>
+                    <View style={styles.sessionsWrap}>
+                      <View style={[styles.sessionBlock, styles.amBlock, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                        <ThemedText style={[styles.sessionLabel, { color: '#059669' }]}>AM</ThemedText>
+                        {renderSessionPills(amAbsences)}
+                      </View>
+                      <View style={[styles.sessionBlock, styles.pmBlock, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
+                        <ThemedText style={[styles.sessionLabel, { color: '#4F46E5' }]}>PM</ThemedText>
+                        {renderSessionPills(pmAbsences)}
+                      </View>
                     </View>
-                  ) : null}
-                  <View style={styles.sessionsWrap}>
-                    <View style={[styles.sessionBlock, styles.amBlock, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
-                      <ThemedText style={[styles.sessionLabel, { color: '#059669' }]}>AM</ThemedText>
-                      {renderSessionPills(amAbsences)}
-                    </View>
-                    <View style={[styles.sessionBlock, styles.pmBlock, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
-                      <ThemedText style={[styles.sessionLabel, { color: '#4F46E5' }]}>PM</ThemedText>
-                      {renderSessionPills(pmAbsences)}
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
-        </View>
+        ) : (
+          <View style={[styles.weekViewCard, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: isDesktop ? 1320 : 980 }]}>
+            <WeeklyAbsenceView
+              currentDate={currentDate}
+              absences={absences}
+              onSelectDate={handleOpenDay}
+              onAddAbsence={handleAdd}
+            />
+          </View>
+        )}
 
         {/* Upcoming Absences */}
         <View style={[styles.upcomingCard, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: isDesktop ? 1320 : 980 }]}>
@@ -508,6 +572,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   title: {
     fontWeight: '800' as const,
@@ -520,6 +590,24 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  viewSwitcher: {
+    flexDirection: 'row',
+    borderRadius: 20,
+    padding: 3,
+    gap: 2,
+  },
+  viewSwitcherBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 17,
+  },
+  viewSwitcherText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
   },
   content: {
     padding: 10,
@@ -576,6 +664,13 @@ const styles = StyleSheet.create({
     padding: 4,
     alignSelf: 'center',
     flex: 1,
+  },
+  weekViewCard: {
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 10,
+    alignSelf: 'center',
   },
   weekHeader: {
     flexDirection: 'row',

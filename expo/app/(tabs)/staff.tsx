@@ -8,7 +8,7 @@ import {
   Text,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { Plus, Search } from "lucide-react-native";
+import { Plus, Search, Upload } from "lucide-react-native";
 import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
 import useStaffStore from "@/store/useStaffStore";
@@ -48,6 +48,10 @@ export default function StaffScreen() {
     }
 
     router.push("/staff/staff-form");
+  };
+
+  const handleBulkImport = () => {
+    router.push("/staff/bulk-import");
   };
 
   const handleStaffPress = (staffMember: StaffMember) => {
@@ -118,13 +122,22 @@ export default function StaffScreen() {
       />
 
       {canEdit ? (
-        <TouchableOpacity
-          testID="staff-add-button"
-          style={[styles.fab, { backgroundColor: colors.primary }]}
-          onPress={handleAddStaff}
-        >
-          <Plus size={24} color="white" />
-        </TouchableOpacity>
+        <View style={styles.fabContainer}>
+          <TouchableOpacity
+            testID="staff-bulk-import-button"
+            style={[styles.fabSecondary, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={handleBulkImport}
+          >
+            <Upload size={20} color={colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="staff-add-button"
+            style={[styles.fab, { backgroundColor: colors.primary }]}
+            onPress={handleAddStaff}
+          >
+            <Plus size={24} color="white" />
+          </TouchableOpacity>
+        </View>
       ) : null}
     </ThemedView>
   );
@@ -190,10 +203,27 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
   },
-  fab: {
+  fabContainer: {
     position: "absolute",
     bottom: 24,
     right: 24,
+    alignItems: "center",
+    gap: 12,
+  },
+  fabSecondary: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3.84,
+  },
+  fab: {
     width: 56,
     height: 56,
     borderRadius: 28,

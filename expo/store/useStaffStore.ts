@@ -97,7 +97,9 @@ const useStaffStore = create<StaffState>()(
         return get().staff.filter(
           (s) =>
             s.name.toLowerCase().includes(lowerQuery) ||
-            s.department?.toLowerCase().includes(lowerQuery)
+            s.department?.toLowerCase().includes(lowerQuery) ||
+            s.employeeId?.toLowerCase().includes(lowerQuery) ||
+            s.email?.toLowerCase().includes(lowerQuery)
         );
       },
 
@@ -115,6 +117,8 @@ const useStaffStore = create<StaffState>()(
           state.staff = state.staff.map((s) => ({
             ...s,
             department: s.department ?? '',
+            employeeId: s.employeeId ?? undefined,
+            email: s.email ?? undefined,
             active: s.active ?? true,
           }));
         }

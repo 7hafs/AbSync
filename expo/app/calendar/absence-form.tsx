@@ -12,7 +12,21 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, UserRoundX, X } from 'lucide-react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import {
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Paperclip,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+  UserRoundX,
+  X,
+} from 'lucide-react-native';
 import ThemedText from '@/components/ThemedText';
 import ThemedView from '@/components/ThemedView';
 import Colors, { absenceColors } from '@/constants/colors';
@@ -20,13 +34,20 @@ import useThemeStore from '@/store/useThemeStore';
 import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
 
-import { Absence, AbsenceDuration, AbsenceStatus, AbsenceType } from '@/types';
+import { Absence, AbsenceDocument, AbsenceDuration, AbsenceStatus, AbsenceType, StaffMember } from '@/types';
 import { useColorScheme } from 'react-native';
-import { toDateString, fromDateString, todayDateString } from '@/utils/dateUtils';
+import { toDateString, fromDateString, todayDateString, formatDateUK } from '@/utils/dateUtils';
 
 const ABSENCE_TYPES: AbsenceType[] = ['Holiday', 'Sickness', 'Training', 'Unpaid Leave', 'Other'];
 const DURATIONS: AbsenceDuration[] = ['Full', 'AM', 'PM'];
 const STATUSES: AbsenceStatus[] = ['Pending', 'Approved', 'Rejected'];
+
+const SUPPORTED_DOC_TYPES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
 
 function getTypeColor(type: AbsenceType) {
   switch (type) {
@@ -45,15 +66,6 @@ function getTypeColor(type: AbsenceType) {
     default:
       return absenceColors.pending;
   }
-}
-
-function formatDateLabel(date: string) {
-  return fromDateString(date).toLocaleDateString('en-GB', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
 }
 
 function formatMonthYear(date: Date) {
@@ -89,7 +101,7 @@ export default function AbsenceFormScreen() {
   const isLargeScreen = width >= 900;
 
   const canEdit = true;
-  const { staff, getStaffById } = useStaffStore();
+  const { staff, addStaff } = useStaffStore();
   const {
     absences,
     createAbsences,
@@ -113,9 +125,25 @@ export default function AbsenceFormScreen() {
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [notes, setNotes] = useState<string>('');
   const [cover, setCover] = useState<string>('');
-  const [isMultiDay, setIsMultiDay] = useState<boolean>(false);
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [showStaffPicker, setShowStaffPicker] = useState<boolean>(false);
+  const [staffSearchQuery, setStaffSearchQuery] = useState<string>('');
+  const [showAddStaff, setShowAddStaff] = useState<boolean>(false);
+  const [newStaffName, setNewStaffName] = useState<string>('');
+  const [newStaffDepartment, setNewStaffDepartment] = useState<string>('');
+  const [uploadedDocs, setUploadedDocs] = useState<AbsenceDocument[]>([]);
+
+  // Filtered staff for search
+  const filteredStaff = useMemo(() => {
+    if (!staffSearchQuery.trim()) return activeStaff;
+    const query = staffSearchQuery.toLowerCase();
+    return activeStaff.filter(
+      (s) =>
+        s.name.toLowerCase().includes(query) ||
+        s.department?.toLowerCase().includes(query) ||
+        s.employeeId?.toLowerCase().includes(query)
+    );
+  }, [activeStaff, staffSearchQuery]);
 
   useEffect(() => {
     if (existingAbsence) {
@@ -127,6 +155,7 @@ export default function AbsenceFormScreen() {
       setStatus(existingAbsence.status);
       setNotes(existingAbsence.notes);
       setCover(existingAbsence.cover ?? '');
+      setUploadedDocs(existingAbsence.documents ?? []);
       setCurrentMonth(new Date(existingAbsence.date));
       return;
     }
@@ -140,8 +169,8 @@ export default function AbsenceFormScreen() {
     setCurrentMonth(new Date(routeDate));
   }, [existingAbsence, params.date, params.session]);
 
-  const selectedStaff = getStaffById(selectedStaffId);
-  const datesToSave = isMultiDay ? selectedDates.slice().sort() : [date];
+  const selectedStaff = staff.find((s) => s.id === selectedStaffId);
+  const datesToSave = selectedDates.length > 0 ? selectedDates.slice().sort() : [date];
   const dayCells = buildMonthDays(currentMonth);
 
   const handleToggleDate = (value: string) => {
@@ -149,9 +178,66 @@ export default function AbsenceFormScreen() {
       if (currentDates.includes(value)) {
         return currentDates.filter((item) => item !== value);
       }
-
       return [...currentDates, value].sort();
     });
+  };
+
+  // Inline add staff
+  const handleAddStaffInline = () => {
+    if (!newStaffName.trim()) {
+      Alert.alert('Missing name', 'Please enter a name for the new staff member.');
+      return;
+    }
+
+    const newMember: StaffMember = {
+      id: Date.now().toString(),
+      name: newStaffName.trim(),
+      department: newStaffDepartment.trim() || undefined,
+      active: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    addStaff(newMember);
+    setSelectedStaffId(newMember.id);
+    setShowAddStaff(false);
+    setNewStaffName('');
+    setNewStaffDepartment('');
+    setStaffSearchQuery('');
+    setShowStaffPicker(false);
+
+    Alert.alert('Staff Added', `${newStaffName.trim()} has been added and selected.`);
+  };
+
+  // Document picker
+  const handlePickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: SUPPORTED_DOC_TYPES,
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (result.canceled || !result.assets?.length) return;
+
+      const asset = result.assets[0];
+      const doc: AbsenceDocument = {
+        id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: asset.name,
+        uri: asset.uri,
+        type: asset.mimeType ?? 'application/octet-stream',
+        size: asset.size ?? 0,
+        uploadedAt: new Date().toISOString(),
+      };
+
+      setUploadedDocs((prev) => [...prev, doc]);
+    } catch (err) {
+      console.error('[AbsenceForm] Document picker error:', err);
+      Alert.alert('Upload failed', 'Could not select the document. Please try again.');
+    }
+  };
+
+  const handleRemoveDocument = (docId: string) => {
+    setUploadedDocs((prev) => prev.filter((d) => d.id !== docId));
   };
 
   const handleSave = () => {
@@ -197,6 +283,7 @@ export default function AbsenceFormScreen() {
         status,
         cover: cover.trim() || null,
         notes: notes.trim(),
+        documents: uploadedDocs.length > 0 ? uploadedDocs : undefined,
       };
 
       updateAbsence(updatedAbsence);
@@ -204,7 +291,7 @@ export default function AbsenceFormScreen() {
       return;
     }
 
-    createAbsences({
+    const newIds = createAbsences({
       staffId: selectedStaffId,
       name: selectedStaff?.name ?? 'Unknown employee',
       type,
@@ -215,6 +302,15 @@ export default function AbsenceFormScreen() {
       createdBy: 'Manager',
     });
 
+    // Attach documents to first absence if multi-day
+    if (uploadedDocs.length > 0 && newIds.length > 0) {
+      const store = useAbsenceStore.getState();
+      const firstAbsence = store.absences.find((a) => a.id === newIds[0]);
+      if (firstAbsence) {
+        store.updateAbsence({ ...firstAbsence, documents: uploadedDocs });
+      }
+    }
+
     Alert.alert(
       'Absence Saved',
       `${datesToSave.length} absence request${datesToSave.length > 1 ? 's' : ''} saved successfully as Pending.`
@@ -223,9 +319,7 @@ export default function AbsenceFormScreen() {
   };
 
   const handleDelete = () => {
-    if (!existingAbsence) {
-      return;
-    }
+    if (!existingAbsence) return;
 
     if (existingAbsence.locked || existingAbsence.type === 'Public Holiday') {
       Alert.alert('Locked event', 'Public holidays cannot be deleted.');
@@ -242,19 +336,13 @@ export default function AbsenceFormScreen() {
       const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function'
         ? window.confirm('Are you sure you want to remove this absence?')
         : true;
-      if (confirmed) {
-        confirmDelete();
-      }
+      if (confirmed) confirmDelete();
       return;
     }
 
     Alert.alert('Delete absence', 'Are you sure you want to remove this absence?', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: confirmDelete,
-      },
+      { text: 'Delete', style: 'destructive', onPress: confirmDelete },
     ]);
   };
 
@@ -276,20 +364,27 @@ export default function AbsenceFormScreen() {
         <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.heroTopRow}>
             <View>
-              <ThemedText style={styles.heroTitle}>Absence request</ThemedText>
+              <ThemedText style={styles.heroTitle}>
+                {existingAbsence ? 'Edit absence' : 'New absence request'}
+              </ThemedText>
               <ThemedText variant="secondary" style={styles.heroSubtitle}>
-                Save requests with status, cover, clash detection, and multi-day support.
+                {existingAbsence
+                  ? 'Update the absence details below.'
+                  : 'Select an employee, choose dates on the calendar, and save.'}
               </ThemedText>
             </View>
-
           </View>
 
+          {/* ── Employee Selection ─────────────────────────────────── */}
           <View style={styles.formSection}>
             <ThemedText style={styles.label}>Employee Name *</ThemedText>
             <TouchableOpacity
               testID="absence-staff-picker"
               style={[styles.pickerButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => setShowStaffPicker(true)}
+              onPress={() => {
+                setStaffSearchQuery('');
+                setShowStaffPicker(true);
+              }}
             >
               <ThemedText style={!selectedStaff ? { color: colors.secondaryText } : undefined}>
                 {selectedStaff?.name ?? 'Select employee'}
@@ -298,91 +393,87 @@ export default function AbsenceFormScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* ── Calendar Date Selection (always visible) ───────────── */}
           <View style={styles.formSection}>
-            <View style={styles.inlineLabelRow}>
-              <ThemedText style={styles.label}>Multi-day</ThemedText>
-              {!existingAbsence ? (
-                <TouchableOpacity
-                  testID="absence-multiday-toggle"
-                  style={[styles.toggleButton, { backgroundColor: isMultiDay ? colors.primary : colors.surfaceVariant }]}
-                  onPress={() => setIsMultiDay((currentValue) => !currentValue)}
-                >
-                  <ThemedText style={[styles.toggleButtonText, isMultiDay && styles.toggleButtonTextActive]}>
-                    {isMultiDay ? 'On' : 'Off'}
-                  </ThemedText>
+            <ThemedText style={styles.label}>
+              Date{selectedDates.length > 1 ? 's' : ''} *
+              {selectedDates.length > 0 && (
+                <ThemedText variant="secondary">
+                  {' '}– {selectedDates.length} day{selectedDates.length > 1 ? 's' : ''} selected
+                </ThemedText>
+              )}
+            </ThemedText>
+            <View style={[styles.calendarPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.calendarHeader}>
+                <TouchableOpacity onPress={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}>
+                  <ChevronLeft size={20} color={colors.text} />
                 </TouchableOpacity>
-              ) : null}
-            </View>
-
-            {!isMultiDay ? (
-              <View style={[styles.singleDateCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <CalendarDays size={18} color={colors.primary} />
-                <TextInput
-                  testID="absence-date-input"
-                  style={[styles.dateInput, { color: colors.text }]}
-                  value={date}
-                  onChangeText={setDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.secondaryText}
-                  autoCapitalize="none"
-                />
+                <ThemedText style={styles.calendarTitle}>{formatMonthYear(currentMonth)}</ThemedText>
+                <TouchableOpacity onPress={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}>
+                  <ChevronRight size={20} color={colors.text} />
+                </TouchableOpacity>
               </View>
-            ) : (
-              <View style={[styles.calendarPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <View style={styles.calendarHeader}>
-                  <TouchableOpacity onPress={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}>
-                    <ChevronLeft size={20} color={colors.text} />
-                  </TouchableOpacity>
-                  <ThemedText style={styles.calendarTitle}>{formatMonthYear(currentMonth)}</ThemedText>
-                  <TouchableOpacity onPress={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}>
-                    <ChevronRight size={20} color={colors.text} />
-                  </TouchableOpacity>
-                </View>
 
-                <View style={styles.weekRow}>
-                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((dayLabel) => (
-                    <ThemedText key={dayLabel} style={[styles.weekLabel, { color: colors.secondaryText }]}>
-                      {dayLabel}
-                    </ThemedText>
-                  ))}
-                </View>
+              <View style={styles.weekRow}>
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((dayLabel) => (
+                  <ThemedText key={dayLabel} style={[styles.weekLabel, { color: colors.secondaryText }]}>
+                    {dayLabel}
+                  </ThemedText>
+                ))}
+              </View>
 
-                <View style={styles.daysGrid}>
-                  {dayCells.map((dayValue, index) => {
-                    if (!dayValue) {
-                      return <View key={`empty-${index}`} style={styles.dayCell} />;
-                    }
+              <View style={styles.daysGrid}>
+                {dayCells.map((dayValue, index) => {
+                  if (!dayValue) {
+                    return <View key={`empty-${index}`} style={styles.dayCell} />;
+                  }
 
-                    const dateValue = toDateString(dayValue);
-                    const isSelected = selectedDates.includes(dateValue);
+                  const dateValue = toDateString(dayValue);
+                  const isSelected = selectedDates.includes(dateValue);
+                  const isToday = dateValue === todayDateString();
+                  const isPast = dateValue < todayDateString();
 
-                    return (
-                      <TouchableOpacity
-                        key={dateValue}
-                        testID={`calendar-date-${dateValue}`}
+                  return (
+                    <TouchableOpacity
+                      key={dateValue}
+                      testID={`calendar-date-${dateValue}`}
+                      style={[
+                        styles.dayCell,
+                        styles.dayButton,
+                        { borderColor: isToday ? colors.primary : colors.border },
+                        isSelected && { backgroundColor: colors.primary, borderColor: colors.primary },
+                        isPast && !isSelected && { opacity: 0.4 },
+                      ]}
+                      onPress={() => handleToggleDate(dateValue)}
+                    >
+                      <ThemedText
                         style={[
-                          styles.dayCell,
-                          styles.dayButton,
-                          { borderColor: colors.border },
-                          isSelected && { backgroundColor: colors.primary, borderColor: colors.primary },
+                          styles.dayNumber,
+                          isToday && !isSelected && { color: colors.primary, fontWeight: '800' as const },
+                          isSelected && styles.dayNumberActive,
                         ]}
-                        onPress={() => handleToggleDate(dateValue)}
                       >
-                        <ThemedText style={[styles.dayNumber, isSelected && styles.dayNumberActive]}>
-                          {dayValue.getDate()}
-                        </ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                        {dayValue.getDate()}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
 
+              <View style={[styles.selectedDatesBar, { backgroundColor: colors.surfaceVariant }]}>
+                <CalendarDays size={14} color={colors.primary} />
                 <ThemedText variant="secondary" style={styles.selectedDatesLabel}>
-                  {selectedDates.length ? selectedDates.map(formatDateLabel).join(' • ') : 'No dates selected'}
+                  {selectedDates.length > 0
+                    ? selectedDates
+                        .map((d) => formatDateUK(d))
+                        .join('  •  ')
+                    : 'Tap a single day for a one-day absence, or tap multiple days for a multi-day absence'}
                 </ThemedText>
               </View>
-            )}
+            </View>
           </View>
 
+          {/* ── Absence Type ────────────────────────────────────────── */}
           <View style={styles.formSection}>
             <ThemedText style={styles.label}>Absence Type *</ThemedText>
             <View style={styles.optionGrid}>
@@ -408,6 +499,7 @@ export default function AbsenceFormScreen() {
             </View>
           </View>
 
+          {/* ── Duration ────────────────────────────────────────────── */}
           <View style={styles.formSection}>
             <ThemedText style={styles.label}>Duration</ThemedText>
             <View style={styles.segmentRow}>
@@ -431,6 +523,7 @@ export default function AbsenceFormScreen() {
             </View>
           </View>
 
+          {/* ── Status ──────────────────────────────────────────────── */}
           <View style={styles.formSection}>
             <ThemedText style={styles.label}>Status</ThemedText>
             <View style={styles.segmentRow}>
@@ -452,11 +545,9 @@ export default function AbsenceFormScreen() {
                 );
               })}
             </View>
-            <ThemedText variant="secondary" style={styles.helperText}>
-              New requests should normally stay Pending until reviewed.
-            </ThemedText>
           </View>
 
+          {/* ── Cover ───────────────────────────────────────────────── */}
           <View style={styles.formSection}>
             <ThemedText style={styles.label}>Covered by</ThemedText>
             <TextInput
@@ -469,6 +560,7 @@ export default function AbsenceFormScreen() {
             />
           </View>
 
+          {/* ── Notes ───────────────────────────────────────────────── */}
           <View style={styles.formSection}>
             <ThemedText style={styles.label}>Notes</ThemedText>
             <TextInput
@@ -476,7 +568,7 @@ export default function AbsenceFormScreen() {
               style={[styles.textArea, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
               value={notes}
               onChangeText={setNotes}
-              placeholder="Optional notes"
+              placeholder="Optional notes (e.g. reason, handover details)"
               placeholderTextColor={colors.secondaryText}
               multiline
               numberOfLines={4}
@@ -484,6 +576,42 @@ export default function AbsenceFormScreen() {
             />
           </View>
 
+          {/* ── Document Upload ─────────────────────────────────────── */}
+          <View style={styles.formSection}>
+            <ThemedText style={styles.label}>Documents</ThemedText>
+            {uploadedDocs.length > 0 && (
+              <View style={styles.docList}>
+                {uploadedDocs.map((doc) => (
+                  <View key={doc.id} style={[styles.docRow, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
+                    <FileText size={16} color={colors.primary} />
+                    <View style={styles.docInfo}>
+                      <ThemedText style={styles.docName} numberOfLines={1}>{doc.name}</ThemedText>
+                      <ThemedText variant="secondary" style={styles.docSize}>
+                        {(doc.size / 1024).toFixed(1)} KB
+                      </ThemedText>
+                    </View>
+                    <TouchableOpacity
+                      testID={`remove-doc-${doc.id}`}
+                      style={styles.docRemoveButton}
+                      onPress={() => handleRemoveDocument(doc.id)}
+                    >
+                      <Trash2 size={16} color={absenceColors.rejected} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+            <TouchableOpacity
+              testID="absence-upload-doc"
+              style={[styles.uploadButton, { borderColor: colors.border, backgroundColor: colors.surface }]}
+              onPress={handlePickDocument}
+            >
+              <Upload size={16} color={colors.primary} />
+              <ThemedText style={[styles.uploadButtonText, { color: colors.primary }]}>Attach document (PDF, JPG, PNG, DOCX)</ThemedText>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Save ────────────────────────────────────────────────── */}
           {!canEdit ? (
             <View style={[styles.readOnlyCard, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
               <UserRoundX size={18} color={colors.secondaryText} />
@@ -495,38 +623,121 @@ export default function AbsenceFormScreen() {
               style={[styles.saveButton, { backgroundColor: colors.primary }]}
               onPress={handleSave}
             >
-              <ThemedText style={styles.saveButtonText}>{existingAbsence ? 'Update absence' : 'Save absence'}</ThemedText>
+              <ThemedText style={styles.saveButtonText}>
+                {existingAbsence ? 'Update absence' : `Save ${datesToSave.length > 1 ? datesToSave.length + ' ' : ''}absence`}
+              </ThemedText>
             </TouchableOpacity>
           )}
         </View>
       </ScrollView>
 
+      {/* ── Staff Picker Modal ──────────────────────────────────────── */}
       <Modal visible={showStaffPicker} transparent animationType="slide" onRequestClose={() => setShowStaffPicker(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.card }]}> 
+          <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
               <ThemedText style={styles.modalTitle}>Select employee</ThemedText>
               <TouchableOpacity onPress={() => setShowStaffPicker(false)}>
                 <X size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
-            <FlatList
-              data={activeStaff}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  testID={`staff-option-${item.id}`}
-                  style={[styles.staffRow, { borderBottomColor: colors.border }]}
-                  onPress={() => {
-                    setSelectedStaffId(item.id);
-                    setShowStaffPicker(false);
-                  }}
-                >
-                  <ThemedText style={styles.staffName}>{item.name}</ThemedText>
-                  <ThemedText variant="secondary">{item.department ?? 'Team member'}</ThemedText>
-                </TouchableOpacity>
-              )}
-            />
+
+            {/* Search bar in staff picker */}
+            <View style={[styles.staffSearchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Search size={16} color={colors.secondaryText} />
+              <TextInput
+                testID="staff-search-input"
+                style={[styles.staffSearchInput, { color: colors.text }]}
+                placeholder="Search by name, ID, or department..."
+                placeholderTextColor={colors.secondaryText}
+                value={staffSearchQuery}
+                onChangeText={setStaffSearchQuery}
+                autoFocus
+              />
+            </View>
+
+            {/* Show add staff form inline */}
+            {showAddStaff ? (
+              <View style={styles.inlineAddForm}>
+                <ThemedText style={styles.inlineAddTitle}>Add new staff member</ThemedText>
+                <TextInput
+                  style={[styles.textInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                  placeholder="Staff name *"
+                  placeholderTextColor={colors.secondaryText}
+                  value={newStaffName}
+                  onChangeText={setNewStaffName}
+                  autoFocus
+                />
+                <TextInput
+                  style={[styles.textInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text, marginTop: 8 }]}
+                  placeholder="Department (optional)"
+                  placeholderTextColor={colors.secondaryText}
+                  value={newStaffDepartment}
+                  onChangeText={setNewStaffDepartment}
+                />
+                <View style={styles.inlineAddActions}>
+                  <TouchableOpacity
+                    style={[styles.inlineCancelBtn, { borderColor: colors.border }]}
+                    onPress={() => setShowAddStaff(false)}
+                  >
+                    <ThemedText>Cancel</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    testID="inline-add-staff-save"
+                    style={[styles.inlineSaveBtn, { backgroundColor: colors.primary }]}
+                    onPress={handleAddStaffInline}
+                  >
+                    <ThemedText style={styles.inlineSaveBtnText}>Add & Select</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <FlatList
+                data={filteredStaff}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    testID={`staff-option-${item.id}`}
+                    style={[styles.staffRow, { borderBottomColor: colors.border }]}
+                    onPress={() => {
+                      setSelectedStaffId(item.id);
+                      setShowStaffPicker(false);
+                    }}
+                  >
+                    <View style={[styles.staffRowDot, { backgroundColor: item.id === selectedStaffId ? colors.primary : 'transparent' }]} />
+                    <View style={styles.staffRowInfo}>
+                      <ThemedText style={styles.staffName}>{item.name}</ThemedText>
+                      <ThemedText variant="secondary" style={styles.staffDept}>
+                        {item.department ?? 'Team member'}
+                        {item.employeeId ? ` · ${item.employeeId}` : ''}
+                      </ThemedText>
+                    </View>
+                    {item.id === selectedStaffId && (
+                      <View style={[styles.selectedCheck, { backgroundColor: colors.primary }]}>
+                        <ThemedText style={styles.selectedCheckText}>✓</ThemedText>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  <View style={styles.emptyStaffList}>
+                    <ThemedText variant="secondary">No staff members found</ThemedText>
+                  </View>
+                }
+              />
+            )}
+
+            {/* Add new staff button at bottom */}
+            {!showAddStaff && (
+              <TouchableOpacity
+                testID="staff-picker-add-new"
+                style={[styles.addNewStaffBtn, { borderTopColor: colors.border, backgroundColor: colors.surface }]}
+                onPress={() => setShowAddStaff(true)}
+              >
+                <Plus size={18} color={colors.primary} />
+                <ThemedText style={[styles.addNewStaffText, { color: colors.primary }]}>Add new staff member</ThemedText>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Modal>
@@ -568,18 +779,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     maxWidth: 520,
   },
-  limitBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 999,
-  },
-  limitText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-  },
   formSection: {
     gap: 10,
   },
@@ -595,36 +794,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  inlineLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  toggleButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-  toggleButtonText: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-  },
-  toggleButtonTextActive: {
-    color: 'white',
-  },
-  singleDateCard: {
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  dateInput: {
-    flex: 1,
-    fontSize: 16,
   },
   calendarPanel: {
     borderWidth: 1,
@@ -672,8 +841,18 @@ const styles = StyleSheet.create({
   dayNumberActive: {
     color: 'white',
   },
+  selectedDatesBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   selectedDatesLabel: {
-    lineHeight: 20,
+    flex: 1,
+    lineHeight: 18,
+    fontSize: 13,
   },
   optionGrid: {
     flexDirection: 'row',
@@ -717,10 +896,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700' as const,
   },
-  helperText: {
-    fontSize: 12,
-    lineHeight: 18,
-  },
   textInput: {
     borderWidth: 1,
     borderRadius: 16,
@@ -735,6 +910,50 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     minHeight: 110,
     fontSize: 16,
+  },
+  docList: {
+    gap: 8,
+  },
+  docRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  docInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  docName: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  docSize: {
+    fontSize: 11,
+  },
+  docRemoveButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  uploadButtonText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
   },
   readOnlyCard: {
     borderWidth: 1,
@@ -760,13 +979,14 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     marginRight: 14,
   },
+  /* ── Modal ──────────────────────────────────────────────────────── */
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(15, 23, 42, 0.35)',
   },
   modalCard: {
-    maxHeight: '70%',
+    maxHeight: '85%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
   },
@@ -782,14 +1002,104 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700' as const,
   },
+  staffSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginVertical: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  staffSearchInput: {
+    flex: 1,
+    fontSize: 15,
+  },
   staffRow: {
-    borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     paddingHorizontal: 18,
-    paddingVertical: 16,
-    gap: 4,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  staffRowDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  staffRowInfo: {
+    flex: 1,
+    gap: 2,
   },
   staffName: {
     fontSize: 15,
+    fontWeight: '700' as const,
+  },
+  staffDept: {
+    fontSize: 12,
+  },
+  selectedCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedCheckText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  emptyStaffList: {
+    paddingHorizontal: 18,
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  addNewStaffBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderTopWidth: 1,
+    paddingVertical: 16,
+  },
+  addNewStaffText: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+  },
+  inlineAddForm: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  inlineAddTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    marginBottom: 4,
+  },
+  inlineAddActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  inlineCancelBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  inlineSaveBtn: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  inlineSaveBtnText: {
+    color: 'white',
     fontWeight: '700' as const,
   },
 });

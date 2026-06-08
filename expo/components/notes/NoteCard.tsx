@@ -7,6 +7,7 @@ import Colors from "@/constants/colors";
 import { useColorScheme } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import { NoteType } from "@/types";
+import { formatDateUK } from "@/utils/dateUtils";
 
 interface NoteCardProps {
   note: NoteType;
@@ -24,7 +25,7 @@ export default function NoteCard({
   const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
   
-  const formattedDate = new Date(note.updatedAt).toLocaleDateString();
+  const formattedDate = formatDateUK(note.updatedAt.split('T')[0]);
   
   return (
     <TouchableOpacity onPress={() => onPress(note)}>
