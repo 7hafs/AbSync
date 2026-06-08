@@ -45,6 +45,7 @@ import useNotificationStore from "@/store/useNotificationStore";
 import useAbsenceStore from "@/store/useAbsenceStore";
 import { sendTestNotification } from "@/utils/notificationService";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
+import { supabase, getAuthRedirectUrl } from "@/lib/supabase";
 import {
   exportBackupFile,
   verifyStorageIntegrity,
@@ -221,8 +222,10 @@ export default function SettingsScreen() {
                     text: "Send Reset Email",
                     onPress: async () => {
                       if (profile?.email) {
-                        const { supabase } = require("@/lib/supabase");
-                        const { error } = await supabase.auth.resetPasswordForEmail(profile.email);
+                        const { error } = await supabase.auth.resetPasswordForEmail(
+                          profile.email,
+                          { redirectTo: getAuthRedirectUrl() }
+                        );
                         if (error) {
                           Alert.alert("Error", error.message);
                         } else {

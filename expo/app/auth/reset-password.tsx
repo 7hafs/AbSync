@@ -46,14 +46,33 @@ export default function ResetPasswordScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // ── Extract recovery tokens from the deep-link URL ──────────────────────────
+  // ── Recover session from the deep-link URL ────────────────────────────────
+  //
+  // Two paths:
+  // 1. detectSessionInUrl (supabase client) already consumed the tokens →
+  //    session is already active. We detect this and jump straight to the form.
+  // 2. detectSessionInUrl didn't fire (e.g. native cold-start deep link) →
+  //    we manually parse the URL fragment and call setSession ourselves.
   const linkingUrl = Linking.useURL();
 
   useEffect(() => {
     let cancelled = false;
 
-    const processUrl = async (url: string | null) => {
+    const initSession = async () => {
       try {
+        // Path 1: detectSessionInUrl may have already set the session
+        const { data: { session: existingSession } } = await supabase.auth.getSession();
+        if (existingSession) {
+          if (process.env.NODE_ENV === "development") {
+            console.log("[reset-password] Session already active (detectSessionInUrl handled it)");
+          }
+          if (!cancelled) setPhase("form");
+          return;
+        }
+
+        // Path 2: manually parse the URL for recovery tokens
+        const url = linkingUrl || await Linking.getInitialURL();
+
         if (process.env.NODE_ENV === "development") {
           console.log("[reset-password] Deep link URL:", url);
         }
@@ -135,17 +154,7 @@ export default function ResetPasswordScreen() {
       }
     };
 
-    processUrl(linkingUrl);
-
-    // Also try getInitialURL for cold starts where useURL might not
-    // fire on first render.
-    if (!linkingUrl) {
-      Linking.getInitialURL().then((url) => {
-        if (!cancelled && url) {
-          processUrl(url);
-        }
-      });
-    }
+    initSession();
 
     return () => {
       cancelled = true;

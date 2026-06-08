@@ -21,7 +21,7 @@ import React, {
   useState,
   useCallback,
 } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, getAuthRedirectUrl } from "@/lib/supabase";
 import { Session, User } from "@supabase/supabase-js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsProcessing(true);
       try {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: "rork-lxwo9f6yr6sjgzxbuwjkz://auth/reset-password",
+          redirectTo: getAuthRedirectUrl(),
         });
 
         if (error) {

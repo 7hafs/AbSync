@@ -68,3 +68,16 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
   },
 });
+
+/**
+ * Returns the correct redirect URL for Supabase auth callbacks.
+ *
+ * Uses the Rork preview URL (already in Supabase's allowed redirect list)
+ * so password reset and email confirmation links work in the preview
+ * environment. On native devices these URLs are handled by the Expo
+ * WebBrowser / deep-link system.
+ */
+export function getAuthRedirectUrl(): string {
+  const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
+  return `https://p-${projectId}--expo.rork.live/auth/reset-password`;
+}
