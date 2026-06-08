@@ -107,36 +107,41 @@ function DayColumn({
   const dayNum = date.getDate();
   const dayLabel = DAY_LABELS[dayIndex];
 
-  const renderMiniStaff = (
+  const renderSection = (
+    label: string,
     list: Array<{ id: string; name: string; type: AbsenceType }>,
-    sectionColor: string,
-  ) => {
-    if (list.length === 0) {
-      return (
-        <View style={styles.miniEmpty}>
-          <ThemedText variant="secondary" style={styles.miniEmptyText}>—</ThemedText>
-        </View>
-      );
-    }
-    return (
-      <View style={styles.miniList}>
-        {list.slice(0, 3).map((item) => (
-          <TouchableOpacity
-            key={item.id}
-            style={[styles.miniStaffRow, { backgroundColor: `${getTypeColor(item.type)}12` }]}
-            onPress={() => onPressStaff(item.id)}
-            activeOpacity={0.6}
-          >
-            <View style={[styles.miniDot, { backgroundColor: getTypeColor(item.type) }]} />
-            <ThemedText style={styles.miniName} numberOfLines={1}>{item.name}</ThemedText>
-          </TouchableOpacity>
-        ))}
-        {list.length > 3 && (
-          <ThemedText variant="secondary" style={styles.miniMore}>+{list.length - 3}</ThemedText>
-        )}
+    accentColor: string,
+    bgColor: string,
+  ) => (
+    <View style={[styles.sectionBlock, { backgroundColor: bgColor }]}>
+      <View style={styles.sectionHeader}>
+        <ThemedText style={[styles.sectionLabel, { color: accentColor }]}>{label}</ThemedText>
+        <ThemedText style={[styles.sectionCount, { color: accentColor }]}>{list.length}</ThemedText>
       </View>
-    );
-  };
+      {list.length === 0 ? (
+        <View style={styles.sectionEmpty}>
+          <ThemedText variant="secondary" style={styles.sectionEmptyText}>—</ThemedText>
+        </View>
+      ) : (
+        <View style={styles.sectionList}>
+          {list.slice(0, 3).map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.sectionItem}
+              onPress={() => onPressStaff(item.id)}
+              activeOpacity={0.6}
+            >
+              <View style={[styles.sectionDot, { backgroundColor: getTypeColor(item.type) }]} />
+              <ThemedText style={styles.sectionName} numberOfLines={1}>{item.name}</ThemedText>
+            </TouchableOpacity>
+          ))}
+          {list.length > 3 && (
+            <ThemedText variant="secondary" style={styles.sectionMore}>+{list.length - 3}</ThemedText>
+          )}
+        </View>
+      )}
+    </View>
+  );
 
   return (
     <TouchableOpacity
@@ -161,33 +166,10 @@ function DayColumn({
       </View>
 
       {/* AM Section */}
-      <View style={styles.sessionBlock}>
-        <View style={styles.sessionLabelRow}>
-          <View style={[styles.sessionBadge, { backgroundColor: '#DCFCE7' }]}>
-            <ThemedText style={[styles.sessionBadgeText, { color: '#16A34A' }]}>AM</ThemedText>
-          </View>
-          {amList.length > 0 && (
-            <ThemedText style={[styles.sessionCount, { color: '#16A34A' }]}>{amList.length}</ThemedText>
-          )}
-        </View>
-        {renderMiniStaff(amList, '#16A34A')}
-      </View>
-
-      {/* Divider */}
-      <View style={styles.sessionDivider} />
+      {renderSection('AM', amList, '#16A34A', '#F0FDF4')}
 
       {/* PM Section */}
-      <View style={styles.sessionBlock}>
-        <View style={styles.sessionLabelRow}>
-          <View style={[styles.sessionBadge, { backgroundColor: '#DBEAFE' }]}>
-            <ThemedText style={[styles.sessionBadgeText, { color: '#2563EB' }]}>PM</ThemedText>
-          </View>
-          {pmList.length > 0 && (
-            <ThemedText style={[styles.sessionCount, { color: '#2563EB' }]}>{pmList.length}</ThemedText>
-          )}
-        </View>
-        {renderMiniStaff(pmList, '#2563EB')}
-      </View>
+      {renderSection('PM', pmList, '#2563EB', '#EFF6FF')}
     </TouchableOpacity>
   );
 }
@@ -347,7 +329,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 4,
     gap: 4,
-    minWidth: 40,
+    minWidth: 44,
   },
   dayColumnToday: {
     borderColor: '#0F766E',
@@ -398,65 +380,62 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '800' as const,
   },
-  // Session blocks
-  sessionBlock: {
-    gap: 2,
+  // Section blocks (AM/PM stacked)
+  sectionBlock: {
+    flex: 1,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    gap: 4,
+    minHeight: 38,
   },
-  sessionDivider: {
-    height: 1,
-    backgroundColor: 'rgba(148, 163, 184, 0.06)',
-  },
-  sessionLabelRow: {
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 2,
   },
-  sessionBadge: {
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 3,
-  },
-  sessionBadgeText: {
-    fontSize: 7,
+  sectionLabel: {
+    fontSize: 10,
     fontWeight: '800' as const,
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase' as const,
   },
-  sessionCount: {
-    fontSize: 8,
+  sectionCount: {
+    fontSize: 10,
     fontWeight: '700' as const,
   },
-  // Mini staff list
-  miniList: {
+  sectionList: {
     gap: 2,
   },
-  miniEmpty: {
-    paddingVertical: 6,
+  sectionEmpty: {
+    paddingVertical: 4,
     alignItems: 'center' as const,
   },
-  miniEmptyText: {
+  sectionEmptyText: {
     fontSize: 9,
+    fontWeight: '500' as const,
   },
-  miniStaffRow: {
+  sectionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 4,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingVertical: 2,
   },
-  miniDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  sectionDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
-  miniName: {
+  sectionName: {
     fontSize: 9,
     fontWeight: '600' as const,
     flex: 1,
+    color: '#334155',
   },
-  miniMore: {
+  sectionMore: {
     fontSize: 8,
-    paddingLeft: 12,
+    fontWeight: '600' as const,
+    paddingLeft: 11,
   },
 });
