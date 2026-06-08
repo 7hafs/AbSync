@@ -53,11 +53,17 @@ const useNotesStore = create<NotesState>()(
       },
 
       togglePinNote: (id) =>
-        set((state) => ({
-          notes: state.notes.map((n) =>
+        set((state) => {
+          const updated = state.notes.map((n) =>
             n.id === id ? { ...n, isPinned: !n.isPinned } : n
-          ),
-        })),
+          );
+          // Sync to Supabase
+          const changed = updated.find((n) => n.id === id);
+          if (changed) {
+            upsertNote(changed);
+          }
+          return { notes: updated };
+        }),
 
       replaceNotes: (incoming) => {
         if (!Array.isArray(incoming) || incoming.length === 0) {

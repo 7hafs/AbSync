@@ -270,7 +270,7 @@ function AuthenticatedApp() {
 // Public holiday seeding — these are reference data, not sample data
 // ═════════════════════════════════════════════════════════════════════════════
 
-import { Absence } from "@/types";
+import { upsertAbsence } from "@/lib/dataService";
 
 const publicHolidays2026: Absence[] = [
   { id: "ph-2026-01-01", staffId: "public-holiday", name: "New Year's Day", type: "Public Holiday", date: "2026-01-01", duration: "Full", status: "Approved", cover: null, notes: "UK public holiday", locked: true, createdBy: "system", createdAt: "2026-01-01T00:00:00.000Z" },
@@ -285,9 +285,22 @@ const publicHolidays2026: Absence[] = [
 
 function seedPublicHolidays(absenceStore: ReturnType<typeof useAbsenceStore>) {
   const existing = new Set(absenceStore.absences.map((a) => a.id));
+  let added = false;
   for (const holiday of publicHolidays2026) {
     if (!existing.has(holiday.id)) {
       absenceStore.addAbsence(holiday);
+      added = true;
     }
+  }
+  // Sync all public holidays to Supabase so they appear on other devices
+  if (added) {
+    const currentHolidays = useAbsenceStore.getState().absences.filter(
+      (a) => a.type === "Public Holiday"
+    );
+    currentHolidays.forEach((h) => {
+      upsertAbsence(h).catch((e) =>
+        console.warn("[_layout] Failed to sync public holiday:", h.id, e)
+      );
+    });
   }
 }

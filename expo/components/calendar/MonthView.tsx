@@ -4,7 +4,7 @@ import ThemedText from "@/components/ThemedText";
 import ThemedView from "@/components/ThemedView";
 import { getDaysInMonth, formatDate } from "@/utils/dateUtils";
 import useCalendarStore from "@/store/useCalendarStore";
-import usePeopleStore from "@/store/usePeopleStore";
+import useAbsenceStore from "@/store/useAbsenceStore";
 import Colors from "@/constants/colors";
 import { useColorScheme } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
@@ -21,7 +21,7 @@ export default function MonthView({ currentDate, onSelectDate }: MonthViewProps)
   const colors = Colors[colorScheme || "light"];
   
   const { events, selectedDate } = useCalendarStore();
-  const { getAbsencesForDate } = usePeopleStore();
+  const { absences } = useAbsenceStore();
   
   const daysInMonth = useMemo(() => {
     const year = currentDate.getFullYear();
@@ -56,7 +56,7 @@ export default function MonthView({ currentDate, onSelectDate }: MonthViewProps)
       const dateString = formatDate(date);
       
       const hasEvents = events.some(event => event.date === dateString);
-      const absencesForDay = getAbsencesForDate(dateString);
+      const absencesForDay = absences.filter((a) => a.date === dateString && a.type !== 'Public Holiday' && a.status !== 'Rejected');
       const hasAbsences = absencesForDay.length > 0;
       const hasConflict = absencesForDay.length > 2;
       

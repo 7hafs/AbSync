@@ -58,18 +58,30 @@ const useStaffStore = create<StaffState>()(
       },
 
       archiveStaff: (id) =>
-        set((state) => ({
-          staff: state.staff.map((s) =>
+        set((state) => {
+          const updated = state.staff.map((s) =>
             s.id === id ? { ...s, active: false } : s
-          ),
-        })),
+          );
+          // Sync to Supabase
+          const changed = updated.find((s) => s.id === id);
+          if (changed) {
+            upsertStaff(changed);
+          }
+          return { staff: updated };
+        }),
 
       unarchiveStaff: (id) =>
-        set((state) => ({
-          staff: state.staff.map((s) =>
+        set((state) => {
+          const updated = state.staff.map((s) =>
             s.id === id ? { ...s, active: true } : s
-          ),
-        })),
+          );
+          // Sync to Supabase
+          const changed = updated.find((s) => s.id === id);
+          if (changed) {
+            upsertStaff(changed);
+          }
+          return { staff: updated };
+        }),
 
       replaceStaff: (incoming) => {
         if (!Array.isArray(incoming) || incoming.length === 0) {

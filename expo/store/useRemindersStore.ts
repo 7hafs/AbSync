@@ -52,11 +52,17 @@ const useRemindersStore = create<RemindersState>()(
       },
 
       toggleComplete: (id) =>
-        set((state) => ({
-          reminders: state.reminders.map((r) =>
+        set((state) => {
+          const updated = state.reminders.map((r) =>
             r.id === id ? { ...r, isCompleted: !r.isCompleted } : r
-          ),
-        })),
+          );
+          // Sync to Supabase
+          const changed = updated.find((r) => r.id === id);
+          if (changed) {
+            upsertReminder(changed);
+          }
+          return { reminders: updated };
+        }),
 
       replaceReminders: (incoming) => {
         if (!Array.isArray(incoming) || incoming.length === 0) {

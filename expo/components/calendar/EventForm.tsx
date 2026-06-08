@@ -7,7 +7,7 @@ import { EventType } from "@/types";
 import Colors from "@/constants/colors";
 import { useColorScheme } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
-import usePeopleStore from "@/store/usePeopleStore";
+import useStaffStore from "@/store/useStaffStore";
 
 interface EventFormProps {
   initialEvent?: EventType;
@@ -25,7 +25,7 @@ export default function EventForm({
   const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
   
-  const { people } = usePeopleStore();
+  const { staff } = useStaffStore();
   
   const [title, setTitle] = useState(initialEvent?.title || "");
   const [date, setDate] = useState(initialEvent?.date || "");
@@ -175,7 +175,7 @@ export default function EventForm({
           </View>
         </View>
         
-        {people.length > 0 && (
+        {staff.length > 0 && (
           <View style={styles.formGroup}>
             <ThemedText weight="semibold">Assign to Person</ThemedText>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.peopleSelector}>
@@ -190,7 +190,7 @@ export default function EventForm({
                 <ThemedText size="small" style={!personId && { color: 'white' }}>None</ThemedText>
               </TouchableOpacity>
               
-              {people.map((person) => (
+              {staff.map((person) => (
                 <TouchableOpacity
                   key={person.id}
                   style={[

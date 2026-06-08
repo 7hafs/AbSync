@@ -6,7 +6,8 @@ import { formatDate, getDayName } from "@/utils/dateUtils";
 import useCalendarStore from "@/store/useCalendarStore";
 import useNotesStore from "@/store/useNotesStore";
 import useRemindersStore from "@/store/useRemindersStore";
-import usePeopleStore from "@/store/usePeopleStore";
+import useAbsenceStore from "@/store/useAbsenceStore";
+import useStaffStore from "@/store/useStaffStore";
 import Colors from "@/constants/colors";
 import useThemeStore from "@/store/useThemeStore";
 import { EventType, NoteType, ReminderType } from "@/types";
@@ -29,7 +30,8 @@ export default function DayView({ currentDate, onEventPress, onDateChange }: Day
   const { events } = useCalendarStore();
   const { notes } = useNotesStore();
   const { reminders } = useRemindersStore();
-  const { people, getAbsencesForDate } = usePeopleStore();
+  const { absences } = useAbsenceStore();
+  const { staff } = useStaffStore();
   
   const dateStr = useMemo(() => formatDate(currentDate), [currentDate]);
   const dayName = useMemo(() => getDayName(currentDate), [currentDate]);
@@ -47,8 +49,8 @@ export default function DayView({ currentDate, onEventPress, onDateChange }: Day
   }, [reminders, dateStr]);
   
   const absencesForDay = useMemo(() => {
-    return getAbsencesForDate(dateStr);
-  }, [dateStr, getAbsencesForDate]);
+    return absences.filter((a) => a.date === dateStr && a.type !== 'Public Holiday' && a.status !== 'Rejected');
+  }, [absences, dateStr]);
   
   const hasConflict = useMemo(() => absencesForDay.length > 2, [absencesForDay]);
   
@@ -154,7 +156,7 @@ export default function DayView({ currentDate, onEventPress, onDateChange }: Day
             Absences/Vacations
           </ThemedText>
           {absencesForDay.map((absence) => {
-            const person = people.find(p => p.id === absence.personId);
+            const staffMember = staff.find(s => s.id === absence.staffId);
             return (
               <View 
                 key={absence.id} 
@@ -163,11 +165,10 @@ export default function DayView({ currentDate, onEventPress, onDateChange }: Day
                 <UserX size={16} color={colors.primary} />
                 <View style={styles.absenceInfo}>
                   <ThemedText weight="semibold">
-                    {person?.name || 'Unknown Person'}
+                    {absence.name}
                   </ThemedText>
                   <ThemedText variant="secondary" size="small">
-                    {absence.type === 'vacation' ? 'Vacation' : 'Absence'}
-                    {absence.reason ? ` - ${absence.reason}` : ''}
+                    {absence.type}{absence.duration !== 'Full' ? ` (${absence.duration})` : ''}
                   </ThemedText>
                 </View>
               </View>
@@ -245,7 +246,7 @@ export default function DayView({ currentDate, onEventPress, onDateChange }: Day
           
           {amEvents.length > 0 ? (
             amEvents.map((event) => {
-              const person = event.personId ? people.find(p => p.id === event.personId) : null;
+              const person = event.personId ? staff.find(s => s.id === event.personId) : null;
               return (
                 <TouchableOpacity
                   key={event.id}
@@ -285,7 +286,7 @@ export default function DayView({ currentDate, onEventPress, onDateChange }: Day
           
           {pmEvents.length > 0 ? (
             pmEvents.map((event) => {
-              const person = event.personId ? people.find(p => p.id === event.personId) : null;
+              const person = event.personId ? staff.find(s => s.id === event.personId) : null;
               return (
                 <TouchableOpacity
                   key={event.id}

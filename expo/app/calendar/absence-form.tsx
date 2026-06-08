@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  ActivityIndicator,
   FlatList,
   Platform,
   Modal,
@@ -132,6 +133,7 @@ export default function AbsenceFormScreen() {
   const [newStaffName, setNewStaffName] = useState<string>('');
   const [newStaffDepartment, setNewStaffDepartment] = useState<string>('');
   const [uploadedDocs, setUploadedDocs] = useState<AbsenceDocument[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Filtered staff for search
   const filteredStaff = useMemo(() => {
@@ -240,7 +242,7 @@ export default function AbsenceFormScreen() {
     setUploadedDocs((prev) => prev.filter((d) => d.id !== docId));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!canEdit) {
       Alert.alert('View-only access', 'Only editors can create or update absences.');
       return;
@@ -267,55 +269,68 @@ export default function AbsenceFormScreen() {
       return;
     }
 
-    if (existingAbsence) {
-      if (existingAbsence.locked || existingAbsence.type === 'Public Holiday') {
-        Alert.alert('Locked event', 'Public holidays cannot be edited.');
+    setIsSaving(true);
+
+    try {
+      if (existingAbsence) {
+        if (existingAbsence.locked || existingAbsence.type === 'Public Holiday') {
+          Alert.alert('Locked event', 'Public holidays cannot be edited.');
+          return;
+        }
+
+        const updatedAbsence: Absence = {
+          ...existingAbsence,
+          staffId: selectedStaffId,
+          name: selectedStaff?.name ?? existingAbsence.name,
+          type,
+          date: datesToSave[0],
+          duration,
+          status,
+          cover: cover.trim() || null,
+          notes: notes.trim(),
+          documents: uploadedDocs.length > 0 ? uploadedDocs : undefined,
+        };
+
+        updateAbsence(updatedAbsence);
+        Alert.alert('Absence Updated', 'The absence has been updated successfully.');
+        router.back();
         return;
       }
 
-      const updatedAbsence: Absence = {
-        ...existingAbsence,
+      const newIds = createAbsences({
         staffId: selectedStaffId,
-        name: selectedStaff?.name ?? existingAbsence.name,
+        name: selectedStaff?.name ?? 'Unknown employee',
         type,
-        date: datesToSave[0],
+        dates: datesToSave,
         duration,
-        status,
-        cover: cover.trim() || null,
         notes: notes.trim(),
-        documents: uploadedDocs.length > 0 ? uploadedDocs : undefined,
-      };
+        cover: cover.trim() || null,
+        createdBy: 'Manager',
+      });
 
-      updateAbsence(updatedAbsence);
-      router.back();
-      return;
-    }
-
-    const newIds = createAbsences({
-      staffId: selectedStaffId,
-      name: selectedStaff?.name ?? 'Unknown employee',
-      type,
-      dates: datesToSave,
-      duration,
-      notes: notes.trim(),
-      cover: cover.trim() || null,
-      createdBy: 'Manager',
-    });
-
-    // Attach documents to first absence if multi-day
-    if (uploadedDocs.length > 0 && newIds.length > 0) {
-      const store = useAbsenceStore.getState();
-      const firstAbsence = store.absences.find((a) => a.id === newIds[0]);
-      if (firstAbsence) {
-        store.updateAbsence({ ...firstAbsence, documents: uploadedDocs });
+      // Attach documents to first absence if multi-day
+      if (uploadedDocs.length > 0 && newIds.length > 0) {
+        const store = useAbsenceStore.getState();
+        const firstAbsence = store.absences.find((a) => a.id === newIds[0]);
+        if (firstAbsence) {
+          store.updateAbsence({ ...firstAbsence, documents: uploadedDocs });
+        }
       }
-    }
 
-    Alert.alert(
-      'Absence Saved',
-      `${datesToSave.length} absence request${datesToSave.length > 1 ? 's' : ''} saved successfully as Pending.`
-    );
-    router.back();
+      Alert.alert(
+        'Absence Saved',
+        `${datesToSave.length} absence request${datesToSave.length > 1 ? 's' : ''} saved successfully as Pending.`
+      );
+      router.back();
+    } catch (err) {
+      console.error('[AbsenceForm] Save error:', err);
+      Alert.alert(
+        'Save Failed',
+        'Could not save the absence. Please check your connection and try again.'
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDelete = () => {
@@ -620,12 +635,22 @@ export default function AbsenceFormScreen() {
           ) : (
             <TouchableOpacity
               testID="absence-save-button"
-              style={[styles.saveButton, { backgroundColor: colors.primary }]}
+              style={[styles.saveButton, { backgroundColor: isSaving ? colors.secondaryText : colors.primary }]}
               onPress={handleSave}
+              disabled={isSaving}
             >
-              <ThemedText style={styles.saveButtonText}>
-                {existingAbsence ? 'Update absence' : `Save ${datesToSave.length > 1 ? datesToSave.length + ' ' : ''}absence`}
-              </ThemedText>
+              {isSaving ? (
+                <View style={styles.savingRow}>
+                  <ActivityIndicator size="small" color="white" />
+                  <ThemedText style={styles.saveButtonText}>
+                    Saving...
+                  </ThemedText>
+                </View>
+              ) : (
+                <ThemedText style={styles.saveButtonText}>
+                  {existingAbsence ? 'Update absence' : `Save ${datesToSave.length > 1 ? datesToSave.length + ' ' : ''}absence`}
+                </ThemedText>
+              )}
             </TouchableOpacity>
           )}
         </View>
@@ -968,6 +993,11 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 6,
+  },
+  savingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   saveButtonText: {
     color: 'white',

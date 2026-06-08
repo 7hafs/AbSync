@@ -157,11 +157,17 @@ const useAbsenceStore = create<AbsenceState>()(
       },
 
       updateAbsenceStatus: (id, status) =>
-        set((state) => ({
-          absences: state.absences.map((absence) =>
+        set((state) => {
+          const updated = state.absences.map((absence) =>
             absence.id === id ? { ...absence, status } : absence
-          ),
-        })),
+          );
+          // Sync to Supabase
+          const changed = updated.find((a) => a.id === id);
+          if (changed) {
+            upsertAbsence(changed);
+          }
+          return { absences: updated };
+        }),
 
       deleteAbsence: (id) => {
         console.log("[useAbsenceStore] deleteAbsence", id);
@@ -309,6 +315,7 @@ const useAbsenceStore = create<AbsenceState>()(
       partialize: (state) => ({
         absences: state.absences,
         dbVersion: state.dbVersion,
+        maxAbsencesPerDay: state.maxAbsencesPerDay,
       }),
     }
   )
