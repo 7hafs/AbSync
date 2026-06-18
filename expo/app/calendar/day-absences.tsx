@@ -302,7 +302,7 @@ export default function DayAbsencesScreen() {
             </View>
           ) : (
             reviewAbsences.map((absence) => {
-              const staffMember = absence.type === 'Public Holiday' ? undefined : getStaffById(absence.staffId);
+              const staffMember = absence.type === 'Public Holiday' || !absence.staffId ? undefined : getStaffById(absence.staffId);
               const departmentLabel = staffMember?.department ?? (absence.type === 'Public Holiday' ? 'UK calendar' : 'Team member');
               const isLocked = Boolean(absence.locked || absence.type === 'Public Holiday');
 

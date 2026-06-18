@@ -33,7 +33,6 @@ export const DB_VERSION = 2;
 // ── Storage keys (must match the `name` field in each Zustand persist config) ─
 export const STORAGE_KEYS = {
   absences: "absence-storage-v2",
-  people: "people-storage",
   staff: "staff-storage-v2",
   calendar: "calendar-storage-v3",
   notes: "notes-storage-v2",
@@ -378,7 +377,6 @@ export async function importBackupFile(
 export async function clearAllStores(): Promise<void> {
   const keysToClear = [
     STORAGE_KEYS.absences,
-    STORAGE_KEYS.people,
     STORAGE_KEYS.staff,
     STORAGE_KEYS.calendar,
     STORAGE_KEYS.notes,

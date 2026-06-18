@@ -30,7 +30,8 @@ export type Database = {
           locked: boolean | null
           name: string
           notes: string | null
-          staff_id: string
+          organisation_id: string | null
+          staff_id: string | null
           status: string
           type: string
           user_id: string
@@ -46,7 +47,8 @@ export type Database = {
           locked?: boolean | null
           name: string
           notes?: string | null
-          staff_id: string
+          organisation_id?: string | null
+          staff_id?: string | null
           status?: string
           type: string
           user_id: string
@@ -62,14 +64,70 @@ export type Database = {
           locked?: boolean | null
           name?: string
           notes?: string | null
-          staff_id?: string
+          organisation_id?: string | null
+          staff_id?: string | null
           status?: string
           type?: string
           user_id?: string
         }
         Relationships: [
           {
+            foreignKeyName: "absences_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "absences_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff_members"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "absences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          entity_id: string | null
+          entity_type: string
+          id: string
+          new_values: Json | null
+          old_values: Json | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -84,6 +142,7 @@ export type Database = {
           end_time: string | null
           id: string
           is_recurring: boolean | null
+          organisation_id: string | null
           person_id: string | null
           recurring_pattern: string | null
           start_time: string | null
@@ -97,6 +156,7 @@ export type Database = {
           end_time?: string | null
           id: string
           is_recurring?: boolean | null
+          organisation_id?: string | null
           person_id?: string | null
           recurring_pattern?: string | null
           start_time?: string | null
@@ -110,6 +170,7 @@ export type Database = {
           end_time?: string | null
           id?: string
           is_recurring?: boolean | null
+          organisation_id?: string | null
           person_id?: string | null
           recurring_pattern?: string | null
           start_time?: string | null
@@ -119,10 +180,46 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "calendar_events_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "calendar_events_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      departments: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          organisation_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          organisation_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          organisation_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "departments_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
             referencedColumns: ["id"]
           },
         ]
@@ -134,6 +231,7 @@ export type Database = {
           date: string | null
           id: string
           is_pinned: boolean | null
+          organisation_id: string | null
           tags: string[] | null
           title: string
           updated_at: string | null
@@ -145,6 +243,7 @@ export type Database = {
           date?: string | null
           id: string
           is_pinned?: boolean | null
+          organisation_id?: string | null
           tags?: string[] | null
           title: string
           updated_at?: string | null
@@ -156,12 +255,20 @@ export type Database = {
           date?: string | null
           id?: string
           is_pinned?: boolean | null
+          organisation_id?: string | null
           tags?: string[] | null
           title?: string
           updated_at?: string | null
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "notes_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "notes_user_id_fkey"
             columns: ["user_id"]
@@ -206,6 +313,30 @@ export type Database = {
           },
         ]
       }
+      organisations: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          slug: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          slug?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          slug?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           access_level: string | null
@@ -246,6 +377,7 @@ export type Database = {
           id: string
           is_completed: boolean | null
           is_recurring: boolean | null
+          organisation_id: string | null
           recurring_pattern: string | null
           time: string | null
           title: string
@@ -257,6 +389,7 @@ export type Database = {
           id: string
           is_completed?: boolean | null
           is_recurring?: boolean | null
+          organisation_id?: string | null
           recurring_pattern?: string | null
           time?: string | null
           title: string
@@ -268,12 +401,20 @@ export type Database = {
           id?: string
           is_completed?: boolean | null
           is_recurring?: boolean | null
+          organisation_id?: string | null
           recurring_pattern?: string | null
           time?: string | null
           title?: string
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "reminders_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "reminders_user_id_fkey"
             columns: ["user_id"]
@@ -288,11 +429,13 @@ export type Database = {
           active: boolean | null
           created_at: string | null
           department: string | null
+          department_id: string | null
           email: string | null
           employee_id: string | null
           id: string
           job_title: string | null
           name: string
+          organisation_id: string | null
           phone_number: string | null
           user_id: string
         }
@@ -300,11 +443,13 @@ export type Database = {
           active?: boolean | null
           created_at?: string | null
           department?: string | null
+          department_id?: string | null
           email?: string | null
           employee_id?: string | null
           id: string
           job_title?: string | null
           name: string
+          organisation_id?: string | null
           phone_number?: string | null
           user_id: string
         }
@@ -312,15 +457,31 @@ export type Database = {
           active?: boolean | null
           created_at?: string | null
           department?: string | null
+          department_id?: string | null
           email?: string | null
           employee_id?: string | null
           id?: string
           job_title?: string | null
           name?: string
+          organisation_id?: string | null
           phone_number?: string | null
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "staff_members_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_members_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "staff_members_user_id_fkey"
             columns: ["user_id"]

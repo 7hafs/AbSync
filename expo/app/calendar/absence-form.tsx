@@ -149,7 +149,7 @@ export default function AbsenceFormScreen() {
 
   useEffect(() => {
     if (existingAbsence) {
-      setSelectedStaffId(existingAbsence.staffId);
+      setSelectedStaffId(existingAbsence.staffId ?? '');
       setType(existingAbsence.type === 'Public Holiday' ? 'Holiday' : existingAbsence.type);
       setDate(existingAbsence.date);
       setSelectedDates([existingAbsence.date]);

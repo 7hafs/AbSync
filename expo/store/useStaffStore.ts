@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StaffMember } from "@/types";
 import { DB_VERSION } from "@/lib/storageManager";
-import { upsertStaff, deleteStaffFromSupabase, deleteAbsencesForStaffFromSupabase } from "@/lib/dataService";
+import { upsertStaff, deleteStaffFromSupabase, deleteAbsencesForStaffFromSupabase, writeAuditLog } from "@/lib/dataService";
 
 interface StaffState {
   staff: StaffMember[];
@@ -34,23 +34,30 @@ const useStaffStore = create<StaffState>()(
         set((state) => ({
           staff: [...state.staff, member],
         }));
-        // Sync to Supabase
         upsertStaff(member);
+        writeAuditLog("staff_created", "staff", member.id, undefined, {
+          name: member.name,
+          active: member.active,
+        });
         return member;
       },
 
       updateStaff: (updatedStaff) => {
+        const old = get().staff.find((s) => s.id === updatedStaff.id);
         set((state) => ({
           staff: state.staff.map((s) =>
             s.id === updatedStaff.id ? updatedStaff : s
           ),
         }));
-        // Sync to Supabase
         upsertStaff(updatedStaff);
+        writeAuditLog("staff_updated", "staff", updatedStaff.id,
+          old ? { name: old.name, active: old.active } : undefined,
+          { name: updatedStaff.name, active: updatedStaff.active }
+        );
       },
 
       deleteStaff: (id) => {
-        // Remove associated absences from local store first
+        const deletedStaff = get().staff.find((s) => s.id === id);
         try {
           const { default: useAbsenceStore } = require("@/store/useAbsenceStore");
           const absenceState = useAbsenceStore.getState();
@@ -72,9 +79,14 @@ const useStaffStore = create<StaffState>()(
         set((state) => ({
           staff: state.staff.filter((s) => s.id !== id),
         }));
-        // Sync to Supabase (staff + associated absences)
         deleteStaffFromSupabase(id);
         deleteAbsencesForStaffFromSupabase(id);
+        if (deletedStaff) {
+          writeAuditLog("staff_deleted", "staff", id,
+            { name: deletedStaff.name, active: deletedStaff.active },
+            undefined
+          );
+        }
       },
 
       archiveStaff: (id) =>
@@ -82,10 +94,10 @@ const useStaffStore = create<StaffState>()(
           const updated = state.staff.map((s) =>
             s.id === id ? { ...s, active: false } : s
           );
-          // Sync to Supabase
           const changed = updated.find((s) => s.id === id);
           if (changed) {
             upsertStaff(changed);
+            writeAuditLog("staff_deactivated", "staff", id);
           }
           return { staff: updated };
         }),
@@ -95,10 +107,10 @@ const useStaffStore = create<StaffState>()(
           const updated = state.staff.map((s) =>
             s.id === id ? { ...s, active: true } : s
           );
-          // Sync to Supabase
           const changed = updated.find((s) => s.id === id);
           if (changed) {
             upsertStaff(changed);
+            writeAuditLog("staff_activated", "staff", id);
           }
           return { staff: updated };
         }),

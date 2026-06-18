@@ -8,6 +8,7 @@
  * and by the root layout to load data on startup.
  */
 import { supabase } from "@/lib/supabase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Absence, StaffMember, EventType, NoteType, ReminderType, NotificationPreferences } from "@/types";
 import { Tables, TablesInsert } from "@/integrations/supabase/types";
 
@@ -28,15 +29,352 @@ async function getUserIdAsync(): Promise<string | null> {
   return data.session?.user?.id ?? null;
 }
 
+// ── Retry & Resilience ───────────────────────────────────────────────────────
+
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000;
+const OFFLINE_QUEUE_KEY = "offline-queue";
+
+interface QueuedOperation {
+  id: string;
+  table: string;
+  operation: "upsert" | "delete";
+  payload: unknown;
+  timestamp: string;
+  retries: number;
+}
+
+/**
+ * Retry a Supabase operation with exponential backoff.
+ * Returns the result or throws after exhausting retries.
+ */
+async function withRetry(
+  operation: () => Promise<any>,
+  context: string,
+  maxRetries = MAX_RETRIES
+): Promise<void> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await operation();
+      if (!result || !result.error) return;
+
+      const pgError = result.error as { code?: string; message?: string };
+      // Don't retry FK violations, unique violations, or auth errors
+      if (
+        pgError.code === "23503" || // FK violation
+        pgError.code === "23505" || // unique violation
+        pgError.code === "42501" || // permission denied
+        pgError.code === "PGRST301" // RLS violation
+      ) {
+        console.error(`[dataService] ${context} non-retryable:`, pgError.message);
+        throw result.error;
+      }
+
+      if (attempt < maxRetries) {
+        const delay = RETRY_DELAY_MS * Math.pow(2, attempt);
+        console.warn(
+          `[dataService] ${context} attempt ${attempt + 1}/${maxRetries} failed, retrying in ${delay}ms...`
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      console.error(`[dataService] ${context} exhausted retries:`, pgError.message);
+      throw result.error;
+    } catch (err) {
+      if (attempt < maxRetries && !(err as { code?: string })?.code) {
+        const delay = RETRY_DELAY_MS * Math.pow(2, attempt);
+        console.warn(
+          `[dataService] ${context} network error, retrying in ${delay}ms...`
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`[dataService] ${context}: unreachable`);
+}
+
+// ── Offline Queue ─────────────────────────────────────────────────────────────
+
+/** Enqueue an operation to be retried when connectivity returns. */
+async function enqueueOffline(table: string, operation: "upsert" | "delete", payload: unknown): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(OFFLINE_QUEUE_KEY);
+    const queue: QueuedOperation[] = raw ? JSON.parse(raw) : [];
+    queue.push({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      table,
+      operation,
+      payload,
+      timestamp: new Date().toISOString(),
+      retries: 0,
+    });
+    await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+    console.log(`[dataService] Enqueued offline ${operation} on ${table}`);
+  } catch (err) {
+    console.error("[dataService] Failed to enqueue offline operation:", err);
+  }
+}
+
+/** Get the current offline queue size. */
+export async function getOfflineQueueSize(): Promise<number> {
+  try {
+    const raw = await AsyncStorage.getItem(OFFLINE_QUEUE_KEY);
+    if (!raw) return 0;
+    const queue: QueuedOperation[] = JSON.parse(raw);
+    return queue.length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Process the offline queue, retrying all pending operations. */
+export async function processOfflineQueue(): Promise<{ processed: number; failed: number }> {
+  try {
+    const raw = await AsyncStorage.getItem(OFFLINE_QUEUE_KEY);
+    if (!raw) return { processed: 0, failed: 0 };
+    const queue: QueuedOperation[] = JSON.parse(raw);
+    if (queue.length === 0) return { processed: 0, failed: 0 };
+
+    console.log(`[dataService] Processing ${queue.length} offline operations...`);
+    const remaining: QueuedOperation[] = [];
+    let processed = 0;
+    let failed = 0;
+
+    for (const op of queue) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const tableRef = supabase.from(op.table as any) as any;
+        if (op.operation === "upsert") {
+          await withRetry(
+            () => tableRef.upsert(op.payload, { onConflict: "id" }),
+            `offline-${op.table}-upsert`
+          );
+        } else {
+          await withRetry(
+            () => tableRef.delete().eq("id", (op.payload as { id: string }).id),
+            `offline-${op.table}-delete`
+          );
+        }
+        processed++;
+      } catch {
+        if (op.retries < MAX_RETRIES) {
+          remaining.push({ ...op, retries: op.retries + 1 });
+        }
+        failed++;
+      }
+    }
+
+    await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
+    console.log(`[dataService] Offline queue: ${processed} processed, ${failed} failed, ${remaining.length} remaining`);
+    return { processed, failed };
+  } catch (err) {
+    console.error("[dataService] Failed to process offline queue:", err);
+    return { processed: 0, failed: 0 };
+  }
+}
+
+// ── Audit Logging ─────────────────────────────────────────────────────────────
+
+export type AuditAction =
+  | "staff_created"
+  | "staff_updated"
+  | "staff_deleted"
+  | "staff_activated"
+  | "staff_deactivated"
+  | "absence_created"
+  | "absence_updated"
+  | "absence_deleted"
+  | "absence_approved"
+  | "absence_rejected";
+
+/**
+ * Write an audit log entry to the audit_logs table.
+ * Fire-and-forget — never blocks the UI or throws.
+ */
+export async function writeAuditLog(
+  action: AuditAction,
+  entityType: string,
+  entityId: string,
+  oldValues?: Record<string, unknown>,
+  newValues?: Record<string, unknown>
+): Promise<void> {
+  try {
+    const userId = await getUserIdAsync();
+    if (!userId) return;
+
+    const { error } = await supabase.from("audit_logs" as any).insert({
+      user_id: userId,
+      action,
+      entity_type: entityType,
+      entity_id: entityId,
+      old_values: oldValues ? (JSON.parse(JSON.stringify(oldValues)) as unknown as Record<string, unknown>) : null,
+      new_values: newValues ? (JSON.parse(JSON.stringify(newValues)) as unknown as Record<string, unknown>) : null,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    if (error) {
+      console.warn("[dataService] Audit log write failed:", error.message);
+    }
+  } catch (err) {
+    console.warn("[dataService] Audit log write error:", err);
+  }
+}
+
+// ── Supabase Storage ──────────────────────────────────────────────────────────
+
+const BUCKETS = {
+  documents: "absence-documents",
+  uploads: "staff-uploads",
+  imports: "staff-imports",
+} as const;
+
+/** Ensure a storage bucket exists, creating it if needed. */
+async function ensureBucket(bucketName: string): Promise<boolean> {
+  try {
+    const { data: buckets } = await supabase.storage.listBuckets();
+    const exists = buckets?.some((b) => b.name === bucketName);
+    if (exists) return true;
+
+    const { error } = await supabase.storage.createBucket(bucketName, {
+      public: false,
+      fileSizeLimit: 10 * 1024 * 1024, // 10MB
+    });
+    if (error) {
+      console.warn(`[dataService] Failed to create bucket "${bucketName}":`, error.message);
+      return false;
+    }
+    console.log(`[dataService] Created storage bucket: ${bucketName}`);
+    return true;
+  } catch (err) {
+    console.warn(`[dataService] Bucket ensure error for "${bucketName}":`, err);
+    return false;
+  }
+}
+
+/**
+ * Upload a file to Supabase Storage.
+ * Returns the public URL on success, null on failure.
+ */
+export async function uploadToStorage(
+  bucket: keyof typeof BUCKETS,
+  path: string,
+  file: { uri: string; type: string; name: string }
+): Promise<string | null> {
+  try {
+    await ensureBucket(BUCKETS[bucket]);
+
+    const userId = await getUserIdAsync();
+    if (!userId) return null;
+
+    const fullPath = `${userId}/${path}`;
+
+    // For React Native, use fetch to get blob
+    const response = await fetch(file.uri);
+    const blob = await response.blob();
+
+    const { error } = await supabase.storage
+      .from(BUCKETS[bucket])
+      .upload(fullPath, blob, {
+        contentType: file.type,
+        upsert: true,
+      });
+
+    if (error) {
+      console.error(`[dataService] Upload to ${bucket} failed:`, error.message);
+      return null;
+    }
+
+    const { data: urlData } = supabase.storage
+      .from(BUCKETS[bucket])
+      .getPublicUrl(fullPath);
+
+    return urlData.publicUrl;
+  } catch (err) {
+    console.error(`[dataService] Upload error for ${bucket}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Delete a file from Supabase Storage.
+ */
+export async function deleteFromStorage(
+  bucket: keyof typeof BUCKETS,
+  path: string
+): Promise<boolean> {
+  try {
+    const userId = await getUserIdAsync();
+    if (!userId) return false;
+
+    const { error } = await supabase.storage
+      .from(BUCKETS[bucket])
+      .remove([`${userId}/${path}`]);
+
+    if (error) {
+      console.error(`[dataService] Delete from ${bucket} failed:`, error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error(`[dataService] Delete error for ${bucket}:`, err);
+    return false;
+  }
+}
+
+/** Get a public URL for a stored file. */
+export function getStorageUrl(
+  bucket: keyof typeof BUCKETS,
+  path: string
+): string {
+  const userId = "__user__"; // placeholder — real user context needed at call site
+  const { data } = supabase.storage
+    .from(BUCKETS[bucket])
+    .getPublicUrl(`${userId}/${path}`);
+  return data.publicUrl;
+}
+
+// ── Sync Status ───────────────────────────────────────────────────────────────
+
+export type SyncStatus = "synced" | "syncing" | "offline" | "error";
+
+let currentSyncStatus: SyncStatus = "synced";
+let syncListeners: Array<(status: SyncStatus) => void> = [];
+
+/** Get the current sync status. */
+export function getSyncStatus(): SyncStatus {
+  return currentSyncStatus;
+}
+
+/** Subscribe to sync status changes. Returns unsubscribe function. */
+export function onSyncStatusChange(listener: (status: SyncStatus) => void): () => void {
+  syncListeners.push(listener);
+  return () => {
+    syncListeners = syncListeners.filter((l) => l !== listener);
+  };
+}
+
+function setSyncStatus(status: SyncStatus): void {
+  if (currentSyncStatus === status) return;
+  currentSyncStatus = status;
+  console.log(`[dataService] Sync status: ${status}`);
+  for (const listener of syncListeners) {
+    try { listener(status); } catch { /* ignore listener errors */ }
+  }
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // ABSENCES
 // ═════════════════════════════════════════════════════════════════════════════
 
 /** Convert local Absence to Supabase insert shape. */
-function absenceToInsert(a: Absence): TablesInsert<"absences"> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function absenceToInsert(a: Absence): any {
   return {
     id: a.id,
-    staff_id: a.staffId,
+    staff_id: a.staffId ?? null,
     name: a.name,
     type: a.type,
     date: a.date,
@@ -94,9 +432,15 @@ export async function upsertAbsence(absence: Absence): Promise<void> {
   }
 
   const insert = { ...absenceToInsert(absence), user_id: userId };
-  const { error } = await supabase.from("absences").upsert(insert, { onConflict: "id" });
-  if (error) {
-    console.error("[dataService] upsertAbsence error:", error.message);
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await withRetry(
+      () => supabase.from("absences").upsert(insert as any, { onConflict: "id" }) as any,
+      "upsertAbsence"
+    );
+  } catch {
+    // If retries exhausted, enqueue for later
+    await enqueueOffline("absences", "upsert", insert);
   }
 }
 
@@ -115,10 +459,16 @@ export async function upsertAbsences(absences: Absence[]): Promise<void> {
 }
 
 export async function deleteAbsenceFromSupabase(id: string): Promise<void> {
-  const { error } = await supabase.from("absences").delete().eq("id", id);
-  if (error) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await withRetry(
+      () => supabase.from("absences").delete().eq("id", id) as any,
+      "deleteAbsence"
+    );
+  } catch (err) {
+    const error = err as { message?: string };
     console.error("[dataService] deleteAbsence error:", error.message);
-    throw new Error(`Failed to delete absence: ${error.message}`);
+    await enqueueOffline("absences", "delete", { id });
   }
 }
 
@@ -177,11 +527,15 @@ export async function upsertStaff(s: StaffMember): Promise<void> {
   const userId = await getUserIdAsync();
   if (!userId) return;
 
-  const { error } = await supabase
-    .from("staff_members")
-    .upsert({ ...staffToInsert(s), user_id: userId }, { onConflict: "id" });
-  if (error) {
-    console.error("[dataService] upsertStaff error:", error.message);
+  const insert = { ...staffToInsert(s), user_id: userId };
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await withRetry(
+      () => supabase.from("staff_members").upsert(insert as any, { onConflict: "id" }) as any,
+      "upsertStaff"
+    );
+  } catch {
+    await enqueueOffline("staff_members", "upsert", insert);
   }
 }
 
@@ -197,10 +551,16 @@ export async function upsertStaffMembers(staff: StaffMember[]): Promise<void> {
 }
 
 export async function deleteStaffFromSupabase(id: string): Promise<void> {
-  const { error } = await supabase.from("staff_members").delete().eq("id", id);
-  if (error) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await withRetry(
+      () => supabase.from("staff_members").delete().eq("id", id) as any,
+      "deleteStaff"
+    );
+  } catch (err) {
+    const error = err as { message?: string };
     console.error("[dataService] deleteStaff error:", error.message);
-    throw new Error(`Failed to delete staff: ${error.message}`);
+    await enqueueOffline("staff_members", "delete", { id });
   }
 }
 

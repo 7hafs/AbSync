@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Absence, AbsenceDuration, AbsenceStatus } from "@/types";
 import { DB_VERSION } from "@/lib/storageManager";
-import { upsertAbsence, upsertAbsences, deleteAbsenceFromSupabase } from "@/lib/dataService";
+import { upsertAbsence, upsertAbsences, deleteAbsenceFromSupabase, writeAuditLog } from "@/lib/dataService";
 
 export const DEFAULT_MAX_ABSENCES_PER_DAY = 2;
 
@@ -103,7 +103,6 @@ const useAbsenceStore = create<AbsenceState>()(
 
       addAbsence: (absence) =>
         set((state) => {
-          // Deduplicate: skip if an absence with the same ID already exists
           if (state.absences.some((a) => a.id === absence.id)) {
             console.log('[useAbsenceStore] Skipping duplicate absence ID:', absence.id);
             return state;
@@ -115,7 +114,6 @@ const useAbsenceStore = create<AbsenceState>()(
         const createdAt = new Date().toISOString();
         const nextAbsences: Absence[] = input.dates.map((date) => {
           let id: string;
-          // Ensure unique ID — retry if random collision (extremely rare)
           do {
             id = createAbsenceId(date, input.staffId, input.duration);
           } while (get().absences.some((a) => a.id === id));
@@ -139,10 +137,19 @@ const useAbsenceStore = create<AbsenceState>()(
           absences: [...state.absences, ...nextAbsences],
         }));
 
-        // Sync to Supabase
         upsertAbsences(nextAbsences);
 
-        // Return created IDs for the caller
+        // Audit log for each created absence
+        for (const a of nextAbsences) {
+          writeAuditLog("absence_created", "absence", a.id, undefined, {
+            staffId: a.staffId,
+            name: a.name,
+            date: a.date,
+            type: a.type,
+            duration: a.duration,
+          });
+        }
+
         return nextAbsences.map((a) => a.id);
       },
 
@@ -152,8 +159,8 @@ const useAbsenceStore = create<AbsenceState>()(
             absence.id === updatedAbsence.id ? updatedAbsence : absence
           ),
         }));
-        // Sync to Supabase
         upsertAbsence(updatedAbsence);
+        writeAuditLog("absence_updated", "absence", updatedAbsence.id);
       },
 
       updateAbsenceStatus: (id, status) =>
@@ -161,16 +168,21 @@ const useAbsenceStore = create<AbsenceState>()(
           const updated = state.absences.map((absence) =>
             absence.id === id ? { ...absence, status } : absence
           );
-          // Sync to Supabase
           const changed = updated.find((a) => a.id === id);
           if (changed) {
             upsertAbsence(changed);
+            writeAuditLog(
+              status === "Approved" ? "absence_approved" : "absence_rejected",
+              "absence",
+              id
+            );
           }
           return { absences: updated };
         }),
 
       deleteAbsence: (id) => {
         console.log("[useAbsenceStore] deleteAbsence", id);
+        const deleted = get().absences.find((a) => a.id === id);
         set((state) => ({
           absences: state.absences.filter((absence) => {
             if (absence.id !== id) return true;
@@ -179,22 +191,26 @@ const useAbsenceStore = create<AbsenceState>()(
             return false;
           }),
         }));
-        // Sync to Supabase
         deleteAbsenceFromSupabase(id);
+        if (deleted && !deleted.locked && deleted.type !== "Public Holiday") {
+          writeAuditLog("absence_deleted", "absence", id, {
+            staffId: deleted.staffId,
+            name: deleted.name,
+            date: deleted.date,
+          });
+        }
       },
 
       replaceAbsences: (incoming) => {
-        // Safety: never replace with empty data if we already have records
         if (!Array.isArray(incoming) || incoming.length === 0) {
           const currentCount = get().absences.length;
           if (currentCount > 0) {
             console.warn(
-              '[useAbsenceStore] Refusing to replace ${currentCount} absences with empty array — possible data loss prevented'
+              '[useAbsenceStore] Refusing to replace absences with empty array — possible data loss prevented'
             );
             return;
           }
         }
-        // Deduplicate by ID before replacing
         const seen = new Set<string>();
         const deduplicated = incoming.filter((a) => {
           if (seen.has(a.id)) {

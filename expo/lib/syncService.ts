@@ -4,6 +4,7 @@
  * Orchestrates:
  * - Loading all data from Supabase on login
  * - Migrating existing local data to Supabase on first login
+ * - Processing offline-queued operations when connectivity returns
  * - Tracking whether migration has been performed
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -15,6 +16,8 @@ import {
   fetchAllReminders,
   fetchNotificationPreferences,
   migrateLocalDataToSupabase,
+  processOfflineQueue,
+  isSupabaseReachable,
 } from "@/lib/dataService";
 
 const MIGRATION_FLAG_KEY = "supabase_migration_done_v1";
@@ -46,6 +49,8 @@ export async function markMigrationComplete(): Promise<void> {
  * If there is no local data or migration already completed:
  * 1. Just fetch from Supabase
  *
+ * After loading, processes any offline-queued operations.
+ *
  * Returns the loaded data for each store.
  */
 export async function loadAllFromSupabase(): Promise<{
@@ -56,12 +61,6 @@ export async function loadAllFromSupabase(): Promise<{
   reminders: ReturnType<typeof fetchAllReminders> extends Promise<infer T> ? T : never;
   notifPrefs: Awaited<ReturnType<typeof fetchNotificationPreferences>>;
 }> {
-  const migrationDone = await hasCompletedMigration();
-
-  // If migration hasn't been done yet, attempt it.
-  // The caller should pass local data for migration if needed.
-  // We'll handle that in the root layout.
-
   // Fetch everything from Supabase in parallel
   const [absences, staff, calendarEvents, notes, reminders, notifPrefs] = await Promise.all([
     fetchAllAbsences(),
@@ -80,6 +79,19 @@ export async function loadAllFromSupabase(): Promise<{
     reminders: reminders.length,
     notifPrefs: notifPrefs ? "found" : "not found",
   });
+
+  // Process any offline-queued operations now that we're connected
+  try {
+    const reachable = await isSupabaseReachable();
+    if (reachable) {
+      const result = await processOfflineQueue();
+      if (result.processed > 0) {
+        console.log(`[syncService] Processed ${result.processed} offline operations`);
+      }
+    }
+  } catch (e) {
+    console.warn("[syncService] Offline queue processing failed:", e);
+  }
 
   return { absences, staff, calendarEvents, notes, reminders, notifPrefs };
 }

@@ -38,7 +38,7 @@ export type AbsenceDocument = {
 
 export type Absence = {
   id: string;
-  staffId: string;
+  staffId: string | null;
   name: string;
   type: AbsenceType;
   date: string;

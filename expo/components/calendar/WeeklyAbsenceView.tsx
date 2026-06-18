@@ -393,7 +393,7 @@ export default function WeeklyAbsenceView({
           a.status !== 'Rejected',
       );
       for (const a of dayAbsences) {
-        seenStaff.add(a.staffId);
+        if (a.staffId) seenStaff.add(a.staffId);
         if (a.duration === 'AM') am++;
         else if (a.duration === 'PM') pm++;
         else if (a.duration === 'Full') fullDay++;
