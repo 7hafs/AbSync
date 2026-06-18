@@ -4,7 +4,7 @@
  * Exports absence data as a CSV file that can be shared or saved.
  * Uses UK date formatting (DD/MM/YYYY) throughout.
  */
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { Absence } from '@/types';
 import { formatDateUK } from '@/utils/dateUtils';

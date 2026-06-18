@@ -65,7 +65,7 @@ export default function ForgotPasswordScreen() {
           {!sent ? (
             <>
               <View style={styles.header}>
-                <ThemedText size="xxlarge" weight="bold" style={styles.title}>
+                <ThemedText size="xlarge" weight="bold" style={styles.title}>
                   Forgot Password?
                 </ThemedText>
                 <ThemedText variant="secondary" style={styles.subtitle}>

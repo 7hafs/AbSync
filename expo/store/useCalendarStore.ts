@@ -90,7 +90,7 @@ const useCalendarStore = create<CalendarState>()(
     {
       name: "calendar-storage-v3",
       storage: createJSONStorage(() => AsyncStorage),
-      version: DB_VERSION + 1,
+      version: DB_VERSION,
       migrate: (persisted) => persisted,
       partialize: (state) => ({
         events: state.events,

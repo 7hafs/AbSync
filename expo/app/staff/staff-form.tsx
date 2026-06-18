@@ -32,6 +32,8 @@ export default function StaffFormScreen() {
   const [department, setDepartment] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const [email, setEmail] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [active, setActive] = useState(true);
 
   const staffId = typeof params.id === "string" ? params.id : undefined;
@@ -45,6 +47,8 @@ export default function StaffFormScreen() {
         setDepartment(existingStaff.department || "");
         setEmployeeId(existingStaff.employeeId || "");
         setEmail(existingStaff.email || "");
+        setJobTitle(existingStaff.jobTitle || "");
+        setPhoneNumber(existingStaff.phoneNumber || "");
         setActive(existingStaff.active);
       }
     }
@@ -63,9 +67,6 @@ export default function StaffFormScreen() {
 
     // Check for duplicate employee ID or email
     if (employeeId.trim()) {
-      const duplicate = getStaffById
-        ? undefined
-        : undefined;
       const allStaff = useStaffStore.getState().staff;
       const dupById = allStaff.find(
         (s) => s.employeeId === employeeId.trim() && s.id !== staffId
@@ -98,6 +99,8 @@ export default function StaffFormScreen() {
       department: department.trim() || undefined,
       employeeId: employeeId.trim() || undefined,
       email: email.trim() || undefined,
+      jobTitle: jobTitle.trim() || undefined,
+      phoneNumber: phoneNumber.trim() || undefined,
       active,
       createdAt: staffId ? getStaffById(staffId)?.createdAt || new Date().toISOString() : new Date().toISOString(),
     };
@@ -216,6 +219,29 @@ export default function StaffFormScreen() {
         </View>
 
         <View style={styles.section}>
+          <ThemedText style={styles.label}>Job Title</ThemedText>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+            placeholder="Enter job title (optional)"
+            placeholderTextColor={colors.secondaryText}
+            value={jobTitle}
+            onChangeText={setJobTitle}
+          />
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText style={styles.label}>Phone Number</ThemedText>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+            placeholder="Enter phone number (optional)"
+            placeholderTextColor={colors.secondaryText}
+            value={phoneNumber}
+            onChangeText={setPhoneNumber}
+            keyboardType="phone-pad"
+          />
+        </View>
+
+        <View style={styles.section}>
           <ThemedText style={styles.label}>Department</ThemedText>
           <TextInput
             style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
@@ -229,7 +255,24 @@ export default function StaffFormScreen() {
         <View style={styles.section}>
           <View style={styles.row}>
             <ThemedText style={styles.label}>Active</ThemedText>
-            <Switch value={active} onValueChange={setActive} />
+            <Switch
+              value={active}
+              onValueChange={(val) => {
+                if (!val && active) {
+                  // Deactivating — confirm
+                  Alert.alert(
+                    "Deactivate Staff",
+                    "Deactivating will archive this staff member. They will no longer appear in active staff lists or absence forms. You can reactivate them later from Archived Staff.",
+                    [
+                      { text: "Cancel", style: "cancel", onPress: () => setActive(true) },
+                      { text: "Deactivate", onPress: () => setActive(false) },
+                    ]
+                  );
+                } else {
+                  setActive(val);
+                }
+              }}
+            />
           </View>
         </View>
 

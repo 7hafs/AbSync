@@ -1,20 +1,31 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
   TouchableOpacity,
-  useWindowDimensions,
+  ScrollView,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from 'react-native';
 import ThemedText from '@/components/ThemedText';
+import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { absenceColors } from '@/constants/colors';
-import { Absence, AbsenceType, AbsenceDuration } from '@/types';
+import { Absence, AbsenceType } from '@/types';
 import {
   toDateString,
   todayDateString,
   getWeekDatesFromDate,
 } from '@/utils/dateUtils';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+// ── Type colours ─────────────────────────────────────────────────────────────
 
 const TYPE_COLORS: Record<AbsenceType, string> = {
   Holiday: absenceColors.holiday,
@@ -35,21 +46,236 @@ function getInitials(name: string): string {
   return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
 }
 
-function getTypeBadge(type: AbsenceType): string {
-  switch (type) {
-    case 'Holiday': return 'AL';
-    case 'Sickness': return 'SL';
-    case 'Training': return 'TR';
-    case 'Unpaid Leave': return 'UL';
-    case 'Other': return 'OT';
-    case 'Public Holiday': return 'PH';
-    default: return '?';
-  }
-}
-
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
-// ── Sub-components ───────────────────────────────────────────────────────────
+// ── Section colours ──────────────────────────────────────────────────────────
+
+const SECTION_CONFIG = {
+  am: { color: '#16A34A', label: 'AM' } as const,
+  pm: { color: '#6366F1', label: 'PM' } as const,
+  full: { color: '#EA580C', label: 'Full Day' } as const,
+};
+
+// ── Staff list item ──────────────────────────────────────────────────────────
+
+interface StaffListItemProps {
+  name: string;
+  type: AbsenceType;
+  accentColor: string;
+  onPress: () => void;
+}
+
+const StaffListItem = React.memo(function StaffListItem({
+  name,
+  type,
+  accentColor,
+  onPress,
+}: StaffListItemProps) {
+  return (
+    <TouchableOpacity
+      style={styles.staffItem}
+      onPress={onPress}
+      activeOpacity={0.6}
+    >
+      <View style={[styles.staffLeftStripe, { backgroundColor: accentColor }]} />
+      <View style={[styles.staffAvatar, { backgroundColor: getTypeColor(type) }]}>
+        <ThemedText style={styles.staffAvatarText}>
+          {getInitials(name)}
+        </ThemedText>
+      </View>
+      <ThemedText style={styles.staffName} numberOfLines={1}>
+        {name}
+      </ThemedText>
+    </TouchableOpacity>
+  );
+});
+
+// ── Accordion day card ───────────────────────────────────────────────────────
+
+interface AccordionDayProps {
+  date: Date;
+  dateStr: string;
+  dayIndex: number;
+  isToday: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+  amList: Array<{ id: string; name: string; type: AbsenceType }>;
+  pmList: Array<{ id: string; name: string; type: AbsenceType }>;
+  fullDayList: Array<{ id: string; name: string; type: AbsenceType }>;
+  amCountTotal: number;
+  pmCountTotal: number;
+  fullDayCount: number;
+  onPressStaff: (id: string) => void;
+}
+
+function AccordionDay({
+  date,
+  dayIndex,
+  isToday,
+  isExpanded,
+  onToggle,
+  amList,
+  pmList,
+  fullDayList,
+  amCountTotal,
+  pmCountTotal,
+  fullDayCount,
+  onPressStaff,
+}: AccordionDayProps) {
+  const dayNum = date.getDate();
+  const dayLabel = DAY_LABELS[dayIndex];
+  const Chevron = isExpanded ? ChevronUp : ChevronDown;
+  const totalAbsences = amCountTotal + pmCountTotal + fullDayCount;
+
+  return (
+    <View style={[styles.accordion, isToday && styles.accordionToday]}>
+      {/* Header tap target */}
+      <TouchableOpacity
+        style={styles.accordionHeader}
+        onPress={onToggle}
+        activeOpacity={0.7}
+      >
+        <View style={styles.accordionHeaderLeft}>
+          <ThemedText
+            style={[styles.dayLabel, isToday && styles.dayLabelToday]}
+            weight="bold"
+          >
+            {dayLabel}
+          </ThemedText>
+          <ThemedText style={[styles.dayDate, isToday && styles.dayDateToday]}>
+            {String(dayNum).padStart(2, '0')}
+          </ThemedText>
+          {isToday && (
+            <View style={styles.todayTag}>
+              <ThemedText style={styles.todayTagText}>Today</ThemedText>
+            </View>
+          )}
+        </View>
+        <View style={styles.accordionHeaderRight}>
+          <View style={styles.inlineCounts}>
+            <ThemedText style={[styles.inlineCount, { color: SECTION_CONFIG.am.color }]}>
+              AM {amCountTotal}
+            </ThemedText>
+            <ThemedText style={styles.inlineDot}>·</ThemedText>
+            <ThemedText style={[styles.inlineCount, { color: SECTION_CONFIG.pm.color }]}>
+              PM {pmCountTotal}
+            </ThemedText>
+            <ThemedText style={styles.inlineDot}>·</ThemedText>
+            <ThemedText style={[styles.inlineCount, { color: SECTION_CONFIG.full.color }]}>
+              Full {fullDayCount}
+            </ThemedText>
+          </View>
+          <Chevron
+            size={18}
+            color={isToday ? '#0F766E' : '#94A3B8'}
+            strokeWidth={2}
+          />
+        </View>
+      </TouchableOpacity>
+
+      {/* Expanded sections */}
+      {isExpanded && totalAbsences > 0 && (
+        <View style={styles.accordionBody}>
+          {amList.length > 0 && (
+            <View style={styles.expandedSection}>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionDot, { backgroundColor: SECTION_CONFIG.am.color }]} />
+                <ThemedText style={[styles.sectionTitle, { color: SECTION_CONFIG.am.color }]}>
+                  AM — {amList.length} {amList.length === 1 ? 'absence' : 'absences'}
+                </ThemedText>
+              </View>
+              {amList.map((s) => (
+                <StaffListItem
+                  key={s.id}
+                  name={s.name}
+                  type={s.type}
+                  accentColor={SECTION_CONFIG.am.color}
+                  onPress={() => onPressStaff(s.id)}
+                />
+              ))}
+            </View>
+          )}
+
+          {pmList.length > 0 && (
+            <View style={styles.expandedSection}>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionDot, { backgroundColor: SECTION_CONFIG.pm.color }]} />
+                <ThemedText style={[styles.sectionTitle, { color: SECTION_CONFIG.pm.color }]}>
+                  PM — {pmList.length} {pmList.length === 1 ? 'absence' : 'absences'}
+                </ThemedText>
+              </View>
+              {pmList.map((s) => (
+                <StaffListItem
+                  key={s.id}
+                  name={s.name}
+                  type={s.type}
+                  accentColor={SECTION_CONFIG.pm.color}
+                  onPress={() => onPressStaff(s.id)}
+                />
+              ))}
+            </View>
+          )}
+
+          {fullDayList.length > 0 && (
+            <View style={styles.expandedSection}>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionDot, { backgroundColor: SECTION_CONFIG.full.color }]} />
+                <ThemedText style={[styles.sectionTitle, { color: SECTION_CONFIG.full.color }]}>
+                  Full Day — {fullDayList.length} {fullDayList.length === 1 ? 'absence' : 'absences'}
+                </ThemedText>
+              </View>
+              {fullDayList.map((s) => (
+                <StaffListItem
+                  key={s.id}
+                  name={s.name}
+                  type={s.type}
+                  accentColor={SECTION_CONFIG.full.color}
+                  onPress={() => onPressStaff(s.id)}
+                />
+              ))}
+            </View>
+          )}
+
+          {/* Empty sections — show subtle message */}
+          {amList.length === 0 && (
+            <View style={styles.emptySection}>
+              <ThemedText variant="secondary" style={styles.emptyText}>
+                No AM absences
+              </ThemedText>
+            </View>
+          )}
+          {pmList.length === 0 && (
+            <View style={styles.emptySection}>
+              <ThemedText variant="secondary" style={styles.emptyText}>
+                No PM absences
+              </ThemedText>
+            </View>
+          )}
+          {fullDayList.length === 0 && (
+            <View style={styles.emptySection}>
+              <ThemedText variant="secondary" style={styles.emptyText}>
+                No full-day absences
+              </ThemedText>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Expanded but empty */}
+      {isExpanded && totalAbsences === 0 && (
+        <View style={styles.accordionBody}>
+          <View style={styles.emptySection}>
+            <ThemedText variant="secondary" style={styles.emptyText}>
+              No absences for this day
+            </ThemedText>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── Summary cards ────────────────────────────────────────────────────────────
 
 interface SummaryCardsProps {
   amCount: number;
@@ -61,158 +287,95 @@ interface SummaryCardsProps {
 function SummaryCards({ amCount, pmCount, fullDayCount, totalStaffCount }: SummaryCardsProps) {
   return (
     <View style={styles.summaryRow}>
-      <View style={[styles.summaryCard, { backgroundColor: '#F0FDF4' }]}>
-        <ThemedText style={[styles.summaryValue, { color: '#16A34A' }]}>{amCount}</ThemedText>
+      <View style={styles.summaryCard}>
+        <ThemedText style={[styles.summaryValue, { color: SECTION_CONFIG.am.color }]}>
+          {amCount}
+        </ThemedText>
         <ThemedText variant="secondary" style={styles.summaryLabel}>AM</ThemedText>
       </View>
-      <View style={[styles.summaryCard, { backgroundColor: '#EFF6FF' }]}>
-        <ThemedText style={[styles.summaryValue, { color: '#2563EB' }]}>{pmCount}</ThemedText>
+      <View style={styles.summaryCard}>
+        <ThemedText style={[styles.summaryValue, { color: SECTION_CONFIG.pm.color }]}>
+          {pmCount}
+        </ThemedText>
         <ThemedText variant="secondary" style={styles.summaryLabel}>PM</ThemedText>
       </View>
-      <View style={[styles.summaryCard, { backgroundColor: '#FFF7ED' }]}>
-        <ThemedText style={[styles.summaryValue, { color: '#EA580C' }]}>{fullDayCount}</ThemedText>
-        <ThemedText variant="secondary" style={styles.summaryLabel}>Full</ThemedText>
+      <View style={styles.summaryCard}>
+        <ThemedText style={[styles.summaryValue, { color: SECTION_CONFIG.full.color }]}>
+          {fullDayCount}
+        </ThemedText>
+        <ThemedText variant="secondary" style={styles.summaryLabel}>Full Day</ThemedText>
       </View>
-      <View style={[styles.summaryCard, { backgroundColor: '#F5F3FF' }]}>
-        <ThemedText style={[styles.summaryValue, { color: '#6D28D9' }]}>{totalStaffCount}</ThemedText>
+      <View style={styles.summaryCard}>
+        <ThemedText style={[styles.summaryValue, { color: '#6D28D9' }]}>
+          {totalStaffCount}
+        </ThemedText>
         <ThemedText variant="secondary" style={styles.summaryLabel}>People</ThemedText>
       </View>
     </View>
   );
 }
 
-interface DayColumnProps {
-  date: Date;
-  dateStr: string;
-  dayIndex: number;
-  isToday: boolean;
-  isWeekend: boolean;
-  amList: Array<{ id: string; name: string; type: AbsenceType }>;
-  pmList: Array<{ id: string; name: string; type: AbsenceType }>;
-  onPressDay: () => void;
-  onPressStaff: (absenceId: string) => void;
-}
+// ── Main component ───────────────────────────────────────────────────────────
 
-function DayColumn({
-  date,
-  dateStr,
-  dayIndex,
-  isToday,
-  isWeekend,
-  amList,
-  pmList,
-  onPressDay,
-  onPressStaff,
-}: DayColumnProps) {
-  const dayNum = date.getDate();
-  const dayLabel = DAY_LABELS[dayIndex];
-
-  const renderSection = (
-    label: string,
-    list: Array<{ id: string; name: string; type: AbsenceType }>,
-    accentColor: string,
-    bgColor: string,
-  ) => (
-    <View style={[styles.sectionBlock, { backgroundColor: bgColor }]}>
-      <View style={styles.sectionHeader}>
-        <ThemedText style={[styles.sectionLabel, { color: accentColor }]}>{label}</ThemedText>
-        <ThemedText style={[styles.sectionCount, { color: accentColor }]}>{list.length}</ThemedText>
-      </View>
-      {list.length === 0 ? (
-        <View style={styles.sectionEmpty}>
-          <ThemedText variant="secondary" style={styles.sectionEmptyText}>—</ThemedText>
-        </View>
-      ) : (
-        <View style={styles.sectionList}>
-          {list.slice(0, 3).map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={styles.sectionItem}
-              onPress={() => onPressStaff(item.id)}
-              activeOpacity={0.6}
-            >
-              <View style={[styles.sectionDot, { backgroundColor: getTypeColor(item.type) }]} />
-              <ThemedText style={styles.sectionName} numberOfLines={1}>{item.name}</ThemedText>
-            </TouchableOpacity>
-          ))}
-          {list.length > 3 && (
-            <ThemedText variant="secondary" style={styles.sectionMore}>+{list.length - 3}</ThemedText>
-          )}
-        </View>
-      )}
-    </View>
-  );
-
-  return (
-    <TouchableOpacity
-      style={[
-        styles.dayColumn,
-        isToday && styles.dayColumnToday,
-        isWeekend && styles.dayColumnWeekend,
-      ]}
-      onPress={onPressDay}
-      activeOpacity={0.7}
-    >
-      {/* Day header */}
-      <View style={[styles.dayHeader, isToday && styles.dayHeaderToday]}>
-        <ThemedText style={[styles.dayLabel, isWeekend && styles.dayLabelWeekend]}>
-          {dayLabel}
-        </ThemedText>
-        <View style={[styles.dayNumWrap, isToday && styles.dayNumWrapToday]}>
-          <ThemedText style={[styles.dayNum, isToday && styles.dayNumToday]}>
-            {dayNum}
-          </ThemedText>
-        </View>
-      </View>
-
-      {/* AM Section */}
-      {renderSection('AM', amList, '#16A34A', '#F0FDF4')}
-
-      {/* PM Section */}
-      {renderSection('PM', pmList, '#2563EB', '#EFF6FF')}
-    </TouchableOpacity>
-  );
-}
-
-// ── Main Component ───────────────────────────────────────────────────────────
-
-interface WeeklyCalendarViewProps {
+interface WeeklyAbsenceViewProps {
   currentDate: Date;
   absences: Absence[];
   onSelectDate: (date: string) => void;
   onAddAbsence: (date: string, session: 'AM' | 'PM') => void;
 }
 
-export default function WeeklyCalendarView({
+export default function WeeklyAbsenceView({
   currentDate,
   absences,
   onSelectDate,
-  onAddAbsence,
-}: WeeklyCalendarViewProps) {
-  const { width } = useWindowDimensions();
+}: WeeklyAbsenceViewProps) {
+  const [expandedDay, setExpandedDay] = useState<string | null>(null);
 
-  const weekDates = useMemo(() => getWeekDatesFromDate(currentDate), [currentDate]);
+  const weekDates = useMemo(
+    () => getWeekDatesFromDate(currentDate),
+    [currentDate],
+  );
   const todayStr = todayDateString();
 
   const dayData = useMemo(() => {
     return weekDates.map((date, idx) => {
       const dateStr = toDateString(date);
       const dayAbsences = absences.filter(
-        (a) => a.date === dateStr && a.type !== 'Public Holiday' && a.status !== 'Rejected',
+        (a) =>
+          a.date === dateStr &&
+          a.type !== 'Public Holiday' &&
+          a.status !== 'Rejected',
       );
 
       const amList = dayAbsences
-        .filter((a) => a.duration === 'AM' || a.duration === 'Full')
+        .filter((a) => a.duration === 'AM')
         .map((a) => ({ id: a.id, name: a.name, type: a.type }));
 
       const pmList = dayAbsences
-        .filter((a) => a.duration === 'PM' || a.duration === 'Full')
+        .filter((a) => a.duration === 'PM')
         .map((a) => ({ id: a.id, name: a.name, type: a.type }));
 
-      const isToday = dateStr === todayStr;
-      const isWeekend = idx >= 5;
+      const fullDayList = dayAbsences
+        .filter((a) => a.duration === 'Full')
+        .map((a) => ({ id: a.id, name: a.name, type: a.type }));
 
-      return { date, dateStr, idx, amList, pmList, isToday, isWeekend };
+      const amCountTotal = amList.length + fullDayList.length;
+      const pmCountTotal = pmList.length + fullDayList.length;
+      const fullDayCount = fullDayList.length;
+      const isToday = dateStr === todayStr;
+
+      return {
+        date,
+        dateStr,
+        idx,
+        amList,
+        pmList,
+        fullDayList,
+        amCountTotal,
+        pmCountTotal,
+        fullDayCount,
+        isToday,
+      };
     });
   }, [weekDates, absences, todayStr]);
 
@@ -224,7 +387,10 @@ export default function WeeklyCalendarView({
 
     for (const d of dayData) {
       const dayAbsences = absences.filter(
-        (a) => a.date === d.dateStr && a.type !== 'Public Holiday' && a.status !== 'Rejected',
+        (a) =>
+          a.date === d.dateStr &&
+          a.type !== 'Public Holiday' &&
+          a.status !== 'Rejected',
       );
       for (const a of dayAbsences) {
         seenStaff.add(a.staffId);
@@ -236,51 +402,41 @@ export default function WeeklyCalendarView({
     return { amCount: am, pmCount: pm, fullDayCount: fullDay, totalStaffCount: seenStaff.size };
   }, [dayData, absences]);
 
+  const handleToggle = useCallback((dateStr: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedDay((prev) => (prev === dateStr ? null : dateStr));
+  }, []);
+
+  const handlePressStaff = useCallback(
+    (id: string) => {
+      const ab = absences.find((a) => a.id === id);
+      if (ab) onSelectDate(ab.date);
+    },
+    [absences, onSelectDate],
+  );
+
   return (
     <View style={styles.container}>
       <SummaryCards {...summaryData} />
 
-      {/* Week grid — two rows: Mon–Thu top, Fri–Sun bottom */}
-      <View style={styles.weekGridOuter}>
-        <View style={styles.weekGridRow}>
-          {dayData.slice(0, 4).map((d) => (
-            <DayColumn
-              key={d.dateStr}
-              date={d.date}
-              dateStr={d.dateStr}
-              dayIndex={d.idx}
-              isToday={d.isToday}
-              isWeekend={d.isWeekend}
-              amList={d.amList}
-              pmList={d.pmList}
-              onPressDay={() => onSelectDate(d.dateStr)}
-              onPressStaff={(id) => {
-                const ab = absences.find((a) => a.id === id);
-                if (ab) onSelectDate(ab.date);
-              }}
-            />
-          ))}
-        </View>
-        <View style={styles.weekGridRow}>
-          {dayData.slice(4).map((d) => (
-            <DayColumn
-              key={d.dateStr}
-              date={d.date}
-              dateStr={d.dateStr}
-              dayIndex={d.idx}
-              isToday={d.isToday}
-              isWeekend={d.isWeekend}
-              amList={d.amList}
-              pmList={d.pmList}
-              onPressDay={() => onSelectDate(d.dateStr)}
-              onPressStaff={(id) => {
-                const ab = absences.find((a) => a.id === id);
-                if (ab) onSelectDate(ab.date);
-              }}
-            />
-          ))}
-        </View>
-      </View>
+      {dayData.map((d) => (
+        <AccordionDay
+          key={d.dateStr}
+          date={d.date}
+          dateStr={d.dateStr}
+          dayIndex={d.idx}
+          isToday={d.isToday}
+          isExpanded={expandedDay === d.dateStr}
+          onToggle={() => handleToggle(d.dateStr)}
+          amList={d.amList}
+          pmList={d.pmList}
+          fullDayList={d.fullDayList}
+          amCountTotal={d.amCountTotal}
+          pmCountTotal={d.pmCountTotal}
+          fullDayCount={d.fullDayCount}
+          onPressStaff={handlePressStaff}
+        />
+      ))}
     </View>
   );
 }
@@ -289,153 +445,193 @@ export default function WeeklyCalendarView({
 
 const styles = StyleSheet.create({
   container: {
-    gap: 10,
+    gap: 14,
   },
-  // Summary cards
+
+  // ── Summary row ──
   summaryRow: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
   },
   summaryCard: {
     flex: 1,
-    borderRadius: 12,
-    paddingVertical: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.15)',
+    paddingVertical: 10,
     paddingHorizontal: 6,
     alignItems: 'center',
     gap: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
   summaryValue: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800' as const,
   },
   summaryLabel: {
     fontSize: 10,
+    fontWeight: '600' as const,
     textAlign: 'center' as const,
   },
-  // Week grid — two rows: Mon–Thu top, Fri–Sun bottom
-  weekGridOuter: {
-    gap: 4,
-  },
-  weekGridRow: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  dayColumn: {
-    flex: 1,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.12)',
+
+  // ── Accordion (each day card) ──
+  accordion: {
     backgroundColor: '#FFFFFF',
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    gap: 4,
-    minWidth: 44,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.18)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  dayColumnToday: {
+  accordionToday: {
     borderColor: '#0F766E',
-    borderWidth: 1.5,
+    borderWidth: 2,
     backgroundColor: '#F0FDFA',
   },
-  dayColumnWeekend: {
-    backgroundColor: '#F8FAFC',
-  },
-  // Day header
-  dayHeader: {
-    alignItems: 'center',
-    paddingBottom: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(148, 163, 184, 0.08)',
-    gap: 2,
-  },
-  dayHeaderToday: {
-    borderBottomColor: '#0F766E33',
-  },
-  dayLabel: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.3,
-    color: '#475569',
-  },
-  dayLabelWeekend: {
-    color: '#94A3B8',
-  },
-  dayNumWrap: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(15, 118, 110, 0.06)',
-  },
-  dayNumWrapToday: {
-    backgroundColor: '#0F766E',
-  },
-  dayNum: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: '#334155',
-  },
-  dayNumToday: {
-    color: 'white',
-    fontWeight: '800' as const,
-  },
-  // Section blocks (AM/PM stacked)
-  sectionBlock: {
-    flex: 1,
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    gap: 4,
-    minHeight: 38,
-  },
-  sectionHeader: {
+
+  // ── Accordion header ──
+  accordionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
-  sectionLabel: {
-    fontSize: 10,
+  accordionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dayLabel: {
+    fontSize: 18,
     fontWeight: '800' as const,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase' as const,
+    color: '#1E293B',
   },
-  sectionCount: {
-    fontSize: 10,
-    fontWeight: '700' as const,
+  dayLabelToday: {
+    color: '#0F766E',
   },
-  sectionList: {
-    gap: 2,
+  dayDate: {
+    fontSize: 18,
+    fontWeight: '600' as const,
+    color: '#64748B',
   },
-  sectionEmpty: {
-    paddingVertical: 4,
-    alignItems: 'center' as const,
+  dayDateToday: {
+    color: '#0F766E',
+    fontWeight: '800' as const,
   },
-  sectionEmptyText: {
-    fontSize: 9,
-    fontWeight: '500' as const,
+  todayTag: {
+    backgroundColor: '#0F766E',
+    borderRadius: 8,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
   },
-  sectionItem: {
+  todayTagText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+  },
+  accordionHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  inlineCounts: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
+  },
+  inlineCount: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  inlineDot: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: '#CBD5E1',
+  },
+
+  // ── Accordion body ──
+  accordionBody: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(148, 163, 184, 0.15)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    gap: 4,
+  },
+
+  // ── Expanded sections ──
+  expandedSection: {
+    marginBottom: 4,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
   },
   sectionDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
-  sectionName: {
-    fontSize: 9,
-    fontWeight: '600' as const,
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    letterSpacing: 0.3,
+  },
+
+  // ── Staff list item ──
+  staffItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    paddingLeft: 12,
+    borderRadius: 10,
+  },
+  staffLeftStripe: {
+    position: 'absolute' as const,
+    left: 0,
+    top: 6,
+    bottom: 6,
+    width: 3,
+    borderRadius: 2,
+  },
+  staffAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  staffAvatarText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+  },
+  staffName: {
     flex: 1,
-    color: '#334155',
-  },
-  sectionMore: {
-    fontSize: 8,
+    fontSize: 14,
     fontWeight: '600' as const,
-    paddingLeft: 11,
+    color: '#1E293B',
+  },
+
+  // ── Empty state ──
+  emptySection: {
+    paddingVertical: 6,
+    paddingLeft: 16,
+  },
+  emptyText: {
+    fontSize: 12,
+    fontStyle: 'italic' as const,
   },
 });

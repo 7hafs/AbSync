@@ -220,9 +220,9 @@ export default function ResetPasswordScreen() {
       <ThemedView style={styles.container} useGradient>
         <View style={styles.centerContainer}>
           <View
-            style={[styles.iconCircle, { backgroundColor: `${colors.error}18` }]}
+            style={[styles.iconCircle, { backgroundColor: '#DC262618' }]}
           >
-            <AlertTriangle size={48} color={colors.error} />
+            <AlertTriangle size={48} color="#DC2626" />
           </View>
           <ThemedText
             size="large"
@@ -321,7 +321,7 @@ export default function ResetPasswordScreen() {
             >
               <Lock size={28} color={colors.primary} />
             </View>
-            <ThemedText size="xxlarge" weight="bold" style={styles.title}>
+            <ThemedText size="xlarge" weight="bold" style={styles.title}>
               Set New Password
             </ThemedText>
             <ThemedText variant="secondary" style={styles.subtitle}>

@@ -4,6 +4,8 @@ export type StaffMember = {
   department?: string;
   employeeId?: string;
   email?: string;
+  jobTitle?: string;
+  phoneNumber?: string;
   active: boolean;
   createdAt: string;
 };
@@ -116,4 +118,10 @@ export type PersonAbsence = {
   date: string;
   type: 'vacation' | 'absence';
   reason?: string;
+};
+
+export type NotificationPreferences = {
+  morningEnabled: boolean;
+  eveningEnabled: boolean;
+  instantAlertsEnabled: boolean;
 };

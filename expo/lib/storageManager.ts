@@ -13,7 +13,7 @@
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { Alert, Platform } from "react-native";
 
 // ── Version ─────────────────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ export const STORAGE_KEYS = {
   absences: "absence-storage-v2",
   people: "people-storage",
   staff: "staff-storage-v2",
-  calendar: "calendar-storage-v2",
+  calendar: "calendar-storage-v3",
   notes: "notes-storage-v2",
   reminders: "reminders-storage-v2",
   notifications: "notification-prefs-v2",
@@ -66,7 +66,7 @@ export async function verifyStorageIntegrity(): Promise<IntegrityReport> {
   };
 
   const allKeys = await AsyncStorage.getAllKeys();
-  const knownKeys = Object.values(STORAGE_KEYS);
+  const knownKeys: readonly string[] = Object.values(STORAGE_KEYS);
 
   for (const key of knownKeys) {
     try {
@@ -363,6 +363,36 @@ export async function importBackupFile(
       message: `Failed to read backup file: ${String(err)}`,
       count: 0,
     };
+  }
+}
+
+// ── Store clearing (sign-out) ────────────────────────────────────────────────
+
+/**
+ * Clear ALL persisted Zustand store data from AsyncStorage.
+ * Called on sign-out to prevent data leakage between users.
+ *
+ * Does NOT clear theme preferences (theme-storage) so the user's
+ * dark/light mode preference survives logout.
+ */
+export async function clearAllStores(): Promise<void> {
+  const keysToClear = [
+    STORAGE_KEYS.absences,
+    STORAGE_KEYS.people,
+    STORAGE_KEYS.staff,
+    STORAGE_KEYS.calendar,
+    STORAGE_KEYS.notes,
+    STORAGE_KEYS.reminders,
+    STORAGE_KEYS.notifications,
+    STORAGE_KEYS.share,
+    // theme-storage is intentionally excluded
+  ];
+
+  try {
+    await AsyncStorage.multiRemove(keysToClear);
+    console.log("[storageManager] Cleared all data stores for sign-out");
+  } catch (err) {
+    console.error("[storageManager] Failed to clear stores on sign-out:", err);
   }
 }
 

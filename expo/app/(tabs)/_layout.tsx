@@ -1,7 +1,7 @@
 import React from "react";
 import { Tabs } from "expo-router";
 import { useColorScheme } from "react-native";
-import { Calendar, Users, BarChart3, Settings } from "lucide-react-native";
+import { LayoutDashboard, Calendar, Users, BarChart3, Settings } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import useThemeStore from "@/store/useThemeStore";
 
@@ -29,6 +29,16 @@ export default function TabLayout() {
         },
       }}
     >
+      <Tabs.Screen
+        name="dashboard"
+        options={{
+          title: "Dashboard",
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <LayoutDashboard size={size} color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="index"
         options={{

@@ -90,7 +90,7 @@ export default function RegisterScreen() {
           </TouchableOpacity>
 
           <View style={styles.header}>
-            <ThemedText size="xxlarge" weight="bold" style={styles.title}>
+            <ThemedText size="xlarge" weight="bold" style={styles.title}>
               Create Account
             </ThemedText>
             <ThemedText variant="secondary" style={styles.subtitle}>

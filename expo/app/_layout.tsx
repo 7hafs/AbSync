@@ -15,10 +15,11 @@ import {
   initializeNotifications,
   scheduleDailyNotifications,
 } from "@/utils/notificationService";
-import { startupIntegrityCheck } from "@/lib/storageManager";
+import { startupIntegrityCheck, clearAllStores } from "@/lib/storageManager";
 import { AuthProvider, useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { loadAllFromSupabase, migrateIfNeeded } from "@/lib/syncService";
 import { fetchCalendarView } from "@/lib/dataService";
+import { Absence } from "@/types";
 import Colors from "@/constants/colors";
 
 export const unstable_settings = {
@@ -75,7 +76,10 @@ function AuthGate() {
     if (isLoading) return;
 
     if (!user && !inAuthGroup) {
-      // Not authenticated — redirect to login
+      // Not authenticated — clear stores and redirect to login
+      clearAllStores().catch((e) =>
+        console.warn("[AuthGate] Failed to clear stores on sign-out:", e)
+      );
       router.replace("/auth/login" as never);
     } else if (user && inAuthGroup) {
       // Authenticated but on an auth screen — redirect to dashboard
@@ -295,21 +299,20 @@ const publicHolidays2026: Absence[] = [
   { id: "ph-2026-12-28", staffId: "public-holiday", name: "Boxing Day (substitute day)", type: "Public Holiday", date: "2026-12-28", duration: "Full", status: "Approved", cover: null, notes: "UK public holiday", locked: true, createdBy: "system", createdAt: "2026-01-01T00:00:00.000Z" },
 ];
 
-function seedPublicHolidays(absenceStore: ReturnType<typeof useAbsenceStore>) {
-  const existing = new Set(absenceStore.absences.map((a) => a.id));
-  let added = false;
+function seedPublicHolidays(absenceStore: { absences: Absence[]; addAbsence: (a: Absence) => void }) {
+  const existing = new Set(absenceStore.absences.map((a: Absence) => a.id));
+  const newlyAdded: Absence[] = [];
+
   for (const holiday of publicHolidays2026) {
     if (!existing.has(holiday.id)) {
       absenceStore.addAbsence(holiday);
-      added = true;
+      newlyAdded.push(holiday);
     }
   }
-  // Sync all public holidays to Supabase so they appear on other devices
-  if (added) {
-    const currentHolidays = useAbsenceStore.getState().absences.filter(
-      (a) => a.type === "Public Holiday"
-    );
-    currentHolidays.forEach((h) => {
+
+  // Only sync newly-added public holidays to Supabase
+  if (newlyAdded.length > 0) {
+    newlyAdded.forEach((h) => {
       upsertAbsence(h).catch((e) =>
         console.warn("[_layout] Failed to sync public holiday:", h.id, e)
       );

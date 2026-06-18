@@ -252,8 +252,8 @@ export default function CalendarScreen() {
                 style={[styles.viewSwitcherBtn, isActive && { backgroundColor: colors.primary }]}
                 onPress={() => handleViewChange(mode)}
               >
-                {React.cloneElement(viewIcons[mode].icon as React.ReactElement, {
-                  color: isActive ? 'white' : colors.secondaryText,
+                {React.cloneElement(viewIcons[mode].icon as React.ReactElement<{ size?: number; color?: string }>, {
+                  color: (isActive ? 'white' : colors.secondaryText) as string,
                 })}
                 <ThemedText
                   style={[styles.viewSwitcherText, isActive && { color: 'white' }]}
@@ -390,7 +390,7 @@ export default function CalendarScreen() {
             </View>
           </View>
         ) : viewMode === 'week' ? (
-          <View style={[styles.viewCard, { backgroundColor: colors.card, borderColor: colors.border, maxWidth: isDesktop ? 1320 : 980 }]}>
+          <View style={{ width: '100%', maxWidth: isDesktop ? 1320 : 980, alignSelf: 'center' as const }}>
             <WeeklyAbsenceView
               currentDate={currentDate}
               absences={absences}

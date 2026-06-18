@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StaffMember } from "@/types";
 import { DB_VERSION } from "@/lib/storageManager";
-import { upsertStaff, deleteStaffFromSupabase } from "@/lib/dataService";
+import { upsertStaff, deleteStaffFromSupabase, deleteAbsencesForStaffFromSupabase } from "@/lib/dataService";
 
 interface StaffState {
   staff: StaffMember[];
@@ -50,11 +50,31 @@ const useStaffStore = create<StaffState>()(
       },
 
       deleteStaff: (id) => {
+        // Remove associated absences from local store first
+        try {
+          const { default: useAbsenceStore } = require("@/store/useAbsenceStore");
+          const absenceState = useAbsenceStore.getState();
+          const orphanedIds = absenceState.absences
+            .filter((a: { staffId: string; id: string }) => a.staffId === id)
+            .map((a: { id: string }) => a.id);
+          if (orphanedIds.length > 0) {
+            absenceState.replaceAbsences(
+              absenceState.absences.filter((a: { staffId: string }) => a.staffId !== id)
+            );
+            console.log(
+              `[useStaffStore] Cascaded delete: removed ${orphanedIds.length} absences for staff ${id}`
+            );
+          }
+        } catch (e) {
+          console.warn("[useStaffStore] Could not cascade absence cleanup:", e);
+        }
+
         set((state) => ({
           staff: state.staff.filter((s) => s.id !== id),
         }));
-        // Sync to Supabase
+        // Sync to Supabase (staff + associated absences)
         deleteStaffFromSupabase(id);
+        deleteAbsencesForStaffFromSupabase(id);
       },
 
       archiveStaff: (id) =>
@@ -111,7 +131,9 @@ const useStaffStore = create<StaffState>()(
             s.name.toLowerCase().includes(lowerQuery) ||
             s.department?.toLowerCase().includes(lowerQuery) ||
             s.employeeId?.toLowerCase().includes(lowerQuery) ||
-            s.email?.toLowerCase().includes(lowerQuery)
+            s.email?.toLowerCase().includes(lowerQuery) ||
+            s.jobTitle?.toLowerCase().includes(lowerQuery) ||
+            s.phoneNumber?.toLowerCase().includes(lowerQuery)
         );
       },
 
@@ -131,6 +153,8 @@ const useStaffStore = create<StaffState>()(
             department: s.department ?? '',
             employeeId: s.employeeId ?? undefined,
             email: s.email ?? undefined,
+            jobTitle: s.jobTitle ?? undefined,
+            phoneNumber: s.phoneNumber ?? undefined,
             active: s.active ?? true,
           }));
         }

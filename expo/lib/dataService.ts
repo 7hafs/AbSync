@@ -118,6 +118,15 @@ export async function deleteAbsenceFromSupabase(id: string): Promise<void> {
   const { error } = await supabase.from("absences").delete().eq("id", id);
   if (error) {
     console.error("[dataService] deleteAbsence error:", error.message);
+    throw new Error(`Failed to delete absence: ${error.message}`);
+  }
+}
+
+/** Delete all absences for a given staff member from Supabase (cascade on staff delete). */
+export async function deleteAbsencesForStaffFromSupabase(staffId: string): Promise<void> {
+  const { error } = await supabase.from("absences").delete().eq("staff_id", staffId);
+  if (error) {
+    console.error("[dataService] deleteAbsencesForStaff error:", error.message);
   }
 }
 
@@ -132,6 +141,8 @@ function staffToInsert(s: StaffMember): TablesInsert<"staff_members"> {
     department: s.department ?? null,
     employee_id: s.employeeId ?? null,
     email: s.email ?? null,
+    job_title: s.jobTitle ?? null,
+    phone_number: s.phoneNumber ?? null,
     active: s.active,
     created_at: s.createdAt,
     user_id: "",
@@ -139,12 +150,15 @@ function staffToInsert(s: StaffMember): TablesInsert<"staff_members"> {
 }
 
 function staffFromRow(row: SupabaseStaffMember): StaffMember {
+  const r = row as Record<string, unknown>;
   return {
     id: row.id,
     name: row.name,
     department: row.department ?? undefined,
-    employeeId: (row as Record<string, unknown>).employee_id as string ?? undefined,
-    email: (row as Record<string, unknown>).email as string ?? undefined,
+    employeeId: r.employee_id as string ?? undefined,
+    email: r.email as string ?? undefined,
+    jobTitle: r.job_title as string ?? undefined,
+    phoneNumber: r.phone_number as string ?? undefined,
     active: row.active ?? true,
     createdAt: row.created_at ?? new Date().toISOString(),
   };
@@ -186,6 +200,7 @@ export async function deleteStaffFromSupabase(id: string): Promise<void> {
   const { error } = await supabase.from("staff_members").delete().eq("id", id);
   if (error) {
     console.error("[dataService] deleteStaff error:", error.message);
+    throw new Error(`Failed to delete staff: ${error.message}`);
   }
 }
 
@@ -390,11 +405,21 @@ export async function upsertCalendarView(view: CalendarViewPref): Promise<void> 
   const userId = await getUserIdAsync();
   if (!userId) return;
 
-  const { error } = await supabase
+  // Use update first to avoid overwriting other profile fields (name, email)
+  // that might not be loaded. Fall back to upsert if no profile row exists yet.
+  const { error: updateError } = await supabase
     .from("profiles")
-    .upsert({ id: userId, calendar_view: view }, { onConflict: "id" });
-  if (error) {
-    console.error("[dataService] upsertCalendarView error:", error.message);
+    .update({ calendar_view: view })
+    .eq("id", userId);
+
+  if (updateError) {
+    // If update fails (e.g. profile row doesn't exist yet), try upsert
+    const { error: upsertError } = await supabase
+      .from("profiles")
+      .upsert({ id: userId, calendar_view: view }, { onConflict: "id" });
+    if (upsertError) {
+      console.error("[dataService] upsertCalendarView error:", upsertError.message);
+    }
   }
 }
 
@@ -445,6 +470,20 @@ export async function upsertNotificationPreferences(prefs: NotificationPreferenc
 // ═════════════════════════════════════════════════════════════════════════════
 // MIGRATION: Bulk upload local data to Supabase
 // ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Check if the device currently has network connectivity to Supabase.
+ * Returns false if we can't reach the Supabase API.
+ */
+export async function isSupabaseReachable(): Promise<boolean> {
+  try {
+    const { error } = await supabase.from("profiles").select("id").limit(1);
+    // Even if there are no rows, a successful query means we're connected
+    return !error || error.code === "PGRST116"; // PGRST116 = no rows returned (still connected)
+  } catch {
+    return false;
+  }
+}
 
 export async function migrateLocalDataToSupabase(
   staff: StaffMember[],

@@ -24,6 +24,7 @@ export type Database = {
           created_at: string | null
           created_by: string
           date: string
+          documents: Json | null
           duration: string
           id: string
           locked: boolean | null
@@ -39,6 +40,7 @@ export type Database = {
           created_at?: string | null
           created_by: string
           date: string
+          documents?: Json | null
           duration?: string
           id: string
           locked?: boolean | null
@@ -54,6 +56,7 @@ export type Database = {
           created_at?: string | null
           created_by?: string
           date?: string
+          documents?: Json | null
           duration?: string
           id?: string
           locked?: boolean | null
@@ -206,6 +209,7 @@ export type Database = {
       profiles: {
         Row: {
           access_level: string | null
+          calendar_view: string | null
           created_at: string | null
           email: string | null
           id: string
@@ -215,6 +219,7 @@ export type Database = {
         }
         Insert: {
           access_level?: string | null
+          calendar_view?: string | null
           created_at?: string | null
           email?: string | null
           id: string
@@ -224,6 +229,7 @@ export type Database = {
         }
         Update: {
           access_level?: string | null
+          calendar_view?: string | null
           created_at?: string | null
           email?: string | null
           id?: string
@@ -282,24 +288,36 @@ export type Database = {
           active: boolean | null
           created_at: string | null
           department: string | null
+          email: string | null
+          employee_id: string | null
           id: string
+          job_title: string | null
           name: string
+          phone_number: string | null
           user_id: string
         }
         Insert: {
           active?: boolean | null
           created_at?: string | null
           department?: string | null
+          email?: string | null
+          employee_id?: string | null
           id: string
+          job_title?: string | null
           name: string
+          phone_number?: string | null
           user_id: string
         }
         Update: {
           active?: boolean | null
           created_at?: string | null
           department?: string | null
+          email?: string | null
+          employee_id?: string | null
           id?: string
+          job_title?: string | null
           name?: string
+          phone_number?: string | null
           user_id?: string
         }
         Relationships: [

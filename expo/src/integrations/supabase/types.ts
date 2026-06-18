@@ -24,6 +24,7 @@ export type Database = {
           created_at: string | null
           created_by: string
           date: string
+          documents: Json | null
           duration: string
           id: string
           locked: boolean | null
@@ -39,6 +40,7 @@ export type Database = {
           created_at?: string | null
           created_by: string
           date: string
+          documents?: Json | null
           duration?: string
           id: string
           locked?: boolean | null
@@ -54,6 +56,7 @@ export type Database = {
           created_at?: string | null
           created_by?: string
           date?: string
+          documents?: Json | null
           duration?: string
           id?: string
           locked?: boolean | null
@@ -285,24 +288,36 @@ export type Database = {
           active: boolean | null
           created_at: string | null
           department: string | null
+          email: string | null
+          employee_id: string | null
           id: string
+          job_title: string | null
           name: string
+          phone_number: string | null
           user_id: string
         }
         Insert: {
           active?: boolean | null
           created_at?: string | null
           department?: string | null
+          email?: string | null
+          employee_id?: string | null
           id: string
+          job_title?: string | null
           name: string
+          phone_number?: string | null
           user_id: string
         }
         Update: {
           active?: boolean | null
           created_at?: string | null
           department?: string | null
+          email?: string | null
+          employee_id?: string | null
           id?: string
+          job_title?: string | null
           name?: string
+          phone_number?: string | null
           user_id?: string
         }
         Relationships: [

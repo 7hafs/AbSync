@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   Text,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Plus, Search, Upload } from "lucide-react-native";
 import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
@@ -28,19 +28,30 @@ export default function StaffScreen() {
   const { staff } = useStaffStore();
   const canEdit = true;
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const params = useLocalSearchParams<{ filter?: string }>();
+  const activeFilter = params.filter ?? 'active';
 
   const filteredStaff = useMemo(() => {
+    let base = staff;
+
+    // Apply active/inactive/all filter from route params
+    if (activeFilter === 'active') {
+      base = base.filter((s) => s.active);
+    } else if (activeFilter === 'inactive') {
+      base = base.filter((s) => !s.active);
+    }
+    // 'all' or missing filter shows everything
+
     if (!searchQuery.trim()) {
-      return staff.filter((s) => s.active);
+      return base;
     }
     const query = searchQuery.toLowerCase();
-    return staff.filter(
+    return base.filter(
       (s) =>
-        s.active &&
-        (s.name.toLowerCase().includes(query) ||
-          s.department?.toLowerCase().includes(query))
+        s.name.toLowerCase().includes(query) ||
+        s.department?.toLowerCase().includes(query)
     );
-  }, [staff, searchQuery]);
+  }, [staff, searchQuery, activeFilter]);
 
   const handleAddStaff = () => {
     if (!canEdit) {

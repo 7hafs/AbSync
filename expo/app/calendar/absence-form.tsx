@@ -457,9 +457,13 @@ export default function AbsenceFormScreen() {
                         styles.dayButton,
                         { borderColor: isToday ? colors.primary : colors.border },
                         isSelected && { backgroundColor: colors.primary, borderColor: colors.primary },
-                        isPast && !isSelected && { opacity: 0.4 },
+                        isPast && !isSelected && { opacity: 0.3 },
                       ]}
-                      onPress={() => handleToggleDate(dateValue)}
+                      onPress={() => {
+                        if (isPast) return; // Prevent selecting past dates
+                        handleToggleDate(dateValue);
+                      }}
+                      disabled={isPast}
                     >
                       <ThemedText
                         style={[
