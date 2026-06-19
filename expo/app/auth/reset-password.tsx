@@ -1,11 +1,14 @@
 /**
  * Password Reset screen.
  *
- * This screen is reached via a deep link from the Supabase password reset email:
- *   rork-lxwo9f6yr6sjgzxbuwjkz://auth/reset-password#access_token=...&refresh_token=...&type=recovery
+ * The AuthGate in _layout.tsx handles parsing the deep-link URL and calling
+ * setSession() with the recovery tokens. By the time this screen mounts,
+ * the session should already be active.
  *
- * The URL fragment contains the recovery tokens that allow the user to set a
- * new password without being signed in.
+ * This screen only needs to:
+ * 1. Verify a session exists (AuthGate set it)
+ * 2. Show the new-password form
+ * 3. Call supabase.auth.updateUser({ password }) to finalize the reset
  */
 import React, { useEffect, useState } from "react";
 import {
@@ -19,7 +22,6 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { useColorScheme } from "react-native";
 import { Eye, EyeOff, Lock, CheckCircle, AlertTriangle } from "lucide-react-native";
@@ -46,151 +48,98 @@ export default function ResetPasswordScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // ── Recover session from the deep-link URL ────────────────────────────────
-  //
-  // Two paths:
-  // 1. detectSessionInUrl (supabase client) already consumed the tokens →
-  //    session is already active. We detect this and jump straight to the form.
-  // 2. detectSessionInUrl didn't fire (e.g. native cold-start deep link) →
-  //    we manually parse the URL fragment and call setSession ourselves.
-  const linkingUrl = Linking.useURL();
-
+  // ── Verify session (AuthGate should have set it by now) ────────────────────
   useEffect(() => {
     let cancelled = false;
 
-    const initSession = async () => {
+    const verifySession = async () => {
       try {
-        // Path 1: detectSessionInUrl may have already set the session
+        console.log("[reset-password] Checking for active session...");
         const { data: { session: existingSession } } = await supabase.auth.getSession();
+
         if (existingSession) {
-          if (process.env.NODE_ENV === "development") {
-            console.log("[reset-password] Session already active (detectSessionInUrl handled it)");
-          }
+          console.log("[reset-password] Session found — showing password form");
           if (!cancelled) setPhase("form");
           return;
         }
 
-        // Path 2: manually parse the URL for recovery tokens
-        const url = linkingUrl || await Linking.getInitialURL();
+        // Session not found — AuthGate either hasn't finished or failed
+        console.log("[reset-password] No session found — retrying in 500ms...");
 
-        if (process.env.NODE_ENV === "development") {
-          console.log("[reset-password] Deep link URL:", url);
-        }
+        // Retry once after a delay (AuthGate may still be processing)
+        await new Promise((r) => setTimeout(r, 500));
+        if (cancelled) return;
 
-        if (!url) {
-          if (!cancelled) {
-            setPhase("error");
-            setErrorMessage(
-              "Could not read the reset link. Please try requesting a new password reset email."
-            );
-          }
+        const { data: { session: retrySession } } = await supabase.auth.getSession();
+        if (retrySession) {
+          console.log("[reset-password] Session found on retry — showing password form");
+          if (!cancelled) setPhase("form");
           return;
         }
 
-        // Supabase password recovery URLs use a # (hash/fragment) to carry
-        // the tokens:  ...://auth/reset-password#access_token=abc&refresh_token=def&type=recovery
-        const hashIndex = url.indexOf("#");
-        if (hashIndex === -1) {
-          if (!cancelled) {
-            setPhase("error");
-            setErrorMessage(
-              "This reset link is missing the recovery token. Please request a new password reset email."
-            );
-          }
-          return;
-        }
-
-        const fragment = url.substring(hashIndex + 1);
-        const params = new URLSearchParams(fragment);
-
-        const accessToken = params.get("access_token");
-        const refreshToken = params.get("refresh_token");
-        const type = params.get("type");
-
-        if (
-          !accessToken ||
-          !refreshToken ||
-          type !== "recovery"
-        ) {
-          if (!cancelled) {
-            setPhase("error");
-            setErrorMessage(
-              "Invalid recovery link. Please request a new password reset email."
-            );
-          }
-          return;
-        }
-
-        // Set the session using the recovery tokens.  This signs the user in
-        // so they can then update their password via supabase.auth.updateUser().
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-
-        if (sessionError) {
-          if (!cancelled) {
-            setPhase("error");
-            setErrorMessage(
-              sessionError.message ||
-                "Could not verify your identity. Please request a new password reset email."
-            );
-          }
-          return;
-        }
-
-        // Session set — show the new-password form
-        if (!cancelled) {
-          setPhase("form");
-        }
-      } catch (err) {
+        // Still no session — show error
+        console.log("[reset-password] No session after retry — showing error");
         if (!cancelled) {
           setPhase("error");
           setErrorMessage(
-            "An unexpected error occurred. Please try again."
+            "Could not verify your reset link. The link may have expired. Please request a new password reset email."
           );
         }
-        console.error("[reset-password] URL processing error:", err);
+      } catch (err) {
+        console.error("[reset-password] Session check error:", err);
+        if (!cancelled) {
+          setPhase("error");
+          setErrorMessage("An unexpected error occurred. Please try again.");
+        }
       }
     };
 
-    initSession();
+    verifySession();
 
     return () => {
       cancelled = true;
     };
-  }, [linkingUrl]);
+  }, []);
 
   // ── Set new password ───────────────────────────────────────────────────────
   const handleSetPassword = async () => {
+    console.log("[reset-password] handleSetPassword called");
+
     // Validation
     if (!newPassword) {
+      console.log("[reset-password] Validation: empty password");
       Alert.alert("Validation", "Please enter a new password.");
       return;
     }
     if (newPassword.length < 8) {
+      console.log("[reset-password] Validation: password too short");
       Alert.alert("Validation", "Password must be at least 8 characters.");
       return;
     }
     if (newPassword !== confirmPassword) {
+      console.log("[reset-password] Validation: passwords don't match");
       Alert.alert("Validation", "Passwords do not match.");
       return;
     }
 
     setIsProcessing(true);
+    console.log("[reset-password] Calling updateUser with new password...");
     try {
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
       });
 
       if (error) {
+        console.warn("[reset-password] updateUser FAILED:", error.message);
         Alert.alert("Error", error.message);
       } else {
+        console.log("[reset-password] updateUser SUCCESS — password changed");
         setPhase("success");
       }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "An unexpected error occurred.";
+      console.error("[reset-password] updateUser exception:", err);
       Alert.alert("Error", message);
     } finally {
       setIsProcessing(false);

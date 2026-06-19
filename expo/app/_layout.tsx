@@ -73,6 +73,7 @@ function AuthGate() {
   const segments = useSegments();
   const router = useRouter();
   const recoveryHandled = useRef(false);
+  const recoveryInProgress = useRef(false);
 
   const inAuthGroup = segments[0] === "auth";
 
@@ -89,14 +90,23 @@ function AuthGate() {
 
     const handleUrl = async () => {
       try {
+        console.log("[AuthGate:recovery] Checking for recovery URL...");
         const url =
           (await Linking.getInitialURL()) ??
           (Platform.OS === "web" ? window.location.href : null);
 
-        if (!url) return;
+        console.log("[AuthGate:recovery] getInitialURL result:", url ? `${url.substring(0, 100)}...` : "null");
+
+        if (!url) {
+          console.log("[AuthGate:recovery] No initial URL — skipping recovery");
+          return;
+        }
 
         const hashIndex = url.indexOf("#");
-        if (hashIndex === -1) return;
+        if (hashIndex === -1) {
+          console.log("[AuthGate:recovery] No hash fragment in URL — skipping recovery");
+          return;
+        }
 
         const fragment = url.substring(hashIndex + 1);
         const params = new URLSearchParams(fragment);
@@ -105,9 +115,20 @@ function AuthGate() {
         const refreshToken = params.get("refresh_token");
         const type = params.get("type");
 
-        if (!accessToken || !refreshToken || type !== "recovery") return;
+        console.log("[AuthGate:recovery] Parsed tokens:", {
+          hasAccessToken: !!accessToken,
+          hasRefreshToken: !!refreshToken,
+          type,
+        });
+
+        if (!accessToken || !refreshToken || type !== "recovery") {
+          console.log("[AuthGate:recovery] Missing tokens or wrong type — skipping");
+          return;
+        }
 
         recoveryHandled.current = true;
+        recoveryInProgress.current = true;
+        console.log("[AuthGate:recovery] Calling setSession...");
 
         // Set the session manually (replaces what detectSessionInUrl would do)
         const { error } = await supabase.auth.setSession({
@@ -116,17 +137,16 @@ function AuthGate() {
         });
 
         if (error) {
-          console.warn("[AuthGate] Recovery setSession failed:", error.message);
+          console.warn("[AuthGate:recovery] setSession FAILED:", error.message);
+          recoveryInProgress.current = false;
           return;
         }
 
-        // Session set — navigate to the reset-password form
-        // Small delay so the AuthProvider's onAuthStateChange can fire first
-        setTimeout(() => {
-          router.replace("/auth/reset-password" as never);
-        }, 100);
+        console.log("[AuthGate:recovery] setSession SUCCESS — session is now active");
+        // recoveryInProgress stays true until user leaves reset-password
       } catch (e) {
-        console.warn("[AuthGate] URL recovery parsing error:", e);
+        console.warn("[AuthGate:recovery] URL recovery error:", e);
+        recoveryInProgress.current = false;
       }
     };
 
@@ -134,27 +154,45 @@ function AuthGate() {
   }, []);
 
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading) {
+      console.log("[AuthGate:routing] Still loading — deferring route check");
+      return;
+    }
+
+    console.log("[AuthGate:routing] Route check:", {
+      hasUser: !!user,
+      inAuthGroup,
+      segments: segments.join("/"),
+      recoveryInProgress: recoveryInProgress.current,
+    });
 
     if (!user && !inAuthGroup) {
       // Not authenticated — clear stores and redirect to login
+      console.log("[AuthGate:routing] No user, not in auth → redirecting to /auth/login");
       clearAllStores().catch((e) =>
         console.warn("[AuthGate] Failed to clear stores on sign-out:", e)
       );
       router.replace("/auth/login" as never);
     } else if (user && inAuthGroup) {
-      // Authenticated but on an auth screen — redirect to dashboard
+      // Authenticated but on an auth screen — check if recovery is in progress
+      if (recoveryInProgress.current) {
+        console.log("[AuthGate:routing] Recovery in progress — staying on reset-password");
+        return;
+      }
+      console.log("[AuthGate:routing] User on auth screen → redirecting to dashboard");
       router.replace("/" as never);
     }
   }, [isLoading, user, inAuthGroup]);
 
   if (isLoading) {
     // Still restoring session from SecureStore — show nothing
+    console.log("[AuthGate:render] Loading... showing null (white screen)");
     return null;
   }
 
   if (!user) {
     // Show auth screens without the app stack
+    console.log("[AuthGate:render] No user — rendering unauth Stack. recoveryInProgress:", recoveryInProgress.current);
     return (
       <Stack
         screenOptions={{
@@ -193,26 +231,36 @@ function AuthenticatedApp() {
   const notificationStore = useNotificationStore();
 
   const loadData = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      console.log("[AuthenticatedApp] No user — skipping data load");
+      return;
+    }
 
-    // Set syncing status
+    console.log("[AuthenticatedApp] Starting data load...");
     setSyncStatus("syncing");
 
     // Check connectivity
     try {
       const reachable = await isSupabaseReachable();
+      console.log("[AuthenticatedApp] Supabase reachable:", reachable);
       if (!reachable) {
         setSyncStatus("offline");
         console.log("[_layout] Supabase unreachable, using local data");
       }
-    } catch {
+    } catch (e) {
+      console.warn("[AuthenticatedApp] Connectivity check failed:", e);
       setSyncStatus("offline");
     }
 
-    // Step 1: Run integrity check on local persisted stores
-    await startupIntegrityCheck();
+    // Step 1: Run integrity check
+    try {
+      await startupIntegrityCheck();
+      console.log("[AuthenticatedApp] Integrity check passed");
+    } catch (e) {
+      console.warn("[AuthenticatedApp] Integrity check failed:", e);
+    }
 
-    // Step 2: Mark stores as loaded so Zustand rehydrates from AsyncStorage
+    // Step 2: Mark stores as loaded
     staffStore.setLoaded(true);
     absenceStore.setLoaded(true);
     calendarStore.setLoaded(true);
@@ -220,18 +268,36 @@ function AuthenticatedApp() {
     remindersStore.setLoaded(true);
     notificationStore.setLoaded(true);
 
-    // Step 3: Migrate existing local data to Supabase (if first login)
-    const migrated = await migrateIfNeeded(
-      staffStore.staff,
-      absenceStore.absences,
-      notesStore.notes,
-      remindersStore.reminders,
-      calendarStore.events,
-      notificationStore.preferences
-    );
+    // Step 3: Migrate existing local data to Supabase
+    let migrated = false;
+    try {
+      migrated = await migrateIfNeeded(
+        staffStore.staff,
+        absenceStore.absences,
+        notesStore.notes,
+        remindersStore.reminders,
+        calendarStore.events,
+        notificationStore.preferences
+      );
+      console.log("[AuthenticatedApp] Migration completed, migrated:", migrated);
+    } catch (e) {
+      console.warn("[AuthenticatedApp] Migration failed:", e);
+    }
 
-    // Step 4: Load data from Supabase (source of truth)
-    const data = await loadAllFromSupabase();
+    // Step 4: Load data from Supabase
+    let data: Awaited<ReturnType<typeof loadAllFromSupabase>>;
+    try {
+      data = await loadAllFromSupabase();
+      console.log("[AuthenticatedApp] Supabase data loaded:", {
+        staff: data.staff.length,
+        absences: data.absences.length,
+        events: data.calendarEvents.length,
+      });
+    } catch (e) {
+      console.error("[AuthenticatedApp] CRITICAL: Failed to load from Supabase:", e);
+      setSyncStatus("offline");
+      data = { staff: [], absences: [], calendarEvents: [], notes: [], reminders: [], notifPrefs: null };
+    }
 
     // Step 5: Replace local stores with Supabase data (carefully — don't
     // lose data if the Supabase fetch returns empty due to a network error)
@@ -281,14 +347,22 @@ function AuthenticatedApp() {
       console.warn("[_layout] Failed to load calendar view preference:", e);
     }
 
-    // Step 6: Seed public holidays only — no sample staff or absences
-    seedPublicHolidays(absenceStore);
+    // Step 6: Seed public holidays
+    try {
+      seedPublicHolidays(absenceStore);
+    } catch (e) {
+      console.warn("[AuthenticatedApp] Failed to seed public holidays:", e);
+    }
 
     // Step 7: Initialize notifications
-    initializeNotifications(user.id);
+    try {
+      initializeNotifications(user.id);
+    } catch (e) {
+      console.warn("[AuthenticatedApp] Failed to init notifications:", e);
+    }
 
-    // Mark synced
     setSyncStatus("synced");
+    console.log("[AuthenticatedApp] Data load COMPLETE");
   }, [user]);
 
   useEffect(() => {
