@@ -187,6 +187,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "calendar_events_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "staff_members"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "calendar_events_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false

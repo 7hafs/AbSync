@@ -26,6 +26,7 @@ import {
 import { useColorScheme } from 'react-native';
 import ThemedText from '@/components/ThemedText';
 import ThemedView from '@/components/ThemedView';
+import SyncIndicator from '@/components/SyncIndicator';
 import Colors, { absenceColors, dotColors } from '@/constants/colors';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import useThemeStore from '@/store/useThemeStore';
@@ -220,6 +221,9 @@ export default function DashboardScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {/* Sync Status Bar */}
+      <SyncIndicator />
+
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={styles.headerLeft}>

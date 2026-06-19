@@ -18,7 +18,7 @@ import {
 import { startupIntegrityCheck, clearAllStores } from "@/lib/storageManager";
 import { AuthProvider, useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { loadAllFromSupabase, migrateIfNeeded } from "@/lib/syncService";
-import { fetchCalendarView } from "@/lib/dataService";
+import { fetchCalendarView, setSyncStatus, isSupabaseReachable } from "@/lib/dataService";
 import { Absence } from "@/types";
 import { toDateString } from "@/utils/dateUtils";
 import Colors from "@/constants/colors";
@@ -135,6 +135,20 @@ function AuthenticatedApp() {
   const loadData = useCallback(async () => {
     if (!user) return;
 
+    // Set syncing status
+    setSyncStatus("syncing");
+
+    // Check connectivity
+    try {
+      const reachable = await isSupabaseReachable();
+      if (!reachable) {
+        setSyncStatus("offline");
+        console.log("[_layout] Supabase unreachable, using local data");
+      }
+    } catch {
+      setSyncStatus("offline");
+    }
+
     // Step 1: Run integrity check on local persisted stores
     await startupIntegrityCheck();
 
@@ -212,6 +226,9 @@ function AuthenticatedApp() {
 
     // Step 7: Initialize notifications
     initializeNotifications(user.id);
+
+    // Mark synced
+    setSyncStatus("synced");
   }, [user]);
 
   useEffect(() => {

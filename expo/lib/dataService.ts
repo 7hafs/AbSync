@@ -324,18 +324,6 @@ export async function deleteFromStorage(
   }
 }
 
-/** Get a public URL for a stored file. */
-export function getStorageUrl(
-  bucket: keyof typeof BUCKETS,
-  path: string
-): string {
-  const userId = "__user__"; // placeholder — real user context needed at call site
-  const { data } = supabase.storage
-    .from(BUCKETS[bucket])
-    .getPublicUrl(`${userId}/${path}`);
-  return data.publicUrl;
-}
-
 // ── Sync Status ───────────────────────────────────────────────────────────────
 
 export type SyncStatus = "synced" | "syncing" | "offline" | "error";
@@ -356,7 +344,7 @@ export function onSyncStatusChange(listener: (status: SyncStatus) => void): () =
   };
 }
 
-function setSyncStatus(status: SyncStatus): void {
+export function setSyncStatus(status: SyncStatus): void {
   if (currentSyncStatus === status) return;
   currentSyncStatus = status;
   console.log(`[dataService] Sync status: ${status}`);
