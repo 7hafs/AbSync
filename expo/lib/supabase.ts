@@ -65,19 +65,22 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     storage: secureStoreAdapter,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: true,
+    detectSessionInUrl: false,
   },
 });
 
 /**
  * Returns the correct redirect URL for Supabase auth callbacks.
  *
- * Uses the Rork preview URL (already in Supabase's allowed redirect list)
- * so password reset and email confirmation links work in the preview
- * environment. On native devices these URLs are handled by the Expo
- * WebBrowser / deep-link system.
+ * Points at the root of the Rork preview deployment so the SPA always
+ * loads. Supabase appends hash-fragment recovery tokens (#access_token=...)
+ * which are available client-side but never sent to the server, so the root
+ * URL avoids server-level 404s on SPA routes.
+ *
+ * The app detects the recovery tokens on mount via the URL hash and
+ * navigates to the password-reset screen automatically.
  */
 export function getAuthRedirectUrl(): string {
   const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
-  return `https://p-${projectId}--expo.rork.live/auth/reset-password`;
+  return `https://p-${projectId}--expo.rork.live`;
 }

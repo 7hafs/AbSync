@@ -2,8 +2,9 @@ import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useCallback } from "react";
-import { useColorScheme } from "react-native";
+import * as Linking from "expo-linking";
+import { useEffect, useCallback, useRef } from "react";
+import { useColorScheme, Platform } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import useStaffStore from "@/store/useStaffStore";
 import useAbsenceStore from "@/store/useAbsenceStore";
@@ -19,6 +20,7 @@ import { startupIntegrityCheck, clearAllStores } from "@/lib/storageManager";
 import { AuthProvider, useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { loadAllFromSupabase, migrateIfNeeded } from "@/lib/syncService";
 import { fetchCalendarView, setSyncStatus, isSupabaseReachable } from "@/lib/dataService";
+import { supabase } from "@/lib/supabase";
 import { Absence } from "@/types";
 import { toDateString } from "@/utils/dateUtils";
 import Colors from "@/constants/colors";
@@ -70,8 +72,66 @@ function AuthGate() {
   const { isLoading, user } = useSupabaseAuth();
   const segments = useSegments();
   const router = useRouter();
+  const recoveryHandled = useRef(false);
 
   const inAuthGroup = segments[0] === "auth";
+
+  // ── Handle URL-based recovery tokens (password reset) ─────────────────
+  //
+  // Supabase password reset emails contain a link like:
+  //   https://p-...rork.live#access_token=abc&refresh_token=def&type=recovery
+  //
+  // We disabled detectSessionInUrl on the Supabase client so we can
+  // control the flow: parse the hash ourselves, set the session, then
+  // navigate to the dedicated reset-password screen.
+  useEffect(() => {
+    if (recoveryHandled.current) return;
+
+    const handleUrl = async () => {
+      try {
+        const url =
+          (await Linking.getInitialURL()) ??
+          (Platform.OS === "web" ? window.location.href : null);
+
+        if (!url) return;
+
+        const hashIndex = url.indexOf("#");
+        if (hashIndex === -1) return;
+
+        const fragment = url.substring(hashIndex + 1);
+        const params = new URLSearchParams(fragment);
+
+        const accessToken = params.get("access_token");
+        const refreshToken = params.get("refresh_token");
+        const type = params.get("type");
+
+        if (!accessToken || !refreshToken || type !== "recovery") return;
+
+        recoveryHandled.current = true;
+
+        // Set the session manually (replaces what detectSessionInUrl would do)
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (error) {
+          console.warn("[AuthGate] Recovery setSession failed:", error.message);
+          return;
+        }
+
+        // Session set — navigate to the reset-password form
+        // Small delay so the AuthProvider's onAuthStateChange can fire first
+        setTimeout(() => {
+          router.replace("/auth/reset-password" as never);
+        }, 100);
+      } catch (e) {
+        console.warn("[AuthGate] URL recovery parsing error:", e);
+      }
+    };
+
+    handleUrl();
+  }, []);
 
   useEffect(() => {
     if (isLoading) return;
@@ -268,6 +328,10 @@ function AuthenticatedApp() {
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="auth/reset-password"
+        options={{ headerShown: false }}
+      />
       <Stack.Screen
         name="share/manage"
         options={{ title: "Share Calendar" }}
