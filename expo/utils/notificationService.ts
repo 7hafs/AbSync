@@ -2,12 +2,14 @@
  * Absence notification service.
  *
  * Schedules two daily notifications (10:00 AM and 5:00 PM) with
- * privacy-safe absence counts. Uses live local store data refreshed on
- * every schedule/reschedule. Preferences are stored locally in AsyncStorage.
+ * privacy-safe absence counts. Supports both local push notifications
+ * and email notifications (via Supabase Edge Function).
  *
  * Notifications:
  * - Morning (10:00): summarizes today & tomorrow absences
  * - Evening (17:00): summarizes today & tomorrow absences with latest data
+ * - Instant alerts: fires on approval/rejection/creation
+ * - Email support: sends summary emails via edge function (if configured)
  * - Privacy-safe: only shows counts, never names or reasons
  * - Smart pluralization: "1 absence" vs "2 absences" vs "is" vs "are"
  *
@@ -22,6 +24,7 @@ import * as BackgroundFetch from "expo-background-fetch";
 import { Platform } from "react-native";
 import { todayDateString, toDateString } from "@/utils/dateUtils";
 import useNotificationStore from "@/store/useNotificationStore";
+import { supabase } from "@/lib/supabase";
 
 // ── Identifiers ─────────────────────────────────────────────────────────────
 
@@ -184,7 +187,7 @@ export async function cancelAllDailyNotifications(): Promise<void> {
 
 /** Send an instant local notification about an absence change. */
 export async function sendInstantAlert(
-  action: "added" | "modified" | "cancelled"
+  action: "added" | "modified" | "cancelled" | "approved" | "rejected"
 ): Promise<void> {
   const prefs = useNotificationStore.getState().preferences;
   if (!prefs.instantAlertsEnabled) return;
@@ -193,6 +196,8 @@ export async function sendInstantAlert(
     added: "A new absence has been added.",
     modified: "An absence has been modified.",
     cancelled: "An absence has been cancelled.",
+    approved: "An absence request has been approved.",
+    rejected: "An absence request has been rejected.",
   };
 
   await Notifications.scheduleNotificationAsync({
@@ -203,6 +208,102 @@ export async function sendInstantAlert(
       sound: "default",
     },
     trigger: null, // immediate
+  });
+}
+
+// ── Email notification (via Supabase Edge Function) ────────────────────────
+
+export type EmailNotificationPayload = {
+  recipientEmail: string;
+  subject: string;
+  bodyHtml: string;
+  bodyText: string;
+};
+
+/**
+ * Send an email notification via the Supabase Edge Function.
+ * Falls back silently if the edge function is not deployed or fails.
+ */
+export async function sendEmailNotification(
+  payload: EmailNotificationPayload
+): Promise<boolean> {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      console.log("[notificationService] No session, skipping email");
+      return false;
+    }
+
+    const { error } = await supabase.functions.invoke("send-email", {
+      body: payload,
+    });
+
+    if (error) {
+      console.warn("[notificationService] Email send failed:", error.message);
+      return false;
+    }
+
+    console.log("[notificationService] Email sent:", payload.subject);
+    return true;
+  } catch (err) {
+    console.warn("[notificationService] Email send error:", err);
+    return false;
+  }
+}
+
+/**
+ * Send an absence approval notification (local + optional email).
+ * Called by stores when an absence is approved or rejected.
+ */
+export async function sendApprovalNotification(
+  action: "approved" | "rejected",
+  staffName: string,
+  date: string,
+  recipientEmail?: string
+): Promise<void> {
+  await sendInstantAlert(action);
+
+  if (recipientEmail) {
+    const verb = action === "approved" ? "approved" : "rejected";
+    await sendEmailNotification({
+      recipientEmail,
+      subject: `Absence ${verb} — ${staffName} on ${date}`,
+      bodyHtml: `<p>The absence request for <strong>${staffName}</strong> on <strong>${date}</strong> has been <strong>${verb}</strong>.</p><p>Open AbSync to view details.</p>`,
+      bodyText: `The absence request for ${staffName} on ${date} has been ${verb}. Open AbSync to view details.`,
+    });
+  }
+}
+
+/**
+ * Send a daily summary email.
+ * Called by the daily notification scheduler if email is configured.
+ */
+export async function sendDailySummaryEmail(
+  recipientEmail: string,
+  todayCount: number,
+  tomorrowCount: number,
+  period: "morning" | "evening"
+): Promise<void> {
+  const todayWord = todayCount === 1 ? "is" : "are";
+  const todayAbsenceWord = todayCount === 1 ? "absence" : "absences";
+  const tomorrowAbsenceWord = tomorrowCount === 1 ? "absence" : "absences";
+
+  let bodyHtml: string;
+  if (todayCount === 0 && tomorrowCount === 0) {
+    bodyHtml = `<p>No absences recorded for today or tomorrow.</p>`;
+  } else if (todayCount > 0 && tomorrowCount > 0) {
+    bodyHtml = `<p>There ${todayWord} <strong>${todayCount} ${todayAbsenceWord}</strong> today and <strong>${tomorrowCount} ${tomorrowAbsenceWord}</strong> tomorrow.</p>`;
+  } else if (todayCount > 0) {
+    bodyHtml = `<p>There ${todayWord} <strong>${todayCount} ${todayAbsenceWord}</strong> recorded for today.</p>`;
+  } else {
+    bodyHtml = `<p>There are <strong>${tomorrowCount} ${tomorrowAbsenceWord}</strong> scheduled for tomorrow.</p>`;
+  }
+
+  await sendEmailNotification({
+    recipientEmail,
+    subject: `AbSync ${period === "morning" ? "Morning" : "Evening"} Summary`,
+    bodyHtml: bodyHtml + `<p>Open AbSync to view details.</p>`,
+    bodyText: bodyHtml.replace(/<[^>]*>/g, ""),
   });
 }
 

@@ -106,20 +106,6 @@ export type ReminderType = {
   recurringPattern?: 'daily' | 'weekly' | 'monthly';
 };
 
-export type PersonType = {
-  id: string;
-  name: string;
-  role?: string;
-};
-
-export type PersonAbsence = {
-  id: string;
-  personId: string;
-  date: string;
-  type: 'vacation' | 'absence';
-  reason?: string;
-};
-
 export type NotificationPreferences = {
   morningEnabled: boolean;
   eveningEnabled: boolean;

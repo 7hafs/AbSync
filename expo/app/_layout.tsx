@@ -20,6 +20,7 @@ import { AuthProvider, useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { loadAllFromSupabase, migrateIfNeeded } from "@/lib/syncService";
 import { fetchCalendarView } from "@/lib/dataService";
 import { Absence } from "@/types";
+import { toDateString } from "@/utils/dateUtils";
 import Colors from "@/constants/colors";
 
 export const unstable_settings = {
@@ -283,27 +284,121 @@ function AuthenticatedApp() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Public holiday seeding — these are reference data, not sample data
+// Public holiday seeding — UK bank holidays, dynamically generated
 // ═════════════════════════════════════════════════════════════════════════════
 
 import { upsertAbsence } from "@/lib/dataService";
 
-const publicHolidays2026: Absence[] = [
-  { id: "ph-2026-01-01", staffId: null, name: "New Year's Day", type: "Public Holiday", date: "2026-01-01", duration: "Full", status: "Approved", cover: null, notes: "UK public holiday", locked: true, createdBy: "system", createdAt: "2026-01-01T00:00:00.000Z" },
-  { id: "ph-2026-04-03", staffId: null, name: "Good Friday", type: "Public Holiday", date: "2026-04-03", duration: "Full", status: "Approved", cover: null, notes: "UK public holiday", locked: true, createdBy: "system", createdAt: "2026-01-01T00:00:00.000Z" },
-  { id: "ph-2026-04-06", staffId: null, name: "Easter Monday", type: "Public Holiday", date: "2026-04-06", duration: "Full", status: "Approved", cover: null, notes: "UK public holiday", locked: true, createdBy: "system", createdAt: "2026-01-01T00:00:00.000Z" },
-  { id: "ph-2026-05-04", staffId: null, name: "Early May Bank Holiday", type: "Public Holiday", date: "2026-05-04", duration: "Full", status: "Approved", cover: null, notes: "UK public holiday", locked: true, createdBy: "system", createdAt: "2026-01-01T00:00:00.000Z" },
-  { id: "ph-2026-05-25", staffId: null, name: "Spring Bank Holiday", type: "Public Holiday", date: "2026-05-25", duration: "Full", status: "Approved", cover: null, notes: "UK public holiday", locked: true, createdBy: "system", createdAt: "2026-01-01T00:00:00.000Z" },
-  { id: "ph-2026-08-31", staffId: null, name: "Summer Bank Holiday", type: "Public Holiday", date: "2026-08-31", duration: "Full", status: "Approved", cover: null, notes: "UK public holiday", locked: true, createdBy: "system", createdAt: "2026-01-01T00:00:00.000Z" },
-  { id: "ph-2026-12-25", staffId: null, name: "Christmas Day", type: "Public Holiday", date: "2026-12-25", duration: "Full", status: "Approved", cover: null, notes: "UK public holiday", locked: true, createdBy: "system", createdAt: "2026-01-01T00:00:00.000Z" },
-  { id: "ph-2026-12-28", staffId: null, name: "Boxing Day (substitute day)", type: "Public Holiday", date: "2026-12-28", duration: "Full", status: "Approved", cover: null, notes: "UK public holiday", locked: true, createdBy: "system", createdAt: "2026-01-01T00:00:00.000Z" },
-];
+/**
+ * Generate UK public holidays for a given year.
+ * Covers New Year, Good Friday, Easter Monday, Early May, Spring,
+ * Summer, Christmas, and Boxing Day (with substitute days).
+ */
+function generateUKHolidays(year: number): Absence[] {
+  const holidays: Absence[] = [];
+
+  // New Year's Day (Jan 1, or Jan 2 if Jan 1 is weekend)
+  const jan1 = new Date(year, 0, 1);
+  const jan1Day = jan1.getDay();
+  const nyDate = jan1Day === 0 || jan1Day === 6
+    ? toDateString(new Date(year, 0, jan1Day === 0 ? 2 : 3))
+    : toDateString(jan1);
+  holidays.push(createHoliday(`ph-${nyDate}`, "New Year's Day", nyDate));
+
+  // Easter calculation (Anonymous Gregorian algorithm)
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const easterMonth = Math.floor((h + l - 7 * m + 114) / 31);
+  const easterDay = ((h + l - 7 * m + 114) % 31) + 1;
+  const easterSunday = new Date(year, easterMonth - 1, easterDay);
+
+  // Good Friday (2 days before Easter Sunday)
+  const goodFriday = new Date(easterSunday);
+  goodFriday.setDate(goodFriday.getDate() - 2);
+  holidays.push(createHoliday(`ph-${toDateString(goodFriday)}`, "Good Friday", toDateString(goodFriday)));
+
+  // Easter Monday (1 day after Easter Sunday)
+  const easterMonday = new Date(easterSunday);
+  easterMonday.setDate(easterMonday.getDate() + 1);
+  holidays.push(createHoliday(`ph-${toDateString(easterMonday)}`, "Easter Monday", toDateString(easterMonday)));
+
+  // Early May Bank Holiday (first Monday in May)
+  const may1 = new Date(year, 4, 1);
+  const mayMonday = new Date(may1);
+  mayMonday.setDate(1 + ((8 - may1.getDay()) % 7 || (may1.getDay() === 1 ? 0 : 7 - may1.getDay() + 1)));
+  // Simplified: first Monday of May
+  let firstMayMonday = 1;
+  const d1 = new Date(year, 4, 1).getDay();
+  firstMayMonday = d1 === 1 ? 1 : d1 === 0 ? 2 : 9 - d1;
+  holidays.push(createHoliday(`ph-${year}-05-${String(firstMayMonday).padStart(2, '0')}`, "Early May Bank Holiday", `${year}-05-${String(firstMayMonday).padStart(2, '0')}`));
+
+  // Spring Bank Holiday (last Monday in May)
+  const may31 = new Date(year, 4, 31);
+  const springMonday = 31 - ((may31.getDay() + 6) % 7);
+  holidays.push(createHoliday(`ph-${year}-05-${String(springMonday).padStart(2, '0')}`, "Spring Bank Holiday", `${year}-05-${String(springMonday).padStart(2, '0')}`));
+
+  // Summer Bank Holiday (last Monday in August)
+  const aug31 = new Date(year, 7, 31);
+  const summerMonday = 31 - ((aug31.getDay() + 6) % 7);
+  holidays.push(createHoliday(`ph-${year}-08-${String(summerMonday).padStart(2, '0')}`, "Summer Bank Holiday", `${year}-08-${String(summerMonday).padStart(2, '0')}`));
+
+  // Christmas Day (Dec 25, or substitute)
+  const dec25 = new Date(year, 11, 25);
+  const xmasDay = dec25.getDay();
+  const xmasDate = xmasDay === 0 || xmasDay === 6
+    ? toDateString(new Date(year, 11, xmasDay === 0 ? 27 : 28))
+    : toDateString(dec25);
+  holidays.push(createHoliday(`ph-${xmasDate}`, "Christmas Day", xmasDate));
+
+  // Boxing Day (Dec 26, or substitute)
+  const dec26 = new Date(year, 11, 26);
+  const boxingDay = dec26.getDay();
+  const boxingDate = boxingDay === 0 || boxingDay === 6
+    ? toDateString(new Date(year, 11, boxingDay === 0 ? 28 : 27))
+    : toDateString(dec26);
+  holidays.push(createHoliday(`ph-${boxingDate}`, "Boxing Day", boxingDate));
+
+  return holidays;
+}
+
+function createHoliday(id: string, name: string, date: string): Absence {
+  return {
+    id,
+    staffId: null,
+    name,
+    type: "Public Holiday",
+    date,
+    duration: "Full",
+    status: "Approved",
+    cover: null,
+    notes: "UK public holiday",
+    locked: true,
+    createdBy: "system",
+    createdAt: `${date}T00:00:00.000Z`,
+  };
+}
 
 function seedPublicHolidays(absenceStore: { absences: Absence[]; addAbsence: (a: Absence) => void }) {
+  const currentYear = new Date().getFullYear();
+  const allHolidays = [
+    ...generateUKHolidays(currentYear),
+    ...generateUKHolidays(currentYear + 1),
+  ];
+
   const existing = new Set(absenceStore.absences.map((a: Absence) => a.id));
   const newlyAdded: Absence[] = [];
 
-  for (const holiday of publicHolidays2026) {
+  for (const holiday of allHolidays) {
     if (!existing.has(holiday.id)) {
       absenceStore.addAbsence(holiday);
       newlyAdded.push(holiday);
