@@ -878,3 +878,89 @@ export async function migrateLocalDataToSupabase(
 
   console.log("[dataService] Migration complete");
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ORGANISATIONS
+// ═════════════════════════════════════════════════════════════════════════════
+
+export type OrganisationRow = {
+  id: string;
+  name: string;
+  owner_id: string | null;
+  slug: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OrganisationMemberRow = {
+  id: string;
+  organisation_id: string;
+  user_id: string;
+  role: string;
+  created_at: string;
+  profile_name: string | null;
+  profile_email: string | null;
+};
+
+/** Fetch an organisation by ID. Returns null if not found. */
+export async function fetchOrganisation(orgId: string): Promise<OrganisationRow | null> {
+  const { data, error } = await supabase
+    .from("organisations")
+    .select("id, name, owner_id, slug, created_at, updated_at")
+    .eq("id", orgId)
+    .single();
+
+  if (error) {
+    console.error("[dataService] fetchOrganisation error:", error.message);
+    return null;
+  }
+  return data as OrganisationRow;
+}
+
+/**
+ * Fetch all members of an organisation, joined with their profile names.
+ * Uses a raw join since the Supabase types have FK relationships defined.
+ */
+export async function fetchOrganisationMembers(
+  orgId: string
+): Promise<OrganisationMemberRow[]> {
+  const { data, error } = await supabase
+    .from("organisation_members")
+    .select("id, organisation_id, user_id, role, created_at, profiles(name, email)")
+    .eq("organisation_id", orgId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("[dataService] fetchOrganisationMembers error:", error.message);
+    return [];
+  }
+
+  // Flatten the nested profiles join into top-level fields
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data as any[]).map((row: any) => ({
+    id: row.id,
+    organisation_id: row.organisation_id,
+    user_id: row.user_id,
+    role: row.role,
+    created_at: row.created_at,
+    profile_name: row.profiles?.name ?? null,
+    profile_email: row.profiles?.email ?? null,
+  }));
+}
+
+/** Update an organisation's name. Returns true on success. */
+export async function updateOrganisationName(
+  orgId: string,
+  name: string
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("organisations")
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq("id", orgId);
+
+  if (error) {
+    console.error("[dataService] updateOrganisationName error:", error.message);
+    return false;
+  }
+  return true;
+}

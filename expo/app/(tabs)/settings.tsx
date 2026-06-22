@@ -32,7 +32,7 @@ import {
   User,
   Mail,
   Lock,
-  Edit3,
+  Building2,
 } from "lucide-react-native";
 import { exportAbsencesCSV } from "@/utils/csvExport";
 import { useRouter } from "expo-router";
@@ -206,6 +206,25 @@ export default function SettingsScreen() {
               </View>
             </View>
           </View>
+
+          <TouchableOpacity
+            style={[
+              styles.settingItem,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            onPress={() => router.push("/settings/organisation" as any)}
+          >
+            <View style={styles.settingContent}>
+              <Building2 size={22} color={colors.primary} />
+              <View style={styles.settingTextContainer}>
+                <ThemedText weight="semibold">Organisation</ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  Manage your organisation and members
+                </ThemedText>
+              </View>
+            </View>
+            <ChevronRight size={20} color={colors.secondaryText} />
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[

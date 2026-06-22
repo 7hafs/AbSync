@@ -30,6 +30,7 @@ export interface AuthProfile {
   id: string;
   name: string | null;
   email: string | null;
+  organisationId: string | null;
 }
 
 export interface AuthState {
@@ -74,7 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfile = useCallback(async (userId: string): Promise<AuthProfile | null> => {
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, name, email")
+      .select("id, name, email, organisation_id")
       .eq("id", userId)
       .single();
 
@@ -83,7 +84,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return null;
     }
 
-    return data as AuthProfile;
+    const row = data as { id: string; name: string | null; email: string | null; organisation_id: string | null };
+    return {
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      organisationId: row.organisation_id,
+    };
   }, []);
 
   const ensureProfile = useCallback(
@@ -130,13 +137,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           access_level: "owner",
           organisation_id: organisationId,
         })
-        .select("id, name, email")
+        .select("id, name, email, organisation_id")
         .single();
 
       if (error) {
         console.error("[auth] Failed to create profile:", error.message);
         return null;
       }
+
+      const row = data as { id: string; name: string | null; email: string | null; organisation_id: string | null };
 
       // Step 3: Create membership row
       if (organisationId) {
@@ -158,7 +167,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      return data as AuthProfile;
+      return {
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        organisationId: row.organisation_id,
+      };
     },
     [fetchProfile]
   );

@@ -510,6 +510,10 @@ function AuthenticatedApp() {
         name="settings/about"
         options={{ title: "Support & About" }}
       />
+      <Stack.Screen
+        name="settings/organisation"
+        options={{ title: "Organisation" }}
+      />
     </Stack>
   );
 }

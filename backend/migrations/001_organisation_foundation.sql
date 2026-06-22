@@ -11,6 +11,8 @@
 --   4. ALTER notification_preferences: add organisation_id (UUID FK → organisations)
 --   5. CREATE organisation_members junction table
 --   6. BACKFILL: one organisation per existing user, link all their data
+--      Departments use a deterministic ownership rule (most staff → earliest staff).
+--      A RAISE NOTICE report is emitted showing normal, fallback, and manual-review assignments.
 --
 -- Run this migration in a transaction. If any step fails, the entire
 -- migration rolls back and the database is unchanged.
@@ -152,19 +154,159 @@ WHERE r.user_id = p.id
   AND r.organisation_id IS NULL
   AND p.organisation_id IS NOT NULL;
 
--- Departments
+-- Departments — deterministic ownership resolution
+--
+-- Departments have no direct user_id. Ownership is derived from the staff_members
+-- that reference the department, via the staff member's user → profile → organisation.
+--
+-- Resolution rules (fully deterministic, no row-order dependence):
+--   1. Gather all (organisation_id, staff_count, earliest_created_at) per department.
+--   2. If exactly 1 organisation → NORMAL assignment.
+--   3. If 2+ organisations → pick the org with the MOST staff; tie-break on earliest
+--      staff member created_at → FALLBACK assignment (logged with ambiguity detail).
+--   4. If 0 staff members → leave NULL → MANUAL_REVIEW (logged).
+--
+-- Step A: Compute per-department organisation stats
+WITH dept_org_stats AS (
+  SELECT
+    d.id          AS dept_id,
+    d.name        AS dept_name,
+    p.organisation_id,
+    COUNT(*)      AS staff_count,
+    MIN(sm.created_at) AS earliest_staff_created
+  FROM departments d
+  JOIN staff_members sm ON sm.department_id = d.id
+  JOIN profiles      p  ON p.id = sm.user_id
+  WHERE d.organisation_id IS NULL
+    AND p.organisation_id IS NOT NULL
+  GROUP BY d.id, d.name, p.organisation_id
+),
+-- Step B: Per department, pick the winning organisation deterministically
+--         (most staff → earliest staff breaks ties). Also compute total staff.
+dept_winner AS (
+  SELECT DISTINCT ON (dept_id)
+    dept_id,
+    dept_name,
+    organisation_id AS winner_org_id,
+    SUM(staff_count) OVER (PARTITION BY dept_id) AS total_staff,
+    COUNT(*) OVER (PARTITION BY dept_id) AS distinct_orgs
+  FROM dept_org_stats
+  ORDER BY dept_id, staff_count DESC, earliest_staff_created ASC
+),
+-- Step C: Classify each department
+dept_classified AS (
+  SELECT
+    dept_id,
+    dept_name,
+    winner_org_id,
+    total_staff,
+    distinct_orgs,
+    CASE
+      WHEN distinct_orgs = 1 THEN 'normal'
+      ELSE 'fallback'
+    END AS assignment_type
+  FROM dept_winner
+)
+-- Step D: Apply deterministic assignments (normal + fallback only)
 UPDATE departments d
-SET organisation_id = p.organisation_id
-FROM profiles p
--- Departments don't have user_id; link via staff_members' departments or just
--- assign all departments to any org. This is a best-effort link.
--- For now, link departments used by the user's staff members.
-WHERE d.organisation_id IS NULL
-  AND EXISTS (
-    SELECT 1 FROM staff_members sm
-    WHERE sm.department_id = d.id
-      AND sm.user_id = p.id
-  );
+SET organisation_id = dc.winner_org_id
+FROM dept_classified dc
+WHERE d.id = dc.dept_id
+  AND d.organisation_id IS NULL;
+
+-- Step E: Report normal assignments
+DO $$
+DECLARE
+  r record;
+BEGIN
+  RAISE NOTICE '━━━ DEPARTMENT MIGRATION REPORT ━━━';
+  RAISE NOTICE 'NORMAL (unambiguous ownership):';
+  FOR r IN
+    WITH dept_org_stats AS (
+      SELECT
+        d.id          AS dept_id,
+        d.name        AS dept_name,
+        p.organisation_id,
+        COUNT(*)      AS staff_count,
+        MIN(sm.created_at) AS earliest_staff_created
+      FROM departments d
+      JOIN staff_members sm ON sm.department_id = d.id
+      JOIN profiles      p  ON p.id = sm.user_id
+      WHERE p.organisation_id IS NOT NULL
+      GROUP BY d.id, d.name, p.organisation_id
+    ),
+    dept_winner AS (
+      SELECT DISTINCT ON (dept_id)
+        dept_id,
+        dept_name,
+        organisation_id AS winner_org_id,
+        SUM(staff_count) OVER (PARTITION BY dept_id) AS total_staff,
+        COUNT(*) OVER (PARTITION BY dept_id) AS distinct_orgs
+      FROM dept_org_stats
+      ORDER BY dept_id, staff_count DESC, earliest_staff_created ASC
+    )
+    SELECT dw.dept_id, dw.dept_name, dw.total_staff, dw.winner_org_id
+    FROM dept_winner dw
+    JOIN departments d ON d.id = dw.dept_id
+    WHERE dw.distinct_orgs = 1
+      AND d.organisation_id IS NOT NULL  -- was just assigned (or already assigned)
+    ORDER BY dw.dept_name
+  LOOP
+    RAISE NOTICE '  [NORMAL] dept=%, id=%, staff=%, org=%',
+      r.dept_name, r.dept_id, r.total_staff, r.winner_org_id;
+  END LOOP;
+
+  RAISE NOTICE 'FALLBACK (ambiguous → assigned to majority/earliest org):';
+  FOR r IN
+    WITH dept_org_stats AS (
+      SELECT
+        d.id          AS dept_id,
+        d.name        AS dept_name,
+        p.organisation_id,
+        COUNT(*)      AS staff_count,
+        MIN(sm.created_at) AS earliest_staff_created
+      FROM departments d
+      JOIN staff_members sm ON sm.department_id = d.id
+      JOIN profiles      p  ON p.id = sm.user_id
+      WHERE p.organisation_id IS NOT NULL
+      GROUP BY d.id, d.name, p.organisation_id
+    ),
+    dept_winner AS (
+      SELECT DISTINCT ON (dept_id)
+        dept_id,
+        dept_name,
+        organisation_id AS winner_org_id,
+        SUM(staff_count) OVER (PARTITION BY dept_id) AS total_staff,
+        COUNT(*) OVER (PARTITION BY dept_id) AS distinct_orgs
+      FROM dept_org_stats
+      ORDER BY dept_id, staff_count DESC, earliest_staff_created ASC
+    )
+    SELECT dw.dept_id, dw.dept_name, dw.total_staff, dw.distinct_orgs, dw.winner_org_id
+    FROM dept_winner dw
+    JOIN departments d ON d.id = dw.dept_id
+    WHERE dw.distinct_orgs > 1
+      AND d.organisation_id IS NOT NULL  -- was just assigned via fallback
+    ORDER BY dw.dept_name
+  LOOP
+    RAISE NOTICE '  [FALLBACK] dept=%, id=%, staff=% across % orgs → assigned org=%',
+      r.dept_name, r.dept_id, r.total_staff, r.distinct_orgs, r.winner_org_id;
+  END LOOP;
+
+  RAISE NOTICE 'MANUAL REVIEW (no staff members — left unassigned):';
+  FOR r IN
+    SELECT d.id AS dept_id, d.name AS dept_name
+    FROM departments d
+    WHERE d.organisation_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM staff_members sm WHERE sm.department_id = d.id
+      )
+    ORDER BY d.name
+  LOOP
+    RAISE NOTICE '  [MANUAL_REVIEW] dept=%, id=%',
+      r.dept_name, r.dept_id;
+  END LOOP;
+  RAISE NOTICE '━━━ END DEPARTMENT REPORT ━━━';
+END $$;
 
 -- Audit logs
 UPDATE audit_logs al
@@ -181,20 +323,5 @@ FROM profiles p
 WHERE np.user_id = p.id
   AND np.organisation_id IS NULL
   AND p.organisation_id IS NOT NULL;
-
--- ── Optional: backfill departments that are still unlinked ──────────────────
--- If any departments remain unlinked after the user-based backfill,
--- assign them to the first organisation (edge case for orphaned data).
-DO $$
-DECLARE
-  fallback_org_id uuid;
-BEGIN
-  SELECT id INTO fallback_org_id FROM organisations ORDER BY created_at LIMIT 1;
-  IF fallback_org_id IS NOT NULL THEN
-    UPDATE departments
-    SET organisation_id = fallback_org_id
-    WHERE organisation_id IS NULL;
-  END IF;
-END $$;
 
 COMMIT;
