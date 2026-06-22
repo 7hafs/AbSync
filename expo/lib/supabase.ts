@@ -72,15 +72,15 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
 /**
  * Returns the correct redirect URL for Supabase auth callbacks.
  *
- * Points at the root of the Rork preview deployment so the SPA always
- * loads. Supabase appends hash-fragment recovery tokens (#access_token=...)
- * which are available client-side but never sent to the server, so the root
- * URL avoids server-level 404s on SPA routes.
+ * Points at the /auth/reset-password route so the deep link routes directly
+ * to the password-reset screen. Supabase appends hash-fragment recovery
+ * tokens (#access_token=...&refresh_token=...&type=recovery) which are
+ * available client-side but never sent to the server, avoiding 404s.
  *
- * The app detects the recovery tokens on mount via the URL hash and
- * navigates to the password-reset screen automatically.
+ * The AuthGate detects the recovery tokens on mount via the URL hash,
+ * calls setSession(), and the reset-password screen takes over.
  */
 export function getAuthRedirectUrl(): string {
   const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
-  return `https://p-${projectId}--expo.rork.live`;
+  return `https://p-${projectId}--expo.rork.live/auth/reset-password`;
 }

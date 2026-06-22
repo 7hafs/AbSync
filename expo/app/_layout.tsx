@@ -80,7 +80,7 @@ function AuthGate() {
   // ── Handle URL-based recovery tokens (password reset) ─────────────────
   //
   // Supabase password reset emails contain a link like:
-  //   https://p-...rork.live#access_token=abc&refresh_token=def&type=recovery
+  //   https://p-...rork.live/auth/reset-password#access_token=...&type=recovery
   //
   // We disabled detectSessionInUrl on the Supabase client so we can
   // control the flow: parse the hash ourselves, set the session, then
@@ -95,20 +95,23 @@ function AuthGate() {
           (await Linking.getInitialURL()) ??
           (Platform.OS === "web" ? window.location.href : null);
 
-        console.log("[AuthGate:recovery] getInitialURL result:", url ? `${url.substring(0, 100)}...` : "null");
+        console.log("[AuthGate:recovery] getInitialURL result:", url ? `${url.substring(0, 120)}...` : "null");
 
         if (!url) {
           console.log("[AuthGate:recovery] No initial URL — skipping recovery");
           return;
         }
 
-        const hashIndex = url.indexOf("#");
+        // Hash fragment may be URL-encoded by some email clients or browsers.
+        // Decode the URL first, then look for the hash after decoding.
+        const decodedUrl = decodeURIComponent(url);
+        const hashIndex = decodedUrl.indexOf("#");
         if (hashIndex === -1) {
           console.log("[AuthGate:recovery] No hash fragment in URL — skipping recovery");
           return;
         }
 
-        const fragment = url.substring(hashIndex + 1);
+        const fragment = decodedUrl.substring(hashIndex + 1);
         const params = new URLSearchParams(fragment);
 
         const accessToken = params.get("access_token");
@@ -117,6 +120,7 @@ function AuthGate() {
 
         console.log("[AuthGate:recovery] Parsed tokens:", {
           hasAccessToken: !!accessToken,
+          accessTokenPrefix: accessToken ? accessToken.substring(0, 8) + "..." : null,
           hasRefreshToken: !!refreshToken,
           type,
         });
@@ -143,7 +147,15 @@ function AuthGate() {
         }
 
         console.log("[AuthGate:recovery] setSession SUCCESS — session is now active");
-        // recoveryInProgress stays true until user leaves reset-password
+
+        // Navigate to reset-password if we're not already there.
+        // This handles the case where the redirectTo URL pointed to root
+        // and the deep-link path is / instead of /auth/reset-password.
+        const currentSegments = segments.join("/");
+        if (!currentSegments.startsWith("auth/reset-password")) {
+          console.log("[AuthGate:recovery] Navigating to /auth/reset-password (from:", currentSegments, ")");
+          router.replace("/auth/reset-password" as never);
+        }
       } catch (e) {
         console.warn("[AuthGate:recovery] URL recovery error:", e);
         recoveryInProgress.current = false;
@@ -181,6 +193,11 @@ function AuthGate() {
       }
       console.log("[AuthGate:routing] User on auth screen → redirecting to dashboard");
       router.replace("/" as never);
+    } else if (user && !inAuthGroup && recoveryInProgress.current) {
+      // Recovery completed at a non-auth route (e.g. root) — navigate to
+      // reset-password so the user can set their new password.
+      console.log("[AuthGate:routing] Recovery in progress but not in auth — navigating to /auth/reset-password");
+      router.replace("/auth/reset-password" as never);
     }
   }, [isLoading, user, inAuthGroup]);
 

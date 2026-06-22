@@ -117,8 +117,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ── Session listener ─────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Safety timeout: if getSession() hangs (e.g. network token refresh
+    // for an expired session), force isLoading to false after 8 seconds
+    // so the user doesn't see a permanent white screen.
+    const loadingTimeout = setTimeout(() => {
+      setIsLoading((prev) => {
+        if (prev) {
+          console.warn("[auth] getSession timed out after 8s — forcing isLoading=false");
+          return false;
+        }
+        return prev;
+      });
+    }, 8000);
+
     // On mount, get the current session (restored from SecureStore)
     supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      clearTimeout(loadingTimeout);
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
       setIsLoading(false);
@@ -126,6 +140,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (currentSession?.user) {
         fetchProfile(currentSession.user.id).then(setProfile);
       }
+    }).catch((err) => {
+      console.warn("[auth] getSession failed:", err);
+      clearTimeout(loadingTimeout);
+      setIsLoading(false);
     });
 
     // Listen for auth state changes (sign in, sign out, token refresh)
