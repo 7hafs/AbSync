@@ -163,7 +163,9 @@ const useAbsenceStore = create<AbsenceState>()(
         writeAuditLog("absence_updated", "absence", updatedAbsence.id);
       },
 
-      updateAbsenceStatus: (id, status) =>
+      updateAbsenceStatus: (id, status) => {
+        const original = get().absences.find((a) => a.id === id);
+
         set((state) => {
           const updated = state.absences.map((absence) =>
             absence.id === id ? { ...absence, status } : absence
@@ -178,7 +180,42 @@ const useAbsenceStore = create<AbsenceState>()(
             );
           }
           return { absences: updated };
-        }),
+        });
+
+        // Fire approval/rejection notification only on actual status changes
+        if (
+          original &&
+          original.status !== status &&
+          (status === "Approved" || status === "Rejected")
+        ) {
+          try {
+            // Look up staff email for optional email notification
+            let staffEmail: string | undefined;
+            if (original.staffId) {
+              const { default: useStaffStore } = require("@/store/useStaffStore");
+              const staffMember = useStaffStore.getState().getStaffById(original.staffId);
+              staffEmail = staffMember?.email;
+            }
+
+            // Dynamic import to avoid circular dependency at module level
+            const { sendApprovalNotification } = require("@/utils/notificationService");
+
+            console.log(
+              `[useAbsenceStore] Notifying ${status.toLowerCase()} for "${original.name}" on ${original.date}` +
+                (staffEmail ? ` (email: ${staffEmail})` : " (no email on file)")
+            );
+
+            sendApprovalNotification(
+              status === "Approved" ? "approved" : "rejected",
+              original.name,
+              original.date,
+              staffEmail
+            );
+          } catch (err) {
+            console.error("[useAbsenceStore] Failed to send approval notification:", err);
+          }
+        }
+      },
 
       deleteAbsence: (id) => {
         console.log("[useAbsenceStore] deleteAbsence", id);
