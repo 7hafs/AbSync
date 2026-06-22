@@ -92,7 +92,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let prof = await fetchProfile(userId);
       if (prof) return prof;
 
-      // Create a new profile
+      // ── Phase 1: Create organisation + profile + membership ──────────
+      // New users get their own organisation automatically.
+      // If any step fails, the nightly backfill or next login
+      // will reconcile it — no user is left stranded.
+
+      let organisationId: string | null = null;
+
+      // Step 1: Create the organisation
+      try {
+        const { data: org, error: orgError } = await supabase
+          .from("organisations")
+          .insert({
+            name: name ?? email ?? "My Organisation",
+            owner_id: userId,
+          })
+          .select("id")
+          .single();
+
+        if (orgError) {
+          console.error("[auth] Failed to create organisation:", orgError.message);
+        } else {
+          organisationId = org.id;
+          console.log("[auth] Created organisation:", organisationId);
+        }
+      } catch (err) {
+        console.error("[auth] Organisation creation threw:", err);
+      }
+
+      // Step 2: Create profile (with or without organisation_id)
       const { data, error } = await supabase
         .from("profiles")
         .insert({
@@ -100,6 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: email ?? null,
           name: name ?? null,
           access_level: "owner",
+          organisation_id: organisationId,
         })
         .select("id, name, email")
         .single();
@@ -107,6 +136,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         console.error("[auth] Failed to create profile:", error.message);
         return null;
+      }
+
+      // Step 3: Create membership row
+      if (organisationId) {
+        try {
+          const { error: memberError } = await supabase
+            .from("organisation_members")
+            .insert({
+              organisation_id: organisationId,
+              user_id: userId,
+              role: "owner",
+            });
+          if (memberError) {
+            console.warn("[auth] Failed to create membership:", memberError.message);
+          } else {
+            console.log("[auth] Created organisation_members row");
+          }
+        } catch (err) {
+          console.warn("[auth] Membership creation threw:", err);
+        }
       }
 
       return data as AuthProfile;

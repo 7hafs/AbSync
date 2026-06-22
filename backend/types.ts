@@ -103,6 +103,7 @@ export type Database = {
           id: string
           new_values: Json | null
           old_values: Json | null
+          organisation_id: string | null
           user_id: string
         }
         Insert: {
@@ -113,6 +114,7 @@ export type Database = {
           id?: string
           new_values?: Json | null
           old_values?: Json | null
+          organisation_id?: string | null
           user_id: string
         }
         Update: {
@@ -123,9 +125,17 @@ export type Database = {
           id?: string
           new_values?: Json | null
           old_values?: Json | null
+          organisation_id?: string | null
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "audit_logs_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "audit_logs_user_id_fkey"
             columns: ["user_id"]
@@ -291,6 +301,7 @@ export type Database = {
           evening_enabled: boolean | null
           instant_alerts_enabled: boolean | null
           morning_enabled: boolean | null
+          organisation_id: string | null
           updated_at: string | null
           user_id: string
         }
@@ -299,6 +310,7 @@ export type Database = {
           evening_enabled?: boolean | null
           instant_alerts_enabled?: boolean | null
           morning_enabled?: boolean | null
+          organisation_id?: string | null
           updated_at?: string | null
           user_id: string
         }
@@ -307,14 +319,61 @@ export type Database = {
           evening_enabled?: boolean | null
           instant_alerts_enabled?: boolean | null
           morning_enabled?: boolean | null
+          organisation_id?: string | null
           updated_at?: string | null
           user_id?: string
         }
         Relationships: [
           {
+            foreignKeyName: "notification_preferences_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "notification_preferences_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organisation_members: {
+        Row: {
+          created_at: string
+          id: string
+          organisation_id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organisation_id: string
+          role?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organisation_id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organisation_members_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organisation_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -325,6 +384,8 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          owner_id: string | null
+          settings: Json | null
           slug: string | null
           updated_at: string
         }
@@ -332,6 +393,8 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          owner_id?: string | null
+          settings?: Json | null
           slug?: string | null
           updated_at?: string
         }
@@ -339,10 +402,20 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          owner_id?: string | null
+          settings?: Json | null
           slug?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "organisations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -352,6 +425,7 @@ export type Database = {
           email: string | null
           id: string
           name: string | null
+          organisation_id: string | null
           updated_at: string | null
           workspace_id: string | null
         }
@@ -362,6 +436,7 @@ export type Database = {
           email?: string | null
           id: string
           name?: string | null
+          organisation_id?: string | null
           updated_at?: string | null
           workspace_id?: string | null
         }
@@ -372,10 +447,19 @@ export type Database = {
           email?: string | null
           id?: string
           name?: string | null
+          organisation_id?: string | null
           updated_at?: string | null
           workspace_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       reminders: {
         Row: {
