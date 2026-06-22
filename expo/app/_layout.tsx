@@ -12,6 +12,7 @@ import useCalendarStore from "@/store/useCalendarStore";
 import useNotesStore from "@/store/useNotesStore";
 import useRemindersStore from "@/store/useRemindersStore";
 import useNotificationStore from "@/store/useNotificationStore";
+import { useOrganisationStore } from "@/store/useOrganisationStore";
 import {
   initializeNotifications,
   scheduleDailyNotifications,
@@ -221,9 +222,11 @@ function AuthGate() {
 
     if (!user && !inAuthGroup) {
       console.log("[AuthGate:routing] !user && !inAuth → redirect to /auth/login");
+      // Reset all Zustand stores (clear persisted data + reset in-memory state)
       clearAllStores().catch((e) =>
         console.warn("[AuthGate] Failed to clear stores on sign-out:", e)
       );
+      useOrganisationStore.getState().reset();
       router.replace("/auth/login" as never);
     } else if (user && inAuthGroup) {
       if (recoveryInProgress.current) {

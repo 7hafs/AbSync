@@ -93,88 +93,139 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const ensureProfile = useCallback(
-    async (userId: string, email?: string, name?: string): Promise<AuthProfile | null> => {
-      // First try to fetch existing profile
-      let prof = await fetchProfile(userId);
-      if (prof) return prof;
+  /**
+   * Create an organisation + membership for a user, then update their
+   * profile.organisation_id. Used by both the new-user path and the
+   * repair path (when a profile exists but has no organisation).
+   *
+   * Returns the new organisation ID, or null on failure.
+   */
+  const bootstrapOrganisation = useCallback(
+    async (userId: string, name?: string, email?: string): Promise<string | null> => {
+      const orgName = name ?? email ?? "My Organisation";
 
-      // ── Phase 1: Create organisation + profile + membership ──────────
-      // New users get their own organisation automatically.
-      // If any step fails, the nightly backfill or next login
-      // will reconcile it — no user is left stranded.
-
+      // Step A: Create the organisation (profile already exists at this point)
       let organisationId: string | null = null;
-
-      // Step 1: Create the organisation
       try {
         const { data: org, error: orgError } = await supabase
           .from("organisations")
-          .insert({
-            name: name ?? email ?? "My Organisation",
-            owner_id: userId,
-          })
+          .insert({ name: orgName, owner_id: userId })
           .select("id")
           .single();
 
         if (orgError) {
-          console.error("[auth] Failed to create organisation:", orgError.message);
-        } else {
-          organisationId = org.id;
-          console.log("[auth] Created organisation:", organisationId);
+          console.error("[auth:org] Organisation creation FAILED:", orgError.message, orgError.code);
+          return null;
         }
+        organisationId = org.id;
+        console.log("[auth:org] Organisation created:", organisationId, "name:", orgName);
       } catch (err) {
-        console.error("[auth] Organisation creation threw:", err);
+        console.error("[auth:org] Organisation creation THREW:", err);
+        return null;
       }
 
-      // Step 2: Create profile (with or without organisation_id)
-      const { data, error } = await supabase
+      // Step B: Create membership row
+      try {
+        const { error: memberError } = await supabase
+          .from("organisation_members")
+          .insert({
+            organisation_id: organisationId,
+            user_id: userId,
+            role: "owner",
+          });
+        if (memberError) {
+          console.warn("[auth:membership] Membership creation FAILED:", memberError.message, memberError.code);
+          // Non-fatal — membership can be repaired later
+        } else {
+          console.log("[auth:membership] Membership created: user=", userId, "org=", organisationId, "role=owner");
+        }
+      } catch (err) {
+        console.warn("[auth:membership] Membership creation THREW:", err);
+      }
+
+      // Step C: Update profile.organisation_id
+      try {
+        const { error: updateError } = await supabase
+          .from("profiles")
+          .update({ organisation_id: organisationId })
+          .eq("id", userId);
+        if (updateError) {
+          console.error("[auth:profile] Update organisation_id FAILED:", updateError.message, updateError.code);
+        } else {
+          console.log("[auth:profile] Updated organisation_id to:", organisationId);
+        }
+      } catch (err) {
+        console.error("[auth:profile] Update organisation_id THREW:", err);
+      }
+
+      return organisationId;
+    },
+    []
+  );
+
+  const ensureProfile = useCallback(
+    async (userId: string, email?: string, name?: string): Promise<AuthProfile | null> => {
+      // ── Step 1: Fetch existing profile ──────────────────────────────
+      const existingProf = await fetchProfile(userId);
+
+      // ── Case A: Profile exists with valid organisation → done ───────
+      if (existingProf?.organisationId) {
+        console.log("[auth:ensure] Profile exists with organisation:", existingProf.organisationId);
+        return existingProf;
+      }
+
+      // ── Case B: Profile exists but organisation_id is NULL → repair ─
+      if (existingProf && !existingProf.organisationId) {
+        console.log("[auth:ensure] REPAIR PATH: profile exists but organisation_id is NULL — bootstrapping organisation");
+        const orgId = await bootstrapOrganisation(userId, existingProf.name ?? name, existingProf.email ?? email);
+        if (orgId) {
+          console.log("[auth:ensure] REPAIR COMPLETE: organisation_id =", orgId);
+          return { ...existingProf, organisationId: orgId };
+        }
+        console.error("[auth:ensure] REPAIR FAILED: could not create organisation for existing profile");
+        // Return the profile anyway so the user can still use the app
+        return existingProf;
+      }
+
+      // ── Case C: No profile exists → full creation path ──────────────
+      console.log("[auth:ensure] NEW USER: no profile found — creating profile + organisation + membership");
+
+      // Step C1: Create profile FIRST (without organisation_id)
+      const { data: newProfile, error: profileError } = await supabase
         .from("profiles")
         .insert({
           id: userId,
           email: email ?? null,
           name: name ?? null,
           access_level: "owner",
-          organisation_id: organisationId,
         })
         .select("id, name, email, organisation_id")
         .single();
 
-      if (error) {
-        console.error("[auth] Failed to create profile:", error.message);
+      if (profileError) {
+        console.error("[auth:ensure] Profile creation FAILED:", profileError.message, profileError.code);
         return null;
       }
 
-      const row = data as { id: string; name: string | null; email: string | null; organisation_id: string | null };
+      const row = newProfile as { id: string; name: string | null; email: string | null; organisation_id: string | null };
+      console.log("[auth:ensure] Profile created:", row.id);
 
-      // Step 3: Create membership row
-      if (organisationId) {
-        try {
-          const { error: memberError } = await supabase
-            .from("organisation_members")
-            .insert({
-              organisation_id: organisationId,
-              user_id: userId,
-              role: "owner",
-            });
-          if (memberError) {
-            console.warn("[auth] Failed to create membership:", memberError.message);
-          } else {
-            console.log("[auth] Created organisation_members row");
-          }
-        } catch (err) {
-          console.warn("[auth] Membership creation threw:", err);
-        }
+      // Step C2: Bootstrap organisation + membership + update organisation_id
+      const orgId = await bootstrapOrganisation(userId, name, email);
+      if (!orgId) {
+        console.error("[auth:ensure] Organisation bootstrap FAILED after profile creation — user may need repair on next login");
+      } else {
+        console.log("[auth:ensure] NEW USER COMPLETE: profile + organisation + membership all created");
       }
 
       return {
         id: row.id,
         name: row.name,
         email: row.email,
-        organisationId: row.organisation_id,
+        organisationId: orgId,
       };
     },
-    [fetchProfile]
+    [fetchProfile, bootstrapOrganisation]
   );
 
   // ── Session listener ─────────────────────────────────────────────────────
@@ -217,8 +268,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
 
       if (currentSession?.user) {
-        fetchProfile(currentSession.user.id).then((prof) => {
-          console.log("[auth:session] Profile fetched:", !!prof);
+        // Use ensureProfile (not fetchProfile) so the repair path runs
+        // for legacy/partially-created users on app restart
+        ensureProfile(currentSession.user.id).then((prof) => {
+          console.log("[auth:session] Profile after ensure:", !!prof, "orgId:", prof?.organisationId ?? "null");
           setProfile(prof);
         });
       }
