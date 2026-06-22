@@ -117,13 +117,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ── Session listener ─────────────────────────────────────────────────────
 
   useEffect(() => {
+    const mountTime = Date.now();
+    console.log("[auth:session] AuthProvider mounted — starting getSession()...");
+
     // Safety timeout: if getSession() hangs (e.g. network token refresh
     // for an expired session), force isLoading to false after 8 seconds
     // so the user doesn't see a permanent white screen.
     const loadingTimeout = setTimeout(() => {
       setIsLoading((prev) => {
         if (prev) {
-          console.warn("[auth] getSession timed out after 8s — forcing isLoading=false");
+          const elapsed = Date.now() - mountTime;
+          console.warn(`[auth:session] getSession TIMED OUT after ${elapsed}ms — forcing isLoading=false`);
           return false;
         }
         return prev;
@@ -131,44 +135,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, 8000);
 
     // On mount, get the current session (restored from SecureStore)
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+    supabase.auth.getSession().then(({ data: { session: currentSession }, error: sessionErr }) => {
+      const elapsed = Date.now() - mountTime;
       clearTimeout(loadingTimeout);
+
+      if (sessionErr) {
+        console.warn(`[auth:session] getSession returned error after ${elapsed}ms:`, sessionErr.message);
+      }
+
+      console.log(`[auth:session] getSession resolved in ${elapsed}ms — hasSession:`, !!currentSession);
+      if (currentSession) {
+        console.log("[auth:session] Existing session user ID:", currentSession.user.id);
+      }
+
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
+      console.log("[auth:session] Setting isLoading → false");
       setIsLoading(false);
 
       if (currentSession?.user) {
-        fetchProfile(currentSession.user.id).then(setProfile);
+        fetchProfile(currentSession.user.id).then((prof) => {
+          console.log("[auth:session] Profile fetched:", !!prof);
+          setProfile(prof);
+        });
       }
     }).catch((err) => {
-      console.warn("[auth] getSession failed:", err);
+      const elapsed = Date.now() - mountTime;
+      console.error(`[auth:session] getSession THREW after ${elapsed}ms:`, err);
       clearTimeout(loadingTimeout);
+      console.log("[auth:session] Setting isLoading → false (catch)");
       setIsLoading(false);
     });
 
     // Listen for auth state changes (sign in, sign out, token refresh)
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
-        console.log("[auth] Auth state change:", event);
+        console.log("[auth:session] onAuthStateChange:", event, "hasSession:", !!newSession);
         setSession(newSession);
         setUser(newSession?.user ?? null);
 
         if (event === "SIGNED_IN" && newSession?.user) {
+          console.log("[auth:session] SIGNED_IN — ensuring profile for user:", newSession.user.id);
           const prof = await ensureProfile(
             newSession.user.id,
             newSession.user.email,
             newSession.user.user_metadata?.name as string | undefined
           );
+          console.log("[auth:session] Profile after SIGNED_IN:", !!prof);
           setProfile(prof);
         }
 
         if (event === "SIGNED_OUT") {
+          console.log("[auth:session] SIGNED_OUT — clearing profile");
           setProfile(null);
+        }
+
+        if (event === "TOKEN_REFRESHED") {
+          console.log("[auth:session] TOKEN_REFRESHED");
+        }
+
+        if (event === "USER_UPDATED") {
+          console.log("[auth:session] USER_UPDATED");
         }
       }
     );
 
     return () => {
+      console.log("[auth:session] AuthProvider unmounting — unsubscribing listener");
       authListener.subscription.unsubscribe();
     };
   }, [fetchProfile, ensureProfile]);

@@ -3,8 +3,8 @@ import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Linking from "expo-linking";
-import { useEffect, useCallback, useRef } from "react";
-import { useColorScheme, Platform } from "react-native";
+import { useEffect, useCallback, useRef, useState } from "react";
+import { useColorScheme, Platform, View, ActivityIndicator } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import useStaffStore from "@/store/useStaffStore";
 import useAbsenceStore from "@/store/useAbsenceStore";
@@ -74,13 +74,31 @@ function AuthGate() {
   const router = useRouter();
   const recoveryHandled = useRef(false);
   const recoveryInProgress = useRef(false);
+  const [showLoadingUI, setShowLoadingUI] = useState(false);
 
   const inAuthGroup = segments[0] === "auth";
+
+  // ── Loading indicator fallback ────────────────────────────────────────
+  // After 2 seconds of isLoading, show a spinner instead of a blank white
+  // screen. This prevents the app from looking broken while getSession()
+  // resolves (which can take seconds if it tries to refresh an expired
+  // token over a slow network).
+  useEffect(() => {
+    if (!isLoading) {
+      setShowLoadingUI(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      console.log("[AuthGate:loadingUI] Showing spinner after 2s of isLoading");
+      setShowLoadingUI(true);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [isLoading]);
 
   // ── Handle URL-based recovery tokens (password reset) ─────────────────
   //
   // Supabase password reset emails contain a link like:
-  //   https://p-...rork.live/auth/reset-password#access_token=...&type=recovery
+  //   https://p-...rork.live#access_token=...&type=recovery
   //
   // We disabled detectSessionInUrl on the Supabase client so we can
   // control the flow: parse the hash ourselves, set the session, then
@@ -90,75 +108,98 @@ function AuthGate() {
 
     const handleUrl = async () => {
       try {
-        console.log("[AuthGate:recovery] Checking for recovery URL...");
+        // LOG #1: Current URL on app startup
+        console.log("[AuthGate:recovery:1] Getting initial URL...");
+        const startTime = Date.now();
+
         const url =
           (await Linking.getInitialURL()) ??
           (Platform.OS === "web" ? window.location.href : null);
 
-        console.log("[AuthGate:recovery] getInitialURL result:", url ? `${url.substring(0, 120)}...` : "null");
+        const elapsed = Date.now() - startTime;
+        console.log(`[AuthGate:recovery:1] getInitialURL took ${elapsed}ms`);
+        console.log("[AuthGate:recovery:1] URL:", url ? `${url.substring(0, 200)}` : "null");
 
         if (!url) {
-          console.log("[AuthGate:recovery] No initial URL — skipping recovery");
+          console.log("[AuthGate:recovery:1] No initial URL — recovery not possible");
           return;
         }
 
-        // Hash fragment may be URL-encoded by some email clients or browsers.
-        // Decode the URL first, then look for the hash after decoding.
+        // LOG #2: Parse hash parameters
         const decodedUrl = decodeURIComponent(url);
         const hashIndex = decodedUrl.indexOf("#");
+        console.log("[AuthGate:recovery:2] Hash fragment index:", hashIndex);
+
         if (hashIndex === -1) {
-          console.log("[AuthGate:recovery] No hash fragment in URL — skipping recovery");
+          console.log("[AuthGate:recovery:2] No hash fragment — URL is a plain navigation");
           return;
         }
 
         const fragment = decodedUrl.substring(hashIndex + 1);
+        console.log("[AuthGate:recovery:2] Raw fragment:", fragment.substring(0, 300));
+
         const params = new URLSearchParams(fragment);
+        const paramKeys = Array.from(params.keys());
+        console.log("[AuthGate:recovery:2] Parsed param keys:", paramKeys);
 
         const accessToken = params.get("access_token");
         const refreshToken = params.get("refresh_token");
         const type = params.get("type");
 
-        console.log("[AuthGate:recovery] Parsed tokens:", {
-          hasAccessToken: !!accessToken,
-          accessTokenPrefix: accessToken ? accessToken.substring(0, 8) + "..." : null,
-          hasRefreshToken: !!refreshToken,
-          type,
-        });
+        // LOG #3: access_token present
+        console.log("[AuthGate:recovery:3] access_token present:", !!accessToken);
+        // LOG #4: refresh_token present
+        console.log("[AuthGate:recovery:4] refresh_token present:", !!refreshToken);
+        // LOG #5: type parameter value
+        console.log("[AuthGate:recovery:5] type parameter:", type);
 
         if (!accessToken || !refreshToken || type !== "recovery") {
-          console.log("[AuthGate:recovery] Missing tokens or wrong type — skipping");
+          console.log("[AuthGate:recovery:5] Skipping — need access_token + refresh_token + type=recovery");
           return;
         }
 
         recoveryHandled.current = true;
+        // LOG #9a: recoveryInProgress → true
         recoveryInProgress.current = true;
-        console.log("[AuthGate:recovery] Calling setSession...");
+        console.log("[AuthGate:recovery:9] recoveryInProgress set to TRUE");
 
-        // Set the session manually (replaces what detectSessionInUrl would do)
+        // LOG #6: Before setSession
+        console.log("[AuthGate:recovery:6] Calling supabase.auth.setSession()...");
+        const setSessionStart = Date.now();
+
         const { error } = await supabase.auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken,
         });
 
+        const setSessionElapsed = Date.now() - setSessionStart;
+        console.log(`[AuthGate:recovery:7] setSession completed in ${setSessionElapsed}ms`);
+
+        // LOG #8: Error from setSession
         if (error) {
-          console.warn("[AuthGate:recovery] setSession FAILED:", error.message);
+          console.warn("[AuthGate:recovery:8] setSession ERROR:", error.message, error.status);
+          // LOG #9b: recoveryInProgress → false (failure)
           recoveryInProgress.current = false;
+          console.log("[AuthGate:recovery:9] recoveryInProgress set to FALSE (error)");
           return;
         }
 
-        console.log("[AuthGate:recovery] setSession SUCCESS — session is now active");
+        console.log("[AuthGate:recovery:7] setSession SUCCESS");
 
-        // Navigate to reset-password if we're not already there.
-        // This handles the case where the redirectTo URL pointed to root
-        // and the deep-link path is / instead of /auth/reset-password.
+        // LOG #10: Navigation to /auth/reset-password
         const currentSegments = segments.join("/");
+        console.log("[AuthGate:recovery:10] Current segments:", currentSegments);
+
         if (!currentSegments.startsWith("auth/reset-password")) {
-          console.log("[AuthGate:recovery] Navigating to /auth/reset-password (from:", currentSegments, ")");
+          console.log("[AuthGate:recovery:10] Navigating to /auth/reset-password");
           router.replace("/auth/reset-password" as never);
+        } else {
+          console.log("[AuthGate:recovery:10] Already on reset-password — no navigation needed");
         }
       } catch (e) {
-        console.warn("[AuthGate:recovery] URL recovery error:", e);
+        console.error("[AuthGate:recovery:FATAL] Unhandled exception in recovery flow:", e);
         recoveryInProgress.current = false;
+        console.log("[AuthGate:recovery:9] recoveryInProgress set to FALSE (exception)");
       }
     };
 
@@ -167,11 +208,11 @@ function AuthGate() {
 
   useEffect(() => {
     if (isLoading) {
-      console.log("[AuthGate:routing] Still loading — deferring route check");
+      console.log("[AuthGate:routing] isLoading=true — deferring route check");
       return;
     }
 
-    console.log("[AuthGate:routing] Route check:", {
+    console.log("[AuthGate:routing] Evaluating routes:", {
       hasUser: !!user,
       inAuthGroup,
       segments: segments.join("/"),
@@ -179,36 +220,53 @@ function AuthGate() {
     });
 
     if (!user && !inAuthGroup) {
-      // Not authenticated — clear stores and redirect to login
-      console.log("[AuthGate:routing] No user, not in auth → redirecting to /auth/login");
+      console.log("[AuthGate:routing] !user && !inAuth → redirect to /auth/login");
       clearAllStores().catch((e) =>
         console.warn("[AuthGate] Failed to clear stores on sign-out:", e)
       );
       router.replace("/auth/login" as never);
     } else if (user && inAuthGroup) {
-      // Authenticated but on an auth screen — check if recovery is in progress
       if (recoveryInProgress.current) {
-        console.log("[AuthGate:routing] Recovery in progress — staying on reset-password");
+        console.log("[AuthGate:routing] user && inAuth, recoveryInProgress=true → staying");
         return;
       }
-      console.log("[AuthGate:routing] User on auth screen → redirecting to dashboard");
+      console.log("[AuthGate:routing] user && inAuth, no recovery → redirect to dashboard");
       router.replace("/" as never);
     } else if (user && !inAuthGroup && recoveryInProgress.current) {
-      // Recovery completed at a non-auth route (e.g. root) — navigate to
-      // reset-password so the user can set their new password.
-      console.log("[AuthGate:routing] Recovery in progress but not in auth — navigating to /auth/reset-password");
+      console.log("[AuthGate:routing] user && !inAuth && recoveryInProgress → navigate to /auth/reset-password");
       router.replace("/auth/reset-password" as never);
+    } else {
+      console.log("[AuthGate:routing] No routing action needed");
     }
   }, [isLoading, user, inAuthGroup]);
 
+  // ── Render ────────────────────────────────────────────────────────────
+
   if (isLoading) {
-    // Still restoring session from SecureStore — show nothing
-    console.log("[AuthGate:render] Loading... showing null (white screen)");
+    if (showLoadingUI) {
+      // After 2 seconds, show a spinner so the user doesn't stare at white
+      console.log("[AuthGate:render] Showing loading spinner");
+      return (
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: "#F4F7F4",
+            gap: 16,
+          }}
+        >
+          <ActivityIndicator size="large" color="#0F766E" />
+        </View>
+      );
+    }
+    // First 2 seconds — minimal white flash is acceptable while
+    // getSession() resolves quickly in the normal case
+    console.log("[AuthGate:render] isLoading, no UI yet (will show spinner at 2s)");
     return null;
   }
 
   if (!user) {
-    // Show auth screens without the app stack
     console.log("[AuthGate:render] No user — rendering unauth Stack. recoveryInProgress:", recoveryInProgress.current);
     return (
       <Stack
@@ -224,6 +282,7 @@ function AuthGate() {
     );
   }
 
+  console.log("[AuthGate:render] User authenticated — rendering AuthenticatedApp");
   return <AuthenticatedApp />;
 }
 

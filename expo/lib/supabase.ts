@@ -72,15 +72,24 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
 /**
  * Returns the correct redirect URL for Supabase auth callbacks.
  *
- * Points at the /auth/reset-password route so the deep link routes directly
- * to the password-reset screen. Supabase appends hash-fragment recovery
- * tokens (#access_token=...&refresh_token=...&type=recovery) which are
- * available client-side but never sent to the server, avoiding 404s.
+ * Points at the root domain — NOT /auth/reset-password.
  *
- * The AuthGate detects the recovery tokens on mount via the URL hash,
- * calls setSession(), and the reset-password screen takes over.
+ * The Rork web preview serves static files and does NOT support SPA
+ * fallback routing. A direct browser request to /auth/reset-password
+ * would 404 at the server level before the JS bundle even loads.
+ *
+ * Supabase appends hash-fragment recovery tokens
+ * (#access_token=...&refresh_token=...&type=recovery) which are
+ * NEVER sent to the server — they stay client-side only. So the server
+ * sees a request for /, serves index.html, the app boots, AuthGate
+ * detects the recovery tokens in the URL hash, calls setSession(),
+ * and navigates to /auth/reset-password.
+ *
+ * On native (real device), the deep-link URL becomes:
+ *   rork-lxwo9f6yr6sjgzxbuwjkz://#access_token=...&type=recovery
+ * and +native-intent.tsx routes it to /. AuthGate handles the rest.
  */
 export function getAuthRedirectUrl(): string {
   const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
-  return `https://p-${projectId}--expo.rork.live/auth/reset-password`;
+  return `https://p-${projectId}--expo.rork.live`;
 }

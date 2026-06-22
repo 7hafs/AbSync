@@ -27,11 +27,12 @@ import { useColorScheme } from "react-native";
 import { Eye, EyeOff, Lock, CheckCircle, AlertTriangle } from "lucide-react-native";
 import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import Colors from "@/constants/colors";
 import useThemeStore from "@/store/useThemeStore";
 import { supabase } from "@/lib/supabase";
 
-export default function ResetPasswordScreen() {
+function ResetPasswordScreen() {
   const router = useRouter();
   const systemColorScheme = useColorScheme();
   const { isDarkMode } = useThemeStore();
@@ -50,35 +51,45 @@ export default function ResetPasswordScreen() {
 
   // ── Verify session (AuthGate should have set it by now) ────────────────────
   useEffect(() => {
+    // LOG #11: First render of reset-password.tsx
+    console.log("[reset-password:11] Screen mounted — starting session check");
     let cancelled = false;
 
     const verifySession = async () => {
       try {
-        console.log("[reset-password] Checking for active session...");
-        const { data: { session: existingSession } } = await supabase.auth.getSession();
+        console.log("[reset-password:11] Checking for active session...");
+        const { data: { session: existingSession }, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          console.warn("[reset-password:11] getSession returned error:", sessionError.message);
+        }
 
         if (existingSession) {
-          console.log("[reset-password] Session found — showing password form");
+          console.log("[reset-password:11] Session found — user ID:", existingSession.user.id);
           if (!cancelled) setPhase("form");
           return;
         }
 
         // Session not found — AuthGate either hasn't finished or failed
-        console.log("[reset-password] No session found — retrying in 500ms...");
+        console.log("[reset-password:11] No session — retrying in 500ms...");
 
         // Retry once after a delay (AuthGate may still be processing)
         await new Promise((r) => setTimeout(r, 500));
         if (cancelled) return;
 
-        const { data: { session: retrySession } } = await supabase.auth.getSession();
+        const { data: { session: retrySession }, error: retryError } = await supabase.auth.getSession();
+        if (retryError) {
+          console.warn("[reset-password:11] Retry getSession returned error:", retryError.message);
+        }
+
         if (retrySession) {
-          console.log("[reset-password] Session found on retry — showing password form");
+          console.log("[reset-password:11] Session found on retry — user ID:", retrySession.user.id);
           if (!cancelled) setPhase("form");
           return;
         }
 
         // Still no session — show error
-        console.log("[reset-password] No session after retry — showing error");
+        console.log("[reset-password:11] No session after retry — showing error UI");
         if (!cancelled) {
           setPhase("error");
           setErrorMessage(
@@ -86,7 +97,11 @@ export default function ResetPasswordScreen() {
           );
         }
       } catch (err) {
-        console.error("[reset-password] Session check error:", err);
+        // LOG #12: Uncaught exception during session check
+        console.error("[reset-password:12] SESSION CHECK CRASH:", err);
+        if (err instanceof Error) {
+          console.error("[reset-password:12] Stack:", err.stack);
+        }
         if (!cancelled) {
           setPhase("error");
           setErrorMessage("An unexpected error occurred. Please try again.");
@@ -98,6 +113,8 @@ export default function ResetPasswordScreen() {
 
     return () => {
       cancelled = true;
+      // LOG #12: Screen unmount
+      console.log("[reset-password:12] Screen unmounted");
     };
   }, []);
 
@@ -376,6 +393,21 @@ export default function ResetPasswordScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </ThemedView>
+  );
+}
+
+/**
+ * Wrapped export — ErrorBoundary catches render crashes so the user sees
+ * a fallback UI instead of a blank white screen.
+ */
+export default function ResetPasswordScreenWithBoundary() {
+  // LOG #11: Wrapper mount
+  console.log("[reset-password:11] ErrorBoundary wrapper mounted");
+
+  return (
+    <ErrorBoundary screenName="reset-password">
+      <ResetPasswordScreen />
+    </ErrorBoundary>
   );
 }
 
