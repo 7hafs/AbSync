@@ -22,6 +22,7 @@ import React, {
   useCallback,
 } from "react";
 import { supabase, getAuthRedirectUrl } from "@/lib/supabase";
+import { autoAcceptInvitations } from "@/lib/dataService";
 import { Session, User } from "@supabase/supabase-js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -270,9 +271,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (currentSession?.user) {
         // Use ensureProfile (not fetchProfile) so the repair path runs
         // for legacy/partially-created users on app restart
-        ensureProfile(currentSession.user.id).then((prof) => {
+        ensureProfile(currentSession.user.id).then(async (prof) => {
           console.log("[auth:session] Profile after ensure:", !!prof, "orgId:", prof?.organisationId ?? "null");
           setProfile(prof);
+
+          // Auto-accept any pending invitations matching this user's email
+          if (prof) {
+            const email = prof.email ?? currentSession.user.email;
+            if (email) {
+              try {
+                const result = await autoAcceptInvitations(prof.id, email);
+                if (result.accepted) {
+                  console.log("[auth:session] Auto-accepted invitation for org:", result.orgId);
+                  // Refresh profile to get the updated organisation_id
+                  const updatedProf = await fetchProfile(prof.id);
+                  if (updatedProf) setProfile(updatedProf);
+                }
+              } catch (err) {
+                console.warn("[auth:session] autoAcceptInvitations error:", err);
+              }
+            }
+          }
         });
       }
     }).catch((err) => {
@@ -299,6 +318,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           );
           console.log("[auth:session] Profile after SIGNED_IN:", !!prof);
           setProfile(prof);
+
+          // Auto-accept any pending invitations matching this user's email
+          if (prof) {
+            const email = prof.email ?? newSession.user.email;
+            if (email) {
+              try {
+                const result = await autoAcceptInvitations(prof.id, email);
+                if (result.accepted) {
+                  console.log("[auth:session] SIGNED_IN auto-accepted invitation for org:", result.orgId);
+                  // Refresh profile to get the updated organisation_id
+                  const updatedProf = await fetchProfile(prof.id);
+                  if (updatedProf) setProfile(updatedProf);
+                }
+              } catch (err) {
+                console.warn("[auth:session] autoAcceptInvitations error:", err);
+              }
+            }
+          }
         }
 
         if (event === "SIGNED_OUT") {

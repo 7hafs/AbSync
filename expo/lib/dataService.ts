@@ -188,7 +188,12 @@ export type AuditAction =
   | "absence_updated"
   | "absence_deleted"
   | "absence_approved"
-  | "absence_rejected";
+  | "absence_rejected"
+  | "invitation_created"
+  | "invitation_accepted"
+  | "invitation_revoked"
+  | "invitation_expired"
+  | "invitation_resent";
 
 /**
  * Write an audit log entry to the audit_logs table.
@@ -963,4 +968,454 @@ export async function updateOrganisationName(
     return false;
   }
   return true;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ORGANISATION INVITATIONS
+// ═════════════════════════════════════════════════════════════════════════════
+
+export type InvitationRow = {
+  id: string;
+  token: string;
+  organisation_id: string;
+  email: string;
+  role: string;
+  status: string;
+  expires_at: string;
+  invited_by: string;
+  inviter_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+const INVITATION_EXPIRY_DAYS = 7;
+
+/** Generate a URL-safe random token for invitation links. */
+function generateToken(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  const bytes = new Uint8Array(32);
+  // Use Math.random for React Native (no crypto.getRandomValues in all envs)
+  for (let i = 0; i < 32; i++) {
+    bytes[i] = Math.floor(Math.random() * 256);
+  }
+  for (let i = 0; i < 32; i++) {
+    result += chars[bytes[i] % chars.length];
+  }
+  return result;
+}
+
+/**
+ * Fetch all pending invitations for an organisation, joined with the
+ * inviter's profile name.
+ */
+export async function fetchPendingInvitations(
+  orgId: string
+): Promise<InvitationRow[]> {
+  const { data, error } = await supabase
+    .from("organisation_invitations")
+    .select("*, profiles!invited_by(name)")
+    .eq("organisation_id", orgId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[dataService] fetchPendingInvitations error:", error.message);
+    return [];
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data as any[]).map((row: any) => ({
+    id: row.id,
+    token: row.token,
+    organisation_id: row.organisation_id,
+    email: row.email,
+    role: row.role,
+    status: row.status,
+    expires_at: row.expires_at,
+    invited_by: row.invited_by,
+    inviter_name: row.profiles?.name ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }));
+}
+
+/**
+ * Check if a user with the given email is already a member of an organisation.
+ */
+export async function isEmailExistingMember(
+  orgId: string,
+  email: string
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("organisation_members")
+    .select("user_id, profiles!inner(email)")
+    .eq("organisation_id", orgId)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter("profiles.email", "eq", email.toLowerCase().trim());
+
+  if (error) {
+    console.error("[dataService] isEmailExistingMember error:", error.message);
+    return false;
+  }
+
+  return (data?.length ?? 0) > 0;
+}
+
+/**
+ * Check if there is already a pending invitation for this email+org combo.
+ */
+export async function hasPendingInvitation(
+  orgId: string,
+  email: string
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("organisation_invitations")
+    .select("id")
+    .eq("organisation_id", orgId)
+    .eq("email", email.toLowerCase().trim())
+    .eq("status", "pending")
+    .limit(1);
+
+  if (error) {
+    console.error("[dataService] hasPendingInvitation error:", error.message);
+    return false;
+  }
+
+  return (data?.length ?? 0) > 0;
+}
+
+/**
+ * Create a new invitation. Returns the invitation row or an error message.
+ *
+ * Validates:
+ *  - No duplicate active invitation for the same email+org
+ *  - Email is not already a member of the organisation
+ */
+export async function createInvitation(
+  orgId: string,
+  email: string,
+  role: string,
+  invitedByUserId: string
+): Promise<{ invitation: InvitationRow | null; error: string | null }> {
+  const normalizedEmail = email.toLowerCase().trim();
+
+  if (!normalizedEmail || !normalizedEmail.includes("@")) {
+    return { invitation: null, error: "Please enter a valid email address." };
+  }
+
+  if (!["owner", "manager", "staff"].includes(role)) {
+    return { invitation: null, error: "Invalid role selected." };
+  }
+
+  // Check for duplicate active invitation
+  const duplicate = await hasPendingInvitation(orgId, normalizedEmail);
+  if (duplicate) {
+    return {
+      invitation: null,
+      error: `An active invitation already exists for ${normalizedEmail}.`,
+    };
+  }
+
+  // Check for existing member
+  const isMember = await isEmailExistingMember(orgId, normalizedEmail);
+  if (isMember) {
+    return {
+      invitation: null,
+      error: `${normalizedEmail} is already a member of this organisation.`,
+    };
+  }
+
+  const token = generateToken();
+  const expiresAt = new Date(
+    Date.now() + INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  const { data, error } = await supabase
+    .from("organisation_invitations")
+    .insert({
+      token,
+      organisation_id: orgId,
+      email: normalizedEmail,
+      role,
+      status: "pending",
+      expires_at: expiresAt,
+      invited_by: invitedByUserId,
+    })
+    .select("*, profiles!invited_by(name)")
+    .single();
+
+  if (error) {
+    console.error("[dataService] createInvitation error:", error.message, error.code);
+    return {
+      invitation: null,
+      error: "Failed to create invitation. Please try again.",
+    };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const row = data as any;
+  const invitation: InvitationRow = {
+    id: row.id,
+    token: row.token,
+    organisation_id: row.organisation_id,
+    email: row.email,
+    role: row.role,
+    status: row.status,
+    expires_at: row.expires_at,
+    invited_by: row.invited_by,
+    inviter_name: row.profiles?.name ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+
+  console.log("[dataService] Invitation created:", invitation.id, "for", normalizedEmail);
+
+  // Audit log
+  writeAuditLog("invitation_created", "organisation_invitations", invitation.id, undefined, {
+    organisation_id: orgId,
+    email: normalizedEmail,
+    role,
+    token: token.substring(0, 8) + "...",
+  });
+
+  return { invitation, error: null };
+}
+
+/**
+ * Revoke a pending invitation. Sets status to 'revoked'.
+ */
+export async function revokeInvitation(
+  invitationId: string
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("organisation_invitations")
+    .update({ status: "revoked", updated_at: new Date().toISOString() })
+    .eq("id", invitationId)
+    .eq("status", "pending");
+
+  if (error) {
+    console.error("[dataService] revokeInvitation error:", error.message);
+    return false;
+  }
+
+  // Audit log
+  writeAuditLog("invitation_revoked", "organisation_invitations", invitationId);
+
+  console.log("[dataService] Invitation revoked:", invitationId);
+  return true;
+}
+
+/**
+ * Resend an invitation — extends the expiry date by INVITATION_EXPIRY_DAYS
+ * from now and updates the updated_at timestamp.
+ */
+export async function resendInvitation(
+  invitationId: string
+): Promise<boolean> {
+  const expiresAt = new Date(
+    Date.now() + INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  const { error } = await supabase
+    .from("organisation_invitations")
+    .update({
+      expires_at: expiresAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", invitationId)
+    .eq("status", "pending");
+
+  if (error) {
+    console.error("[dataService] resendInvitation error:", error.message);
+    return false;
+  }
+
+  // Audit log
+  writeAuditLog("invitation_resent", "organisation_invitations", invitationId, undefined, {
+    new_expires_at: expiresAt,
+  });
+
+  console.log("[dataService] Invitation resent:", invitationId);
+  return true;
+}
+
+/**
+ * Fetch a single invitation by its token. Returns null if not found.
+ */
+export async function getInvitationByToken(
+  token: string
+): Promise<InvitationRow | null> {
+  const { data, error } = await supabase
+    .from("organisation_invitations")
+    .select("*, profiles!invited_by(name)")
+    .eq("token", token)
+    .single();
+
+  if (error || !data) {
+    console.error("[dataService] getInvitationByToken error:", error?.message);
+    return null;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const row = data as any;
+  return {
+    id: row.id,
+    token: row.token,
+    organisation_id: row.organisation_id,
+    email: row.email,
+    role: row.role,
+    status: row.status,
+    expires_at: row.expires_at,
+    invited_by: row.invited_by,
+    inviter_name: row.profiles?.name ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+/**
+ * Accept an invitation. This performs the full join flow:
+ *  1. Look up invitation by token, validate it's still pending and not expired
+ *  2. Remove the user from their current organisation (if any)
+ *  3. Add the user to the invited organisation
+ *  4. Update profile.organisation_id to the new org
+ *  5. Mark the invitation as accepted
+ *
+ * Returns { success: true, orgId } on success, or { success: false, error }.
+ */
+export async function acceptInvitation(
+  token: string,
+  userId: string,
+  userEmail: string
+): Promise<{ success: boolean; orgId?: string; error?: string }> {
+  // Step 1: Look up invitation
+  const invitation = await getInvitationByToken(token);
+  if (!invitation) {
+    return { success: false, error: "Invitation not found. It may have been revoked." };
+  }
+
+  if (invitation.status !== "pending") {
+    return { success: false, error: `This invitation is ${invitation.status}.` };
+  }
+
+  if (new Date(invitation.expires_at) < new Date()) {
+    // Mark as expired
+    await supabase
+      .from("organisation_invitations")
+      .update({ status: "expired", updated_at: new Date().toISOString() })
+      .eq("id", invitation.id);
+    writeAuditLog("invitation_expired", "organisation_invitations", invitation.id);
+    return { success: false, error: "This invitation has expired." };
+  }
+
+  // Check email match
+  if (invitation.email.toLowerCase() !== userEmail.toLowerCase()) {
+    return {
+      success: false,
+      error: `This invitation is for ${invitation.email}. Your account email is ${userEmail}.`,
+    };
+  }
+
+  const orgId = invitation.organisation_id;
+
+  // Step 2: Check if user is already a member of the target org
+  const { data: existingMember } = await supabase
+    .from("organisation_members")
+    .select("id")
+    .eq("organisation_id", orgId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (existingMember) {
+    return { success: false, error: "You are already a member of this organisation." };
+  }
+
+  // Step 3: Remove from current organisation (if any)
+  const { data: oldMember } = await supabase
+    .from("organisation_members")
+    .select("id, organisation_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (oldMember) {
+    await supabase
+      .from("organisation_members")
+      .delete()
+      .eq("id", oldMember.id);
+    console.log("[dataService] Removed user from old organisation:", oldMember.organisation_id);
+  }
+
+  // Step 4: Add to new organisation
+  const { error: insertError } = await supabase
+    .from("organisation_members")
+    .insert({
+      organisation_id: orgId,
+      user_id: userId,
+      role: invitation.role,
+    });
+
+  if (insertError) {
+    console.error("[dataService] acceptInvitation insert error:", insertError.message);
+    return { success: false, error: "Failed to join organisation. Please try again." };
+  }
+
+  // Step 5: Update profile.organisation_id
+  const { error: profileError } = await supabase
+    .from("profiles")
+    .update({ organisation_id: orgId })
+    .eq("id", userId);
+
+  if (profileError) {
+    console.error("[dataService] acceptInvitation profile update error:", profileError.message);
+    // Non-fatal — membership exists, profile will be repaired on next login
+  }
+
+  // Step 6: Mark invitation as accepted
+  await supabase
+    .from("organisation_invitations")
+    .update({ status: "accepted", updated_at: new Date().toISOString() })
+    .eq("id", invitation.id);
+
+  // Audit log
+  writeAuditLog("invitation_accepted", "organisation_invitations", invitation.id, undefined, {
+    user_id: userId,
+    organisation_id: orgId,
+    role: invitation.role,
+  });
+
+  console.log("[dataService] Invitation accepted: user=", userId, "org=", orgId, "role=", invitation.role);
+  return { success: true, orgId };
+}
+
+/**
+ * Check for any pending invitations matching the user's email and
+ * auto-accept the first valid one. Returns the new organisation ID
+ * if an invitation was accepted, null otherwise.
+ */
+export async function autoAcceptInvitations(
+  userId: string,
+  email: string
+): Promise<{ accepted: boolean; orgId?: string }> {
+  if (!email) return { accepted: false };
+
+  const { data, error } = await supabase
+    .from("organisation_invitations")
+    .select("token")
+    .eq("email", email.toLowerCase().trim())
+    .eq("status", "pending")
+    .order("created_at", { ascending: true })
+    .limit(1);
+
+  if (error || !data || data.length === 0) {
+    return { accepted: false };
+  }
+
+  const token = (data[0] as { token: string }).token;
+  const result = await acceptInvitation(token, userId, email);
+
+  return {
+    accepted: result.success,
+    orgId: result.orgId,
+  };
 }

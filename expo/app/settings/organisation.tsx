@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { Stack } from "expo-router";
 import { useColorScheme } from "react-native";
+import { useRouter } from "expo-router";
 import {
   Building2,
   Users,
@@ -24,6 +25,7 @@ import {
   RefreshCw,
   AlertTriangle,
   ChevronRight,
+  UserPlus,
 } from "lucide-react-native";
 import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
@@ -48,6 +50,7 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 export default function OrganisationScreen() {
+  const router = useRouter();
   const systemColorScheme = useColorScheme();
   const { isDarkMode } = useThemeStore();
   const colorScheme =
@@ -305,6 +308,29 @@ export default function OrganisationScreen() {
           </View>
         </View>
 
+        {/* ── Invite Members Action ──────────────────────────────────────── */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={[
+              styles.inviteButton,
+              { backgroundColor: colors.primary },
+            ]}
+            onPress={() => router.push("/settings/invitations" as never)}
+            activeOpacity={0.8}
+          >
+            <UserPlus size={22} color="white" />
+            <View style={styles.inviteButtonTextContainer}>
+              <ThemedText weight="bold" style={styles.inviteButtonTitle}>
+                Invite Members
+              </ThemedText>
+              <ThemedText style={styles.inviteButtonSubtitle}>
+                Add team members to your organisation
+              </ThemedText>
+            </View>
+            <ChevronRight size={20} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
+        </View>
+
         {/* ── Overview Cards ──────────────────────────────────────────────── */}
         <View style={styles.section}>
           <ThemedText size="large" weight="bold" style={styles.sectionTitle}>
@@ -517,8 +543,8 @@ export default function OrganisationScreen() {
             size="small"
             style={styles.footerText}
           >
-            Invitations and role management are coming soon. For now, each
-            account gets its own organisation automatically.
+            Invite team members to share your calendar, staff records, and
+            absence data. Each member gets a role — staff, manager, or owner.
           </ThemedText>
         </View>
       </ScrollView>
@@ -539,6 +565,27 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     marginBottom: 16,
+  },
+
+  // ── Invite button ──────────────────────────────────────────────────────
+  inviteButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 18,
+    borderRadius: 16,
+    gap: 14,
+  },
+  inviteButtonTextContainer: {
+    flex: 1,
+    gap: 2,
+  },
+  inviteButtonTitle: {
+    color: "white",
+    fontSize: 17,
+  },
+  inviteButtonSubtitle: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: 13,
   },
 
   // ── Hero card ──────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ import useNotesStore from "@/store/useNotesStore";
 import useRemindersStore from "@/store/useRemindersStore";
 import useNotificationStore from "@/store/useNotificationStore";
 import { useOrganisationStore } from "@/store/useOrganisationStore";
+import { useInvitationStore } from "@/store/useInvitationStore";
 import {
   initializeNotifications,
   scheduleDailyNotifications,
@@ -227,6 +228,7 @@ function AuthGate() {
         console.warn("[AuthGate] Failed to clear stores on sign-out:", e)
       );
       useOrganisationStore.getState().reset();
+      useInvitationStore.getState().reset();
       router.replace("/auth/login" as never);
     } else if (user && inAuthGroup) {
       if (recoveryInProgress.current) {
@@ -516,6 +518,10 @@ function AuthenticatedApp() {
       <Stack.Screen
         name="settings/organisation"
         options={{ title: "Organisation" }}
+      />
+      <Stack.Screen
+        name="settings/invitations"
+        options={{ title: "Invitations" }}
       />
     </Stack>
   );
