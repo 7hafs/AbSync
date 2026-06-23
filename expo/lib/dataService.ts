@@ -1179,14 +1179,10 @@ export async function removeOrganisationMember(membershipId: string): Promise<bo
     return false;
   }
 
-  // Clear the removed user's profile.organisation_id so they get a repair path
+  // The clear_profile_on_member_delete trigger automatically clears
+  // profile.organisation_id when the user has no remaining memberships.
   if (member) {
     const m = member as { user_id: string; organisation_id: string; role: string };
-    await supabase
-      .from("profiles")
-      .update({ organisation_id: null })
-      .eq("id", m.user_id);
-
     writeAuditLog("organisation_left", "organisation", m.organisation_id, {
       user_id: m.user_id,
       previous_role: m.role,
