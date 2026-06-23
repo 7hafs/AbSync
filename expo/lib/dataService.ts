@@ -253,6 +253,10 @@ export type AuditAction =
 /**
  * Write an audit log entry to the audit_logs table.
  * Fire-and-forget — never blocks the UI or throws.
+ *
+ * Uses requireOrganisationId() to guarantee organisation_id is never NULL.
+ * Before the RLS migration (003), existing NULL audit rows are backfilled
+ * by 003_preparation.sql so no rows are left orphaned.
  */
 export async function writeAuditLog(
   action: AuditAction,
@@ -263,9 +267,26 @@ export async function writeAuditLog(
 ): Promise<void> {
   try {
     const userId = await getUserIdAsync();
-    if (!userId) return;
+    if (!userId) {
+      console.warn("[dataService] Audit log: not authenticated, skipping entry");
+      return;
+    }
 
-    const orgId = await getOrganisationIdAsync();
+    let orgId: string;
+    try {
+      orgId = await requireOrganisationId();
+    } catch (err) {
+      console.warn(
+        "[dataService] Audit log BLOCKED: no organisation_id for user",
+        userId,
+        "—",
+        (err as Error).message,
+        "(This row will NOT be written. Sign out and back in to repair.)"
+      );
+      return;
+    }
+
+    console.log("[dataService] Audit log: writing", action, "for org", orgId);
 
     const { error } = await supabase.from("audit_logs" as any).insert({
       user_id: userId,
@@ -279,7 +300,7 @@ export async function writeAuditLog(
     } as any);
 
     if (error) {
-      console.warn("[dataService] Audit log write failed:", error.message);
+      console.warn("[dataService] Audit log write failed:", error.message, error.code);
     }
   } catch (err) {
     console.warn("[dataService] Audit log write error:", err);
