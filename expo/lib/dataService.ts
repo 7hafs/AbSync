@@ -29,6 +29,58 @@ async function getUserIdAsync(): Promise<string | null> {
   return data.session?.user?.id ?? null;
 }
 
+/** Get the current user's organisation_id from their profile. */
+async function getOrganisationIdAsync(): Promise<string | null> {
+  const userId = await getUserIdAsync();
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("organisation_id")
+    .eq("id", userId)
+    .single();
+
+  if (error || !data) {
+    console.warn("[dataService] Could not fetch organisation_id for user:", userId, error?.message);
+    return null;
+  }
+
+  const orgId = (data as { organisation_id: string | null }).organisation_id;
+  if (!orgId) {
+    console.warn("[dataService] User has no organisation_id set:", userId);
+  }
+  return orgId;
+}
+
+/**
+ * Get the current user's organisation_id, throwing if it is missing.
+ *
+ * Used by all entity write functions to guarantee records are never
+ * created with organisation_id = NULL.  A missing org_id at write time
+ * means the ensureProfile repair path did not run or failed — this is
+ * a hard precondition that must be met before any data can be written.
+ */
+async function requireOrganisationId(): Promise<string> {
+  const userId = await getUserIdAsync();
+  if (!userId) {
+    throw new Error("[dataService] requireOrganisationId: not authenticated — cannot write without a user");
+  }
+
+  const orgId = await getOrganisationIdAsync();
+  if (!orgId) {
+    console.error(
+      "[dataService] BLOCKED WRITE: user", userId,
+      "has no organisation_id. The repair path may have failed."
+    );
+    throw new Error(
+      "Your account is not linked to an organisation. Please sign out and sign back in to repair."
+    );
+  }
+
+  console.log("[dataService] requireOrganisationId: using organisation_id =", orgId);
+  return orgId;
+}
+
 // ── Retry & Resilience ───────────────────────────────────────────────────────
 
 const MAX_RETRIES = 3;
@@ -193,7 +245,10 @@ export type AuditAction =
   | "invitation_accepted"
   | "invitation_revoked"
   | "invitation_expired"
-  | "invitation_resent";
+  | "invitation_resent"
+  | "organisation_joined"
+  | "organisation_left"
+  | "organisation_transfer_blocked";
 
 /**
  * Write an audit log entry to the audit_logs table.
@@ -210,8 +265,11 @@ export async function writeAuditLog(
     const userId = await getUserIdAsync();
     if (!userId) return;
 
+    const orgId = await getOrganisationIdAsync();
+
     const { error } = await supabase.from("audit_logs" as any).insert({
       user_id: userId,
+      organisation_id: orgId,
       action,
       entity_type: entityType,
       entity_id: entityId,
@@ -380,6 +438,7 @@ function absenceToInsert(a: Absence): any {
     created_at: a.createdAt,
     documents: a.documents ? JSON.stringify(a.documents) : null,
     user_id: "", // filled by caller
+    organisation_id: "", // filled by caller
   };
 }
 
@@ -424,7 +483,15 @@ export async function upsertAbsence(absence: Absence): Promise<void> {
     return;
   }
 
-  const insert = { ...absenceToInsert(absence), user_id: userId };
+  let orgId: string;
+  try {
+    orgId = await requireOrganisationId();
+  } catch (err) {
+    console.error("[dataService] upsertAbsence BLOCKED:", (err as Error).message);
+    return;
+  }
+
+  const insert = { ...absenceToInsert(absence), user_id: userId, organisation_id: orgId };
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await withRetry(
@@ -444,7 +511,15 @@ export async function upsertAbsences(absences: Absence[]): Promise<void> {
     return;
   }
 
-  const rows = absences.map((a) => ({ ...absenceToInsert(a), user_id: userId }));
+  let orgId: string;
+  try {
+    orgId = await requireOrganisationId();
+  } catch (err) {
+    console.error("[dataService] upsertAbsences BLOCKED:", (err as Error).message);
+    return;
+  }
+
+  const rows = absences.map((a) => ({ ...absenceToInsert(a), user_id: userId, organisation_id: orgId }));
   const { error } = await supabase.from("absences").upsert(rows, { onConflict: "id" });
   if (error) {
     console.error("[dataService] upsertAbsences error:", error.message);
@@ -489,6 +564,7 @@ function staffToInsert(s: StaffMember): TablesInsert<"staff_members"> {
     active: s.active,
     created_at: s.createdAt,
     user_id: "",
+    organisation_id: "",
   };
 }
 
@@ -520,7 +596,15 @@ export async function upsertStaff(s: StaffMember): Promise<void> {
   const userId = await getUserIdAsync();
   if (!userId) return;
 
-  const insert = { ...staffToInsert(s), user_id: userId };
+  let orgId: string;
+  try {
+    orgId = await requireOrganisationId();
+  } catch (err) {
+    console.error("[dataService] upsertStaff BLOCKED:", (err as Error).message);
+    return;
+  }
+
+  const insert = { ...staffToInsert(s), user_id: userId, organisation_id: orgId };
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await withRetry(
@@ -536,7 +620,15 @@ export async function upsertStaffMembers(staff: StaffMember[]): Promise<void> {
   const userId = await getUserIdAsync();
   if (!userId) return;
 
-  const rows = staff.map((s) => ({ ...staffToInsert(s), user_id: userId }));
+  let orgId: string;
+  try {
+    orgId = await requireOrganisationId();
+  } catch (err) {
+    console.error("[dataService] upsertStaffMembers BLOCKED:", (err as Error).message);
+    return;
+  }
+
+  const rows = staff.map((s) => ({ ...staffToInsert(s), user_id: userId, organisation_id: orgId }));
   const { error } = await supabase.from("staff_members").upsert(rows, { onConflict: "id" });
   if (error) {
     console.error("[dataService] upsertStaffMembers error:", error.message);
@@ -573,6 +665,7 @@ function eventToInsert(e: EventType): TablesInsert<"calendar_events"> {
     is_recurring: e.isRecurring,
     recurring_pattern: e.recurringPattern ?? null,
     user_id: "",
+    organisation_id: "",
   };
 }
 
@@ -603,9 +696,17 @@ export async function upsertCalendarEvent(e: EventType): Promise<void> {
   const userId = await getUserIdAsync();
   if (!userId) return;
 
+  let orgId: string;
+  try {
+    orgId = await requireOrganisationId();
+  } catch (err) {
+    console.error("[dataService] upsertCalendarEvent BLOCKED:", (err as Error).message);
+    return;
+  }
+
   const { error } = await supabase
     .from("calendar_events")
-    .upsert({ ...eventToInsert(e), user_id: userId }, { onConflict: "id" });
+    .upsert({ ...eventToInsert(e), user_id: userId, organisation_id: orgId }, { onConflict: "id" });
   if (error) {
     console.error("[dataService] upsertCalendarEvent error:", error.message);
   }
@@ -633,6 +734,7 @@ function noteToInsert(n: NoteType): TablesInsert<"notes"> {
     created_at: n.createdAt,
     updated_at: n.updatedAt,
     user_id: "",
+    organisation_id: "",
   };
 }
 
@@ -662,9 +764,17 @@ export async function upsertNote(n: NoteType): Promise<void> {
   const userId = await getUserIdAsync();
   if (!userId) return;
 
+  let orgId: string;
+  try {
+    orgId = await requireOrganisationId();
+  } catch (err) {
+    console.error("[dataService] upsertNote BLOCKED:", (err as Error).message);
+    return;
+  }
+
   const { error } = await supabase
     .from("notes")
-    .upsert({ ...noteToInsert(n), user_id: userId }, { onConflict: "id" });
+    .upsert({ ...noteToInsert(n), user_id: userId, organisation_id: orgId }, { onConflict: "id" });
   if (error) {
     console.error("[dataService] upsertNote error:", error.message);
   }
@@ -691,6 +801,7 @@ function reminderToInsert(r: ReminderType): TablesInsert<"reminders"> {
     is_recurring: r.isRecurring,
     recurring_pattern: r.recurringPattern ?? null,
     user_id: "",
+    organisation_id: "",
   };
 }
 
@@ -719,9 +830,17 @@ export async function upsertReminder(r: ReminderType): Promise<void> {
   const userId = await getUserIdAsync();
   if (!userId) return;
 
+  let orgId: string;
+  try {
+    orgId = await requireOrganisationId();
+  } catch (err) {
+    console.error("[dataService] upsertReminder BLOCKED:", (err as Error).message);
+    return;
+  }
+
   const { error } = await supabase
     .from("reminders")
-    .upsert({ ...reminderToInsert(r), user_id: userId }, { onConflict: "id" });
+    .upsert({ ...reminderToInsert(r), user_id: userId, organisation_id: orgId }, { onConflict: "id" });
   if (error) {
     console.error("[dataService] upsertReminder error:", error.message);
   }
@@ -803,11 +922,20 @@ export async function upsertNotificationPreferences(prefs: NotificationPreferenc
   const userId = await getUserIdAsync();
   if (!userId) return;
 
+  let orgId: string;
+  try {
+    orgId = await requireOrganisationId();
+  } catch (err) {
+    console.error("[dataService] upsertNotificationPreferences BLOCKED:", (err as Error).message);
+    return;
+  }
+
   const { error } = await supabase
     .from("notification_preferences")
     .upsert(
       {
         user_id: userId,
+        organisation_id: orgId,
         morning_enabled: prefs.morningEnabled,
         evening_enabled: prefs.eveningEnabled,
         instant_alerts_enabled: prefs.instantAlertsEnabled,
@@ -852,30 +980,38 @@ export async function migrateLocalDataToSupabase(
     return;
   }
 
+  let orgId: string;
+  try {
+    orgId = await requireOrganisationId();
+  } catch (err) {
+    console.error("[dataService] migrateLocalDataToSupabase BLOCKED:", (err as Error).message);
+    return;
+  }
+
   console.log("[dataService] Migrating local data to Supabase for user:", userId);
 
   if (staff.length > 0) {
-    const staffRows = staff.map((s) => ({ ...staffToInsert(s), user_id: userId }));
+    const staffRows = staff.map((s) => ({ ...staffToInsert(s), user_id: userId, organisation_id: orgId }));
     await supabase.from("staff_members").upsert(staffRows, { onConflict: "id" });
   }
 
   if (absences.length > 0) {
-    const absenceRows = absences.map((a) => ({ ...absenceToInsert(a), user_id: userId }));
+    const absenceRows = absences.map((a) => ({ ...absenceToInsert(a), user_id: userId, organisation_id: orgId }));
     await supabase.from("absences").upsert(absenceRows, { onConflict: "id" });
   }
 
   if (notes.length > 0) {
-    const noteRows = notes.map((n) => ({ ...noteToInsert(n), user_id: userId }));
+    const noteRows = notes.map((n) => ({ ...noteToInsert(n), user_id: userId, organisation_id: orgId }));
     await supabase.from("notes").upsert(noteRows, { onConflict: "id" });
   }
 
   if (reminders.length > 0) {
-    const reminderRows = reminders.map((r) => ({ ...reminderToInsert(r), user_id: userId }));
+    const reminderRows = reminders.map((r) => ({ ...reminderToInsert(r), user_id: userId, organisation_id: orgId }));
     await supabase.from("reminders").upsert(reminderRows, { onConflict: "id" });
   }
 
   if (events.length > 0) {
-    const eventRows = events.map((e) => ({ ...eventToInsert(e), user_id: userId }));
+    const eventRows = events.map((e) => ({ ...eventToInsert(e), user_id: userId, organisation_id: orgId }));
     await supabase.from("calendar_events").upsert(eventRows, { onConflict: "id" });
   }
 
@@ -1275,12 +1411,31 @@ export async function getInvitationByToken(
 }
 
 /**
+ * Check if a user is the sole owner of an organisation (no other owners exist).
+ */
+async function isUserSoleOwner(userId: string, orgId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("organisation_members")
+    .select("id")
+    .eq("organisation_id", orgId)
+    .eq("role", "owner")
+    .neq("user_id", userId);
+
+  if (error) {
+    console.error("[dataService] isUserSoleOwner error:", error.message);
+    return true; // Err on the side of caution — block transfer if we can't verify
+  }
+
+  // If there are zero other owners, this user is the sole owner
+  return (data?.length ?? 0) === 0;
+}
+
+/**
  * Accept an invitation. This performs the full join flow:
  *  1. Look up invitation by token, validate it's still pending and not expired
- *  2. Remove the user from their current organisation (if any)
- *  3. Add the user to the invited organisation
- *  4. Update profile.organisation_id to the new org
- *  5. Mark the invitation as accepted
+ *  2. Validate user is not the sole owner of their current org (prevents ownerless orgs)
+ *  3. Atomically: leave old org, join new org, update profile, mark invitation
+ *  4. Audit log every step
  *
  * Returns { success: true, orgId } on success, or { success: false, error }.
  */
@@ -1317,13 +1472,13 @@ export async function acceptInvitation(
     };
   }
 
-  const orgId = invitation.organisation_id;
+  const targetOrgId = invitation.organisation_id;
 
   // Step 2: Check if user is already a member of the target org
   const { data: existingMember } = await supabase
     .from("organisation_members")
     .select("id")
-    .eq("organisation_id", orgId)
+    .eq("organisation_id", targetOrgId)
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -1331,39 +1486,86 @@ export async function acceptInvitation(
     return { success: false, error: "You are already a member of this organisation." };
   }
 
-  // Step 3: Remove from current organisation (if any)
+  // Step 3: Check current organisation membership (if any)
   const { data: oldMember } = await supabase
     .from("organisation_members")
-    .select("id, organisation_id")
+    .select("id, organisation_id, role")
     .eq("user_id", userId)
     .maybeSingle();
 
+  // Step 3a: If user is leaving an organisation, validate they aren't the sole owner
   if (oldMember) {
+    const oldOrgId = oldMember.organisation_id;
+    const isOwner = oldMember.role === "owner";
+
+    if (isOwner) {
+      const soleOwner = await isUserSoleOwner(userId, oldOrgId);
+      if (soleOwner) {
+        console.log("[dataService] TRANSFER BLOCKED: user", userId, "is sole owner of org", oldOrgId);
+        writeAuditLog("organisation_transfer_blocked", "organisation", oldOrgId, {
+          reason: "sole_owner_transfer",
+        }, {
+          user_id: userId,
+          target_organisation: targetOrgId,
+        });
+        return {
+          success: false,
+          error: "You are the only owner of your current organisation. " +
+            "Please assign another owner or archive the organisation before joining a new one.",
+        };
+      }
+    }
+  }
+
+  // Step 4: Atomic transfer — remove from old org, join new org, update profile
+  if (oldMember) {
+    const oldOrgId = oldMember.organisation_id;
     await supabase
       .from("organisation_members")
       .delete()
       .eq("id", oldMember.id);
-    console.log("[dataService] Removed user from old organisation:", oldMember.organisation_id);
+    console.log("[dataService] Removed user from old organisation:", oldOrgId);
+
+    // Audit log: left old org
+    writeAuditLog("organisation_left", "organisation", oldOrgId, {
+      user_id: userId,
+      previous_role: oldMember.role,
+    }, {
+      new_organisation: targetOrgId,
+    });
   }
 
-  // Step 4: Add to new organisation
+  // Step 5: Add to new organisation
   const { error: insertError } = await supabase
     .from("organisation_members")
     .insert({
-      organisation_id: orgId,
+      organisation_id: targetOrgId,
       user_id: userId,
       role: invitation.role,
     });
 
   if (insertError) {
     console.error("[dataService] acceptInvitation insert error:", insertError.message);
+    // Attempt to roll back — re-add to old org
+    if (oldMember) {
+      try {
+        await supabase.from("organisation_members").insert({
+          organisation_id: oldMember.organisation_id,
+          user_id: userId,
+          role: oldMember.role,
+        });
+        console.log("[dataService] ROLLBACK: re-added user to old org", oldMember.organisation_id);
+      } catch (rollbackErr) {
+        console.error("[dataService] ROLLBACK FAILED:", rollbackErr);
+      }
+    }
     return { success: false, error: "Failed to join organisation. Please try again." };
   }
 
-  // Step 5: Update profile.organisation_id
+  // Step 6: Update profile.organisation_id
   const { error: profileError } = await supabase
     .from("profiles")
-    .update({ organisation_id: orgId })
+    .update({ organisation_id: targetOrgId })
     .eq("id", userId);
 
   if (profileError) {
@@ -1371,21 +1573,28 @@ export async function acceptInvitation(
     // Non-fatal — membership exists, profile will be repaired on next login
   }
 
-  // Step 6: Mark invitation as accepted
+  // Step 7: Mark invitation as accepted
   await supabase
     .from("organisation_invitations")
     .update({ status: "accepted", updated_at: new Date().toISOString() })
     .eq("id", invitation.id);
 
-  // Audit log
+  // Audit log: accepted invitation + joined org
   writeAuditLog("invitation_accepted", "organisation_invitations", invitation.id, undefined, {
     user_id: userId,
-    organisation_id: orgId,
+    organisation_id: targetOrgId,
     role: invitation.role,
   });
 
-  console.log("[dataService] Invitation accepted: user=", userId, "org=", orgId, "role=", invitation.role);
-  return { success: true, orgId };
+  writeAuditLog("organisation_joined", "organisation", targetOrgId, undefined, {
+    user_id: userId,
+    role: invitation.role,
+    via: "invitation",
+    invitation_id: invitation.id,
+  });
+
+  console.log("[dataService] Invitation accepted: user=", userId, "org=", targetOrgId, "role=", invitation.role);
+  return { success: true, orgId: targetOrgId };
 }
 
 /**

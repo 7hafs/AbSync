@@ -22,7 +22,7 @@ import React, {
   useCallback,
 } from "react";
 import { supabase, getAuthRedirectUrl } from "@/lib/supabase";
-import { autoAcceptInvitations } from "@/lib/dataService";
+import { autoAcceptInvitations, acceptInvitation } from "@/lib/dataService";
 import { Session, User } from "@supabase/supabase-js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -95,9 +95,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /**
+   * Check for any pending invitation matching this user's email.
+   * If found, accept it and return the organisation ID.
+   * Returns null if no valid invitation exists.
+   */
+  const acceptPendingInvitation = useCallback(
+    async (userId: string, email: string): Promise<string | null> => {
+      try {
+        const { data, error } = await supabase
+          .from("organisation_invitations")
+          .select("token")
+          .eq("email", email.toLowerCase().trim())
+          .eq("status", "pending")
+          .order("created_at", { ascending: true })
+          .limit(1);
+
+        if (error || !data || data.length === 0) {
+          return null;
+        }
+
+        const token = (data[0] as { token: string }).token;
+        console.log("[auth:invite] Found pending invitation for", email, "- accepting");
+
+        const result = await acceptInvitation(token, userId, email);
+        if (result.success && result.orgId) {
+          console.log("[auth:invite] Accepted invitation - joined org:", result.orgId);
+          return result.orgId;
+        }
+
+        console.warn("[auth:invite] Failed to accept invitation:", result.error);
+        return null;
+      } catch (err) {
+        console.warn("[auth:invite] Invitation check failed:", err);
+        return null;
+      }
+    },
+    []
+  );
+
+  /**
    * Create an organisation + membership for a user, then update their
    * profile.organisation_id. Used by both the new-user path and the
    * repair path (when a profile exists but has no organisation).
+   *
+   * IMPORTANT: Callers MUST check for pending invitations BEFORE
+   * calling this to avoid creating orphan organisations.
    *
    * Returns the new organisation ID, or null on failure.
    */
@@ -166,30 +208,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const ensureProfile = useCallback(
     async (userId: string, email?: string, name?: string): Promise<AuthProfile | null> => {
-      // ── Step 1: Fetch existing profile ──────────────────────────────
+      const userEmail = email ?? "";
+
+      // Step 1: Fetch existing profile
       const existingProf = await fetchProfile(userId);
 
-      // ── Case A: Profile exists with valid organisation → done ───────
+      // Case A: Profile exists with valid organisation - done
       if (existingProf?.organisationId) {
         console.log("[auth:ensure] Profile exists with organisation:", existingProf.organisationId);
         return existingProf;
       }
 
-      // ── Case B: Profile exists but organisation_id is NULL → repair ─
+      // Case B: Profile exists but organisation_id is NULL - repair
       if (existingProf && !existingProf.organisationId) {
-        console.log("[auth:ensure] REPAIR PATH: profile exists but organisation_id is NULL — bootstrapping organisation");
+        console.log("[auth:ensure] REPAIR PATH: profile exists but organisation_id is NULL");
+
+        // BEFORE bootstrapping, check for pending invitations
+        if (userEmail) {
+          console.log("[auth:ensure] REPAIR: checking pending invitations for", userEmail);
+          const invitedOrgId = await acceptPendingInvitation(userId, userEmail);
+          if (invitedOrgId) {
+            console.log("[auth:ensure] REPAIR: joined via invitation - orgId =", invitedOrgId);
+            return { ...existingProf, organisationId: invitedOrgId };
+          }
+        }
+
+        console.log("[auth:ensure] REPAIR: no pending invitation - bootstrapping organisation");
         const orgId = await bootstrapOrganisation(userId, existingProf.name ?? name, existingProf.email ?? email);
         if (orgId) {
           console.log("[auth:ensure] REPAIR COMPLETE: organisation_id =", orgId);
           return { ...existingProf, organisationId: orgId };
         }
         console.error("[auth:ensure] REPAIR FAILED: could not create organisation for existing profile");
-        // Return the profile anyway so the user can still use the app
         return existingProf;
       }
 
-      // ── Case C: No profile exists → full creation path ──────────────
-      console.log("[auth:ensure] NEW USER: no profile found — creating profile + organisation + membership");
+      // Case C: No profile exists - full creation path
+      console.log("[auth:ensure] NEW USER: no profile found - creating profile");
 
       // Step C1: Create profile FIRST (without organisation_id)
       const { data: newProfile, error: profileError } = await supabase
@@ -211,12 +266,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const row = newProfile as { id: string; name: string | null; email: string | null; organisation_id: string | null };
       console.log("[auth:ensure] Profile created:", row.id);
 
-      // Step C2: Bootstrap organisation + membership + update organisation_id
-      const orgId = await bootstrapOrganisation(userId, name, email);
+      // Step C2: BEFORE bootstrapping, check for pending invitations
+      // This prevents creating an orphan organisation that gets immediately abandoned
+      let orgId: string | null = null;
+      if (userEmail) {
+        console.log("[auth:ensure] NEW USER: checking pending invitations for", userEmail);
+        orgId = await acceptPendingInvitation(userId, userEmail);
+        if (orgId) {
+          console.log("[auth:ensure] NEW USER: joined via invitation - orgId =", orgId, "(no org created)");
+        }
+      }
+
+      // Step C3: Only bootstrap a NEW organisation if no invitation was accepted
       if (!orgId) {
-        console.error("[auth:ensure] Organisation bootstrap FAILED after profile creation — user may need repair on next login");
-      } else {
-        console.log("[auth:ensure] NEW USER COMPLETE: profile + organisation + membership all created");
+        console.log("[auth:ensure] NEW USER: no pending invitation - bootstrapping new organisation");
+        orgId = await bootstrapOrganisation(userId, name, email);
+        if (!orgId) {
+          console.error("[auth:ensure] Organisation bootstrap FAILED after profile creation - user may need repair on next login");
+        } else {
+          console.log("[auth:ensure] NEW USER COMPLETE: profile + organisation + membership all created");
+        }
       }
 
       return {
@@ -226,7 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         organisationId: orgId,
       };
     },
-    [fetchProfile, bootstrapOrganisation]
+    [fetchProfile, bootstrapOrganisation, acceptPendingInvitation]
   );
 
   // ── Session listener ─────────────────────────────────────────────────────
@@ -275,8 +344,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log("[auth:session] Profile after ensure:", !!prof, "orgId:", prof?.organisationId ?? "null");
           setProfile(prof);
 
-          // Auto-accept any pending invitations matching this user's email
-          if (prof) {
+          // Auto-accept any pending invitations for EXISTING users who
+          // already have an organisation (new-user invitations are handled
+          // inside ensureProfile to prevent orphan organisations)
+          if (prof && prof.organisationId) {
             const email = prof.email ?? currentSession.user.email;
             if (email) {
               try {
@@ -319,8 +390,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log("[auth:session] Profile after SIGNED_IN:", !!prof);
           setProfile(prof);
 
-          // Auto-accept any pending invitations matching this user's email
-          if (prof) {
+          // Auto-accept any pending invitations for EXISTING users who
+          // already have an organisation (new-user invitations are handled
+          // inside ensureProfile to prevent orphan organisations)
+          if (prof && prof.organisationId) {
             const email = prof.email ?? newSession.user.email;
             if (email) {
               try {
