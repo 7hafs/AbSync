@@ -1,12 +1,13 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   View,
   useWindowDimensions,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
   Sunrise,
   Sunset,
@@ -30,6 +31,7 @@ import SyncIndicator from '@/components/SyncIndicator';
 import Colors, { absenceColors, dotColors } from '@/constants/colors';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import useThemeStore from '@/store/useThemeStore';
+import { loadAllFromSupabase } from '@/lib/syncService';
 import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
 import { AbsenceType } from '@/types';
@@ -70,9 +72,31 @@ export default function DashboardScreen() {
   const colors = Colors[colorScheme || 'light'];
   const { width } = useWindowDimensions();
 
-  const { absences } = useAbsenceStore();
-  const { staff } = useStaffStore();
+  const { absences, replaceAbsences } = useAbsenceStore();
+  const { staff, replaceStaff } = useStaffStore();
   const { profile } = useSupabaseAuth();
+
+  // ── Pull-to-refresh ───────────────────────────────────────────────────
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const data = await loadAllFromSupabase();
+      if (data.staff.length > 0) replaceStaff(data.staff);
+      if (data.absences.length > 0) replaceAbsences(data.absences);
+    } catch (err) {
+      console.warn('[Dashboard] Refresh failed:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [replaceAbsences, replaceStaff]);
+
+  // ── Focus refresh ─────────────────────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      onRefresh();
+    }, [onRefresh])
+  );
 
   const todayIso = todayDateString();
 
@@ -245,6 +269,9 @@ export default function DashboardScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
       >
         {/* Section 1: Today's Absences */}
         <View style={styles.section}>

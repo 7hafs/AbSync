@@ -22,6 +22,7 @@ import { startupIntegrityCheck, clearAllStores } from "@/lib/storageManager";
 import { AuthProvider, useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { loadAllFromSupabase, migrateIfNeeded } from "@/lib/syncService";
 import { fetchCalendarView, setSyncStatus, isSupabaseReachable } from "@/lib/dataService";
+import { useRealtime } from "@/hooks/useRealtime";
 import { supabase } from "@/lib/supabase";
 import { Absence } from "@/types";
 import { toDateString } from "@/utils/dateUtils";
@@ -302,7 +303,7 @@ function AuthenticatedApp() {
     isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
 
-  const { user } = useSupabaseAuth();
+  const { user, profile } = useSupabaseAuth();
 
   const staffStore = useStaffStore();
   const absenceStore = useAbsenceStore();
@@ -310,6 +311,12 @@ function AuthenticatedApp() {
   const notesStore = useNotesStore();
   const remindersStore = useRemindersStore();
   const notificationStore = useNotificationStore();
+
+  // ── Realtime subscriptions ────────────────────────────────────────────
+  // Subscribe to live changes for absences, staff_members, and calendar_events
+  // scoped to the user's organisation.  Updates are applied to Zustand stores
+  // instantly so all members see changes without manual refresh.
+  useRealtime(profile?.organisationId ?? null, user?.id ?? null);
 
   const loadData = useCallback(async () => {
     if (!user) {

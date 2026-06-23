@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -6,8 +6,9 @@ import {
   TextInput,
   TouchableOpacity,
   Text,
+  RefreshControl,
 } from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { Plus, Search, Upload } from "lucide-react-native";
 import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
@@ -16,6 +17,7 @@ import Colors from "@/constants/colors";
 import { useColorScheme } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import { StaffMember } from "@/types";
+import { loadAllFromSupabase } from "@/lib/syncService";
 
 
 export default function StaffScreen() {
@@ -25,11 +27,32 @@ export default function StaffScreen() {
   const colorScheme = isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
 
-  const { staff } = useStaffStore();
+  const { staff, replaceStaff } = useStaffStore();
   const canEdit = true;
   const [searchQuery, setSearchQuery] = useState<string>("");
   const params = useLocalSearchParams<{ filter?: string }>();
   const activeFilter = params.filter ?? 'active';
+  const [refreshing, setRefreshing] = useState(false);
+
+  // ── Pull-to-refresh ───────────────────────────────────────────────────
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const data = await loadAllFromSupabase();
+      if (data.staff.length > 0) replaceStaff(data.staff);
+    } catch (err) {
+      console.warn('[Staff] Refresh failed:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [replaceStaff]);
+
+  // ── Focus refresh ─────────────────────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      onRefresh();
+    }, [onRefresh])
+  );
 
   const filteredStaff = useMemo(() => {
     let base = staff;
@@ -104,6 +127,9 @@ export default function StaffScreen() {
       <FlatList
         data={filteredStaff}
         keyExtractor={(item) => item.id}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
         renderItem={({ item }) => (
           <TouchableOpacity
             testID={`staff-card-${item.id}`}

@@ -1,12 +1,13 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import {
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   View,
   useWindowDimensions,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
   Calendar,
   CalendarDays,
@@ -27,6 +28,7 @@ import useThemeStore from '@/store/useThemeStore';
 import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
 import useCalendarStore from '@/store/useCalendarStore';
+import { loadAllFromSupabase } from '@/lib/syncService';
 import WeeklyAbsenceView from '@/components/calendar/WeeklyAbsenceView';
 import DayView from '@/components/calendar/DayView';
 import { Absence, AbsenceType } from '@/types';
@@ -86,12 +88,35 @@ export default function CalendarScreen() {
   const isDesktop = width >= 1100;
   const isTablet = width >= 768;
 
-  const { absences } = useAbsenceStore();
-  const { staff } = useStaffStore();
-  const { calendarView, setCalendarView } = useCalendarStore();
+  const { absences, replaceAbsences } = useAbsenceStore();
+  const { staff, replaceStaff } = useStaffStore();
+  const { calendarView, setCalendarView, replaceEvents } = useCalendarStore();
 
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<CalendarViewMode>(calendarView || 'week');
+  const [refreshing, setRefreshing] = useState(false);
+
+  // ── Pull-to-refresh ───────────────────────────────────────────────────
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const data = await loadAllFromSupabase();
+      if (data.staff.length > 0) replaceStaff(data.staff);
+      if (data.absences.length > 0) replaceAbsences(data.absences);
+      if (data.calendarEvents.length > 0) replaceEvents(data.calendarEvents);
+    } catch (err) {
+      console.warn('[Calendar] Refresh failed:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [replaceAbsences, replaceStaff, replaceEvents]);
+
+  // ── Focus refresh ─────────────────────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      onRefresh();
+    }, [onRefresh])
+  );
 
   const handleViewChange = useCallback(
     (mode: CalendarViewMode) => {
@@ -269,6 +294,9 @@ export default function CalendarScreen() {
       <ScrollView
         contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
       >
         {/* Dashboard stats */}
         <View style={styles.dashboardRow}>

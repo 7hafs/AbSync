@@ -1,14 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   Alert,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   View,
   useWindowDimensions,
 } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
   Briefcase,
   CalendarDays,
@@ -30,6 +31,7 @@ import useThemeStore from '@/store/useThemeStore';
 import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
 import { useOrganisationRole } from '@/hooks/useOrganisationRole';
+import { loadAllFromSupabase } from '@/lib/syncService';
 
 import { Absence, AbsenceStatus, AbsenceType } from '@/types';
 import { toDateString, todayDateString, formatDateUKLong } from '@/utils/dateUtils';
@@ -92,10 +94,32 @@ export default function DayAbsencesScreen() {
     absences,
     deleteAbsence,
     updateAbsenceStatus,
+    replaceAbsences,
   } = useAbsenceStore();
 
   type FilterMode = 'all' | 'current' | 'upcoming' | 'completed';
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const [refreshing, setRefreshing] = useState(false);
+
+  // ── Pull-to-refresh ───────────────────────────────────────────────────
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const data = await loadAllFromSupabase();
+      if (data.absences.length > 0) replaceAbsences(data.absences);
+    } catch (err) {
+      console.warn('[DayAbsences] Refresh failed:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [replaceAbsences]);
+
+  // ── Focus refresh ─────────────────────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      onRefresh();
+    }, [onRefresh])
+  );
 
   const date = typeof params.date === 'string' ? params.date : todayDateString();
 
@@ -207,7 +231,12 @@ export default function DayAbsencesScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.content, isLargeScreen && styles.contentLarge]}>
+      <ScrollView
+        contentContainerStyle={[styles.content, isLargeScreen && styles.contentLarge]}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+      >
         <View style={styles.filterRow}>
           {(['all', 'current', 'upcoming', 'completed'] as FilterMode[]).map((mode) => {
             const active = mode === filterMode;
