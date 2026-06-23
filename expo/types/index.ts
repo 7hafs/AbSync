@@ -8,6 +8,7 @@ export type StaffMember = {
   phoneNumber?: string;
   active: boolean;
   createdAt: string;
+  updatedAt?: string;
 };
 
 export type CalendarAccessLevel = 'owner' | 'editor' | 'viewer';
@@ -49,6 +50,7 @@ export type Absence = {
   locked?: boolean;
   createdBy: string;
   createdAt: string;
+  updatedAt?: string;
   documents?: AbsenceDocument[];
 };
 
@@ -83,6 +85,7 @@ export type EventType = {
   personId?: string;
   isRecurring: boolean;
   recurringPattern?: 'daily' | 'weekly' | 'monthly';
+  updatedAt?: string;
 };
 
 export type NoteType = {
@@ -104,6 +107,7 @@ export type ReminderType = {
   isCompleted: boolean;
   isRecurring: boolean;
   recurringPattern?: 'daily' | 'weekly' | 'monthly';
+  updatedAt?: string;
 };
 
 export type NotificationPreferences = {

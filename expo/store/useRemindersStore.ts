@@ -72,7 +72,22 @@ const useRemindersStore = create<RemindersState>()(
             return;
           }
         }
-        set(() => ({ reminders: incoming }));
+        // Merge: keep local records whose updatedAt is newer than the server's version.
+        // This prevents stale Supabase refresh results from overwriting realtime updates.
+        const existingMap = new Map(get().reminders.map((r) => [r.id, r]));
+        const merged = incoming.map((incomingReminder) => {
+          const existing = existingMap.get(incomingReminder.id);
+          if (!existing) return incomingReminder;
+          if (
+            existing.updatedAt &&
+            incomingReminder.updatedAt &&
+            existing.updatedAt > incomingReminder.updatedAt
+          ) {
+            return existing; // realtime update beat the server query — keep local
+          }
+          return incomingReminder;
+        });
+        set(() => ({ reminders: merged }));
       },
       setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
 

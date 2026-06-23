@@ -123,7 +123,22 @@ const useStaffStore = create<StaffState>()(
             return;
           }
         }
-        set(() => ({ staff: incoming }));
+        // Merge: keep local records whose updatedAt is newer than the server's version.
+        // This prevents stale Supabase refresh results from overwriting realtime updates.
+        const existingMap = new Map(get().staff.map((s) => [s.id, s]));
+        const merged = incoming.map((incomingStaff) => {
+          const existing = existingMap.get(incomingStaff.id);
+          if (!existing) return incomingStaff;
+          if (
+            existing.updatedAt &&
+            incomingStaff.updatedAt &&
+            existing.updatedAt > incomingStaff.updatedAt
+          ) {
+            return existing; // realtime update beat the server query — keep local
+          }
+          return incomingStaff;
+        });
+        set(() => ({ staff: merged }));
       },
 
       setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),

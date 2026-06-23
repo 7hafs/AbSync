@@ -72,7 +72,22 @@ const useCalendarStore = create<CalendarState>()(
             return;
           }
         }
-        set(() => ({ events: incoming }));
+        // Merge: keep local records whose updatedAt is newer than the server's version.
+        // This prevents stale Supabase refresh results from overwriting realtime updates.
+        const existingMap = new Map(get().events.map((e) => [e.id, e]));
+        const merged = incoming.map((incomingEvent) => {
+          const existing = existingMap.get(incomingEvent.id);
+          if (!existing) return incomingEvent;
+          if (
+            existing.updatedAt &&
+            incomingEvent.updatedAt &&
+            existing.updatedAt > incomingEvent.updatedAt
+          ) {
+            return existing; // realtime update beat the server query — keep local
+          }
+          return incomingEvent;
+        });
+        set(() => ({ events: merged }));
       },
 
       setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),

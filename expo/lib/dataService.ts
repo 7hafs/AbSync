@@ -465,6 +465,7 @@ function absenceToInsert(a: Absence): any {
 
 /** Convert Supabase row to local Absence shape. */
 function absenceFromRow(row: SupabaseAbsence): Absence {
+  const r = row as Record<string, unknown>;
   let documents: Absence["documents"] = undefined;
   if (row.documents) {
     try {
@@ -484,6 +485,7 @@ function absenceFromRow(row: SupabaseAbsence): Absence {
     locked: row.locked ?? false,
     createdBy: row.created_by,
     createdAt: row.created_at ?? new Date().toISOString(),
+    updatedAt: (r.updated_at as string) ?? undefined,
     documents,
   };
 }
@@ -601,6 +603,7 @@ function staffFromRow(row: SupabaseStaffMember): StaffMember {
     phoneNumber: r.phone_number as string ?? undefined,
     active: row.active ?? true,
     createdAt: row.created_at ?? new Date().toISOString(),
+    updatedAt: (r.updated_at as string) ?? undefined,
   };
 }
 
@@ -691,6 +694,7 @@ function eventToInsert(e: EventType): TablesInsert<"calendar_events"> {
 }
 
 function eventFromRow(row: SupabaseCalendarEvent): EventType {
+  const r = row as Record<string, unknown>;
   return {
     id: row.id,
     title: row.title,
@@ -701,6 +705,7 @@ function eventFromRow(row: SupabaseCalendarEvent): EventType {
     personId: row.person_id ?? undefined,
     isRecurring: row.is_recurring ?? false,
     recurringPattern: (row.recurring_pattern as EventType["recurringPattern"]) ?? undefined,
+    updatedAt: (r.updated_at as string) ?? undefined,
   };
 }
 
@@ -725,18 +730,29 @@ export async function upsertCalendarEvent(e: EventType): Promise<void> {
     return;
   }
 
-  const { error } = await supabase
-    .from("calendar_events")
-    .upsert({ ...eventToInsert(e), user_id: userId, organisation_id: orgId }, { onConflict: "id" });
-  if (error) {
-    console.error("[dataService] upsertCalendarEvent error:", error.message);
+  const insert = { ...eventToInsert(e), user_id: userId, organisation_id: orgId };
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await withRetry(
+      () => supabase.from("calendar_events").upsert(insert as any, { onConflict: "id" }) as any,
+      "upsertCalendarEvent"
+    );
+  } catch {
+    await enqueueOffline("calendar_events", "upsert", insert);
   }
 }
 
 export async function deleteCalendarEventFromSupabase(id: string): Promise<void> {
-  const { error } = await supabase.from("calendar_events").delete().eq("id", id);
-  if (error) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await withRetry(
+      () => supabase.from("calendar_events").delete().eq("id", id) as any,
+      "deleteCalendarEvent"
+    );
+  } catch (err) {
+    const error = err as { message?: string };
     console.error("[dataService] deleteCalendarEvent error:", error.message);
+    await enqueueOffline("calendar_events", "delete", { id });
   }
 }
 
@@ -793,18 +809,29 @@ export async function upsertNote(n: NoteType): Promise<void> {
     return;
   }
 
-  const { error } = await supabase
-    .from("notes")
-    .upsert({ ...noteToInsert(n), user_id: userId, organisation_id: orgId }, { onConflict: "id" });
-  if (error) {
-    console.error("[dataService] upsertNote error:", error.message);
+  const insert = { ...noteToInsert(n), user_id: userId, organisation_id: orgId };
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await withRetry(
+      () => supabase.from("notes").upsert(insert as any, { onConflict: "id" }) as any,
+      "upsertNote"
+    );
+  } catch {
+    await enqueueOffline("notes", "upsert", insert);
   }
 }
 
 export async function deleteNoteFromSupabase(id: string): Promise<void> {
-  const { error } = await supabase.from("notes").delete().eq("id", id);
-  if (error) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await withRetry(
+      () => supabase.from("notes").delete().eq("id", id) as any,
+      "deleteNote"
+    );
+  } catch (err) {
+    const error = err as { message?: string };
     console.error("[dataService] deleteNote error:", error.message);
+    await enqueueOffline("notes", "delete", { id });
   }
 }
 
@@ -827,6 +854,7 @@ function reminderToInsert(r: ReminderType): TablesInsert<"reminders"> {
 }
 
 function reminderFromRow(row: SupabaseReminder): ReminderType {
+  const r = row as Record<string, unknown>;
   return {
     id: row.id,
     title: row.title,
@@ -835,6 +863,7 @@ function reminderFromRow(row: SupabaseReminder): ReminderType {
     isCompleted: row.is_completed ?? false,
     isRecurring: row.is_recurring ?? false,
     recurringPattern: (row.recurring_pattern as ReminderType["recurringPattern"]) ?? undefined,
+    updatedAt: (r.updated_at as string) ?? undefined,
   };
 }
 
@@ -859,18 +888,29 @@ export async function upsertReminder(r: ReminderType): Promise<void> {
     return;
   }
 
-  const { error } = await supabase
-    .from("reminders")
-    .upsert({ ...reminderToInsert(r), user_id: userId, organisation_id: orgId }, { onConflict: "id" });
-  if (error) {
-    console.error("[dataService] upsertReminder error:", error.message);
+  const insert = { ...reminderToInsert(r), user_id: userId, organisation_id: orgId };
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await withRetry(
+      () => supabase.from("reminders").upsert(insert as any, { onConflict: "id" }) as any,
+      "upsertReminder"
+    );
+  } catch {
+    await enqueueOffline("reminders", "upsert", insert);
   }
 }
 
 export async function deleteReminderFromSupabase(id: string): Promise<void> {
-  const { error } = await supabase.from("reminders").delete().eq("id", id);
-  if (error) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await withRetry(
+      () => supabase.from("reminders").delete().eq("id", id) as any,
+      "deleteReminder"
+    );
+  } catch (err) {
+    const error = err as { message?: string };
     console.error("[dataService] deleteReminder error:", error.message);
+    await enqueueOffline("reminders", "delete", { id });
   }
 }
 
@@ -1553,11 +1593,16 @@ async function isUserSoleOwner(userId: string, orgId: string): Promise<boolean> 
 }
 
 /**
- * Accept an invitation. This performs the full join flow:
- *  1. Look up invitation by token, validate it's still pending and not expired
- *  2. Validate user is not the sole owner of their current org (prevents ownerless orgs)
- *  3. Atomically: leave old org, join new org, update profile, mark invitation
- *  4. Audit log every step
+ * Accept an invitation using the atomic database RPC function.
+ *
+ * All steps (membership removal, insertion, profile update, invitation
+ * status update, audit logging) run in a single database transaction.
+ * If any step fails, the entire operation rolls back — no partial state.
+ *
+ * The RPC enforces:
+ *  - Invitation must be pending, not expired, and email must match
+ *  - User cannot already be a member of the target org
+ *  - Sole owners cannot transfer (blocked with audit log written server-side)
  *
  * Returns { success: true, orgId } on success, or { success: false, error }.
  */
@@ -1566,157 +1611,34 @@ export async function acceptInvitation(
   userId: string,
   userEmail: string
 ): Promise<{ success: boolean; orgId?: string; error?: string }> {
-  // Step 1: Look up invitation
-  const invitation = await getInvitationByToken(token);
-  if (!invitation) {
-    return { success: false, error: "Invitation not found. It may have been revoked." };
-  }
+  console.log("[dataService] acceptInvitation RPC: token=", token.substring(0, 8) + "...", "userId=", userId);
 
-  if (invitation.status !== "pending") {
-    return { success: false, error: `This invitation is ${invitation.status}.` };
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase.rpc as any)("accept_invitation_rpc", {
+    p_token: token,
+    p_user_id: userId,
+    p_user_email: userEmail,
+  });
 
-  if (new Date(invitation.expires_at) < new Date()) {
-    // Mark as expired
-    await supabase
-      .from("organisation_invitations")
-      .update({ status: "expired", updated_at: new Date().toISOString() })
-      .eq("id", invitation.id);
-    writeAuditLog("invitation_expired", "organisation_invitations", invitation.id);
-    return { success: false, error: "This invitation has expired." };
-  }
-
-  // Check email match
-  if (invitation.email.toLowerCase() !== userEmail.toLowerCase()) {
+  if (error) {
+    console.error("[dataService] acceptInvitation RPC error:", error.message, error.code);
+    // Network or RPC-level failure — the database transaction was not committed
     return {
       success: false,
-      error: `This invitation is for ${invitation.email}. Your account email is ${userEmail}.`,
+      error: "Failed to process invitation. Please check your connection and try again.",
     };
   }
 
-  const targetOrgId = invitation.organisation_id;
+  // The RPC returns a jsonb object: { success, org_id?, error? }
+  const result = data as unknown as { success: boolean; org_id?: string; error?: string };
 
-  // Step 2: Check if user is already a member of the target org
-  const { data: existingMember } = await supabase
-    .from("organisation_members")
-    .select("id")
-    .eq("organisation_id", targetOrgId)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (existingMember) {
-    return { success: false, error: "You are already a member of this organisation." };
+  if (!result.success) {
+    console.log("[dataService] acceptInvitation RPC returned failure:", result.error);
+    return { success: false, error: result.error ?? "Unknown error" };
   }
 
-  // Step 3: Check current organisation membership (if any)
-  const { data: oldMember } = await supabase
-    .from("organisation_members")
-    .select("id, organisation_id, role")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  // Step 3a: If user is leaving an organisation, validate they aren't the sole owner
-  if (oldMember) {
-    const oldOrgId = oldMember.organisation_id;
-    const isOwner = oldMember.role === "owner";
-
-    if (isOwner) {
-      const soleOwner = await isUserSoleOwner(userId, oldOrgId);
-      if (soleOwner) {
-        console.log("[dataService] TRANSFER BLOCKED: user", userId, "is sole owner of org", oldOrgId);
-        writeAuditLog("organisation_transfer_blocked", "organisation", oldOrgId, {
-          reason: "sole_owner_transfer",
-        }, {
-          user_id: userId,
-          target_organisation: targetOrgId,
-        });
-        return {
-          success: false,
-          error: "You are the only owner of your current organisation. " +
-            "Please assign another owner or archive the organisation before joining a new one.",
-        };
-      }
-    }
-  }
-
-  // Step 4: Atomic transfer — remove from old org, join new org, update profile
-  if (oldMember) {
-    const oldOrgId = oldMember.organisation_id;
-    await supabase
-      .from("organisation_members")
-      .delete()
-      .eq("id", oldMember.id);
-    console.log("[dataService] Removed user from old organisation:", oldOrgId);
-
-    // Audit log: left old org
-    writeAuditLog("organisation_left", "organisation", oldOrgId, {
-      user_id: userId,
-      previous_role: oldMember.role,
-    }, {
-      new_organisation: targetOrgId,
-    });
-  }
-
-  // Step 5: Add to new organisation
-  const { error: insertError } = await supabase
-    .from("organisation_members")
-    .insert({
-      organisation_id: targetOrgId,
-      user_id: userId,
-      role: invitation.role,
-    });
-
-  if (insertError) {
-    console.error("[dataService] acceptInvitation insert error:", insertError.message);
-    // Attempt to roll back — re-add to old org
-    if (oldMember) {
-      try {
-        await supabase.from("organisation_members").insert({
-          organisation_id: oldMember.organisation_id,
-          user_id: userId,
-          role: oldMember.role,
-        });
-        console.log("[dataService] ROLLBACK: re-added user to old org", oldMember.organisation_id);
-      } catch (rollbackErr) {
-        console.error("[dataService] ROLLBACK FAILED:", rollbackErr);
-      }
-    }
-    return { success: false, error: "Failed to join organisation. Please try again." };
-  }
-
-  // Step 6: Update profile.organisation_id
-  const { error: profileError } = await supabase
-    .from("profiles")
-    .update({ organisation_id: targetOrgId })
-    .eq("id", userId);
-
-  if (profileError) {
-    console.error("[dataService] acceptInvitation profile update error:", profileError.message);
-    // Non-fatal — membership exists, profile will be repaired on next login
-  }
-
-  // Step 7: Mark invitation as accepted
-  await supabase
-    .from("organisation_invitations")
-    .update({ status: "accepted", updated_at: new Date().toISOString() })
-    .eq("id", invitation.id);
-
-  // Audit log: accepted invitation + joined org
-  writeAuditLog("invitation_accepted", "organisation_invitations", invitation.id, undefined, {
-    user_id: userId,
-    organisation_id: targetOrgId,
-    role: invitation.role,
-  });
-
-  writeAuditLog("organisation_joined", "organisation", targetOrgId, undefined, {
-    user_id: userId,
-    role: invitation.role,
-    via: "invitation",
-    invitation_id: invitation.id,
-  });
-
-  console.log("[dataService] Invitation accepted: user=", userId, "org=", targetOrgId, "role=", invitation.role);
-  return { success: true, orgId: targetOrgId };
+  console.log("[dataService] acceptInvitation RPC success: orgId=", result.org_id, "role=", userEmail);
+  return { success: true, orgId: result.org_id };
 }
 
 /**

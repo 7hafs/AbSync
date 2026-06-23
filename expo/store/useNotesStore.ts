@@ -73,7 +73,22 @@ const useNotesStore = create<NotesState>()(
             return;
           }
         }
-        set(() => ({ notes: incoming }));
+        // Merge: keep local records whose updatedAt is newer than the server's version.
+        // This prevents stale Supabase refresh results from overwriting realtime updates.
+        const existingMap = new Map(get().notes.map((n) => [n.id, n]));
+        const merged = incoming.map((incomingNote) => {
+          const existing = existingMap.get(incomingNote.id);
+          if (!existing) return incomingNote;
+          if (
+            existing.updatedAt &&
+            incomingNote.updatedAt &&
+            existing.updatedAt > incomingNote.updatedAt
+          ) {
+            return existing; // realtime update beat the server query — keep local
+          }
+          return incomingNote;
+        });
+        set(() => ({ notes: merged }));
       },
       setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),
 

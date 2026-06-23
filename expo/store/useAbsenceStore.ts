@@ -257,7 +257,22 @@ const useAbsenceStore = create<AbsenceState>()(
           seen.add(a.id);
           return true;
         });
-        set(() => ({ absences: deduplicated }));
+        // Merge: keep local records whose updatedAt is newer than the server's version.
+        // This prevents stale Supabase refresh results from overwriting realtime updates.
+        const existingMap = new Map(get().absences.map((a) => [a.id, a]));
+        const merged = deduplicated.map((incomingAbsence) => {
+          const existing = existingMap.get(incomingAbsence.id);
+          if (!existing) return incomingAbsence;
+          if (
+            existing.updatedAt &&
+            incomingAbsence.updatedAt &&
+            existing.updatedAt > incomingAbsence.updatedAt
+          ) {
+            return existing; // realtime update beat the server query — keep local
+          }
+          return incomingAbsence;
+        });
+        set(() => ({ absences: merged }));
       },
 
       setLoaded: (loaded) => set(() => ({ isLoaded: loaded })),

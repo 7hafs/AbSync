@@ -50,6 +50,7 @@ function absenceFromPayload(row: Record<string, unknown>): Absence {
     locked: (row.locked as boolean) ?? false,
     createdBy: row.created_by as string,
     createdAt: (row.created_at as string) ?? new Date().toISOString(),
+    updatedAt: (row.updated_at as string) ?? undefined,
     documents,
   };
 }
@@ -65,6 +66,7 @@ function staffFromPayload(row: Record<string, unknown>): StaffMember {
     phoneNumber: (row.phone_number as string) ?? undefined,
     active: (row.active as boolean) ?? true,
     createdAt: (row.created_at as string) ?? new Date().toISOString(),
+    updatedAt: (row.updated_at as string) ?? undefined,
   };
 }
 
@@ -79,6 +81,7 @@ function eventFromPayload(row: Record<string, unknown>): EventType {
     personId: (row.person_id as string) ?? undefined,
     isRecurring: (row.is_recurring as boolean) ?? false,
     recurringPattern: (row.recurring_pattern as EventType["recurringPattern"]) ?? undefined,
+    updatedAt: (row.updated_at as string) ?? undefined,
   };
 }
 
