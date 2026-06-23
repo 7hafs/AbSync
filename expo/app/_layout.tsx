@@ -72,7 +72,7 @@ export default function RootLayout() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 function AuthGate() {
-  const { isLoading, user } = useSupabaseAuth();
+  const { isLoading, user, profile } = useSupabaseAuth();
   const segments = useSegments();
   const router = useRouter();
   const recoveryHandled = useRef(false);
@@ -80,6 +80,7 @@ function AuthGate() {
   const [showLoadingUI, setShowLoadingUI] = useState(false);
 
   const inAuthGroup = segments[0] === "auth";
+  const inOnboarding = segments[0] === "onboarding";
 
   // ── Loading indicator fallback ────────────────────────────────────────
   // After 2 seconds of isLoading, show a spinner instead of a blank white
@@ -238,13 +239,21 @@ function AuthGate() {
       }
       console.log("[AuthGate:routing] user && inAuth, no recovery → redirect to dashboard");
       router.replace("/" as never);
+    } else if (user && !inAuthGroup && !inOnboarding && profile && profile.workspaceMode === null) {
+      // Brand-new user who hasn't chosen a workspace mode — send to onboarding
+      console.log("[AuthGate:routing] user authenticated but workspace_mode=null → onboarding");
+      router.replace("/onboarding/workspace" as never);
+    } else if (user && inOnboarding && profile && profile.workspaceMode !== null) {
+      // User has set up their workspace, redirect to dashboard
+      console.log("[AuthGate:routing] workspace mode set → redirect to dashboard");
+      router.replace("/" as never);
     } else if (user && !inAuthGroup && recoveryInProgress.current) {
       console.log("[AuthGate:routing] user && !inAuth && recoveryInProgress → navigate to /auth/reset-password");
       router.replace("/auth/reset-password" as never);
     } else {
       console.log("[AuthGate:routing] No routing action needed");
     }
-  }, [isLoading, user, inAuthGroup]);
+  }, [isLoading, user, inAuthGroup, inOnboarding, profile]);
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -529,6 +538,10 @@ function AuthenticatedApp() {
       <Stack.Screen
         name="settings/invitations"
         options={{ title: "Invitations" }}
+      />
+      <Stack.Screen
+        name="onboarding/workspace"
+        options={{ headerShown: false, gestureEnabled: false }}
       />
     </Stack>
   );

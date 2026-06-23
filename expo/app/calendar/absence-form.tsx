@@ -34,6 +34,9 @@ import Colors, { absenceColors } from '@/constants/colors';
 import useThemeStore from '@/store/useThemeStore';
 import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+
+// No-op: we need useSupabaseAuth for reading workspaceMode to auto-approve in personal mode.
 
 import { Absence, AbsenceDocument, AbsenceDuration, AbsenceStatus, AbsenceType, StaffMember } from '@/types';
 import { useColorScheme } from 'react-native';
@@ -306,6 +309,7 @@ export default function AbsenceFormScreen() {
         notes: notes.trim(),
         cover: cover.trim() || null,
         createdBy: 'Manager',
+        autoApprove: useSupabaseAuth().profile?.workspaceMode === 'personal',
       });
 
       // Attach documents to first absence if multi-day

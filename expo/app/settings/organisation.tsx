@@ -73,7 +73,13 @@ export default function OrganisationScreen() {
     updateName,
   } = useOrganisationStore();
 
+  const {
+    setWorkspaceMode,
+    switchToPersonalWorkspace,
+  } = useSupabaseAuth();
+
   const [isEditing, setIsEditing] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
 
   const [memberMenuOpen, setMemberMenuOpen] = useState<string | null>(null);
@@ -84,6 +90,49 @@ export default function OrganisationScreen() {
       loadOrganisation(profile.organisationId);
     }
   }, [profile?.organisationId, loadOrganisation]);
+
+  // ── Leave organisation ──────────────────────────────────────────────────
+
+  const handleLeaveOrganisation = useCallback(async () => {
+    if (!organisation) return;
+
+    if (userIsOwner) {
+      const otherOwners = members.filter(
+        (m) => m.role === 'owner' && m.user_id !== profile?.id
+      );
+      if (otherOwners.length === 0 && members.length > 1) {
+        Alert.alert(
+          'Cannot Leave',
+          'You are the only owner. Assign another owner before leaving, or remove all members first.'
+        );
+        return;
+      }
+    }
+
+    Alert.alert(
+      'Leave Organisation',
+      `Are you sure you want to leave ${organisation.name}? Your personal data will remain safe.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            setIsLeaving(true);
+            try {
+              await switchToPersonalWorkspace();
+              Alert.alert('Left Organisation', 'You are now in Personal Workspace mode.');
+              router.back();
+            } catch (err) {
+              Alert.alert('Error', 'Failed to leave organisation. Please try again.');
+            } finally {
+              setIsLeaving(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [organisation, userIsOwner, members, profile, switchToPersonalWorkspace, router]);
 
   // ── Edit name handlers ──────────────────────────────────────────────────
 
@@ -750,6 +799,34 @@ export default function OrganisationScreen() {
           )}
         </View>
 
+        {/* ── Leave Organisation ───────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={[
+              styles.leaveButton,
+              { backgroundColor: "rgba(239, 68, 68, 0.08)", borderColor: "rgba(239, 68, 68, 0.2)" },
+            ]}
+            onPress={handleLeaveOrganisation}
+            disabled={isLeaving}
+            activeOpacity={0.7}
+          >
+            {isLeaving ? (
+              <ActivityIndicator size="small" color="#EF4444" />
+            ) : (
+              <>
+                <Trash2 size={20} color="#EF4444" />
+                <ThemedText weight="semibold" style={{ color: "#EF4444" }}>
+                  Leave Organisation
+                </ThemedText>
+              </>
+            )}
+          </TouchableOpacity>
+          <ThemedText variant="secondary" size="small" style={{ textAlign: "center", marginTop: 8 }}>
+            Leaving will switch you to Personal Workspace mode.{'\n'}
+            All your personal data remains safe.
+          </ThemedText>
+        </View>
+
         {/* ── Footer ──────────────────────────────────────────────────────── */}
         <View style={styles.footer}>
           <ThemedText
@@ -1053,5 +1130,14 @@ const styles = StyleSheet.create({
   footerText: {
     textAlign: "center",
     lineHeight: 20,
+  },
+  leaveButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
   },
 });

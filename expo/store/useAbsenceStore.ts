@@ -16,6 +16,8 @@ export type CreateAbsenceInput = {
   notes: string;
   cover?: string | null;
   createdBy: string;
+  /** If true, auto-approve the absence (used in personal workspace). */
+  autoApprove?: boolean;
 };
 
 export type AbsenceValidationResult = {
@@ -112,6 +114,7 @@ const useAbsenceStore = create<AbsenceState>()(
 
       createAbsences: (input) => {
         const createdAt = new Date().toISOString();
+        const effectiveStatus: AbsenceStatus = input.autoApprove ? "Approved" : "Pending";
         const nextAbsences: Absence[] = input.dates.map((date) => {
           let id: string;
           do {
@@ -125,7 +128,7 @@ const useAbsenceStore = create<AbsenceState>()(
             type: input.type,
             date,
             duration: input.duration,
-            status: "Pending" as const,
+            status: effectiveStatus,
             cover: input.cover ?? null,
             notes: input.notes,
             createdBy: input.createdBy,

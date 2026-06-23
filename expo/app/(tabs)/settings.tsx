@@ -62,7 +62,7 @@ export default function SettingsScreen() {
     setEveningEnabled,
     setInstantAlertsEnabled,
   } = useNotificationStore();
-  const { profile, signOut } = useSupabaseAuth();
+  const { profile, signOut, setWorkspaceMode, switchToPersonalWorkspace, refreshProfile } = useSupabaseAuth();
   const colorScheme =
     isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
@@ -225,6 +225,99 @@ export default function SettingsScreen() {
             </View>
             <ChevronRight size={20} color={colors.secondaryText} />
           </TouchableOpacity>
+
+          {/* Workspace mode display */}
+          <View
+            style={[
+              styles.settingItem,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.settingContent}>
+              {profile?.workspaceMode === 'personal' ? (
+                <User size={22} color={colors.primary} />
+              ) : (
+                <Building2 size={22} color="#6366F1" />
+              )}
+              <View style={styles.settingTextContainer}>
+                <ThemedText weight="semibold">
+                  Current Mode: {profile?.workspaceMode === 'personal'
+                    ? 'Personal Workspace'
+                    : profile?.workspaceMode === 'organisation'
+                      ? 'Organisation Workspace'
+                      : 'Not set'}
+                </ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  {profile?.workspaceMode === 'personal'
+                    ? 'All features unlocked. No teams or approvals.'
+                    : profile?.workspaceMode === 'organisation'
+                      ? 'Shared calendar, roles, and invitations active.'
+                      : 'Choose your workspace mode.'}
+                </ThemedText>
+              </View>
+            </View>
+          </View>
+
+          {profile?.workspaceMode === 'organisation' && (
+            <TouchableOpacity
+              style={[
+                styles.settingItem,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+              onPress={() => {
+                Alert.alert(
+                  'Switch to Personal Workspace',
+                  'This will leave your current organisation and switch to a personal workspace. Your personal data remains safe. Continue?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Switch',
+                      onPress: async () => {
+                        try {
+                          await switchToPersonalWorkspace();
+                          Alert.alert('Switched', 'You are now in Personal Workspace mode.');
+                        } catch {
+                          Alert.alert('Error', 'Failed to switch workspace mode.');
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+            >
+              <View style={styles.settingContent}>
+                <User size={22} color={colors.primary} />
+                <View style={styles.settingTextContainer}>
+                  <ThemedText weight="semibold">Switch to Personal Workspace</ThemedText>
+                  <ThemedText variant="secondary" size="small">
+                    Leave your organisation and work independently
+                  </ThemedText>
+                </View>
+              </View>
+              <ChevronRight size={20} color={colors.secondaryText} />
+            </TouchableOpacity>
+          )}
+
+          {profile?.workspaceMode === 'personal' && (
+            <TouchableOpacity
+              style={[
+                styles.settingItem,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+              onPress={() => router.push('/settings/organisation' as any)}
+            >
+              <View style={styles.settingContent}>
+                <Building2 size={22} color="#6366F1" />
+                <View style={styles.settingTextContainer}>
+                  <ThemedText weight="semibold">Switch to Organisation Workspace</ThemedText>
+                  <ThemedText variant="secondary" size="small">
+                    Create or join an organisation for team features
+                  </ThemedText>
+                </View>
+              </View>
+              <ChevronRight size={20} color={colors.secondaryText} />
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[

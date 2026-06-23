@@ -8,6 +8,7 @@
  * - Sign-out
  * - Session persistence via SecureStore (survives app restart/update/reinstall)
  * - User profile (name + email) in state
+ * - Workspace mode: personal vs organisation
  *
  * Usage:
  *   Wrap your root layout in <AuthProvider>.
@@ -32,6 +33,8 @@ export interface AuthProfile {
   name: string | null;
   email: string | null;
   organisationId: string | null;
+  /** Workspace mode: 'personal' or 'organisation'. null = onboarding needed. */
+  workspaceMode: 'personal' | 'organisation' | null;
 }
 
 export interface AuthState {
@@ -56,6 +59,10 @@ export interface AuthState {
   signOut: () => Promise<void>;
   /** Refresh the profile from the database. */
   refreshProfile: () => Promise<void>;
+  /** Set the workspace mode (and create personal org if switching to personal). */
+  setWorkspaceMode: (mode: 'personal' | 'organisation', orgId?: string) => Promise<void>;
+  /** Switch to personal workspace (leave current org if in one). */
+  switchToPersonalWorkspace: () => Promise<void>;
 }
 
 // ── Context ──────────────────────────────────────────────────────────────────
@@ -74,9 +81,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ── Profile helpers ──────────────────────────────────────────────────────
 
   const fetchProfile = useCallback(async (userId: string): Promise<AuthProfile | null> => {
-    const { data, error } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase
       .from("profiles")
-      .select("id, name, email, organisation_id")
+      .select("id, name, email, organisation_id, workspace_mode") as any)
       .eq("id", userId)
       .single();
 
@@ -85,14 +93,102 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return null;
     }
 
-    const row = data as { id: string; name: string | null; email: string | null; organisation_id: string | null };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = data as any as { id: string; name: string | null; email: string | null; organisation_id: string | null; workspace_mode: string | null };
+    const wm = row.workspace_mode;
+    const validMode = (wm === 'personal' || wm === 'organisation') ? (wm as 'personal' | 'organisation') : null;
     return {
       id: row.id,
       name: row.name,
       email: row.email,
       organisationId: row.organisation_id,
+      workspaceMode: validMode,
     };
   }, []);
+
+  /**
+   * Create a hidden personal organisation for a user (one per user).
+   * This is NOT a real shared organisation — it exists purely so that
+   * requireOrganisationId() and RLS work identically for personal users.
+   * Returns the synthetic organisation_id, or null on failure.
+   */
+  const createPersonalOrg = useCallback(
+    async (userId: string): Promise<string | null> => {
+      try {
+        // Check if personal org already exists
+        const { data: existing } = await supabase
+          .from("organisations")
+          .select("id")
+          .eq("owner_id", userId)
+          .eq("name", "Personal Workspace")
+          .limit(1);
+
+        if (existing && existing.length > 0) {
+          const orgId = (existing[0] as { id: string }).id;
+          console.log("[auth:personal] Reusing existing personal org:", orgId);
+
+          // Ensure membership exists
+          const { error: memberErr } = await supabase
+            .from("organisation_members")
+            .upsert({
+              organisation_id: orgId,
+              user_id: userId,
+              role: "owner",
+            }, { onConflict: "organisation_id,user_id" });
+          if (memberErr) {
+            console.warn("[auth:personal] Membership upsert failed:", memberErr.message);
+          }
+
+          // Update profile
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase.from("profiles") as any).update({
+            organisation_id: orgId,
+            workspace_mode: "personal",
+          }).eq("id", userId);
+
+          return orgId;
+        }
+
+        // Create new personal org
+        const { data: org, error: orgError } = await supabase
+          .from("organisations")
+          .insert({
+            name: "Personal Workspace",
+            owner_id: userId,
+          })
+          .select("id")
+          .single();
+
+        if (orgError) {
+          console.error("[auth:personal] Failed to create personal org:", orgError.message);
+          return null;
+        }
+
+        const orgId = org.id;
+        console.log("[auth:personal] Created personal org:", orgId);
+
+        // Create membership
+        await supabase.from("organisation_members").insert({
+          organisation_id: orgId,
+          user_id: userId,
+          role: "owner",
+        });
+
+        // Update profile
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase.from("profiles") as any).update({
+          organisation_id: orgId,
+          workspace_mode: "personal",
+        }).eq("id", userId);
+
+        return orgId;
+      } catch (err) {
+        console.error("[auth:personal] createPersonalOrg threw:", err);
+        return null;
+      }
+    },
+    []
+  );
 
   /**
    * Check for any pending invitation matching this user's email.
@@ -135,7 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /**
    * Create an organisation + membership for a user, then update their
-   * profile.organisation_id. Used by both the new-user path and the
+   * profile.organisation_id. Used by the org workspace setup and the
    * repair path (when a profile exists but has no organisation).
    *
    * IMPORTANT: Callers MUST check for pending invitations BEFORE
@@ -147,7 +243,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (userId: string, name?: string, email?: string): Promise<string | null> => {
       const orgName = name ?? email ?? "My Organisation";
 
-      // Step A: Create the organisation (profile already exists at this point)
+      // Step A: Create the organisation
       let organisationId: string | null = null;
       try {
         const { data: org, error: orgError } = await supabase
@@ -186,11 +282,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn("[auth:membership] Membership creation THREW:", err);
       }
 
-      // Step C: Update profile.organisation_id
+      // Step C: Update profile.organisation_id and workspace_mode
       try {
-        const { error: updateError } = await supabase
-          .from("profiles")
-          .update({ organisation_id: organisationId })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: updateError } = await (supabase
+          .from("profiles") as any)
+          .update({ organisation_id: organisationId, workspace_mode: "organisation" })
           .eq("id", userId);
         if (updateError) {
           console.error("[auth:profile] Update organisation_id FAILED:", updateError.message, updateError.code);
@@ -206,6 +303,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  /**
+   * Ensure a profile row exists for the given user, handling three cases:
+   *
+   * A) Profile exists with workspace_mode set   → return it (done)
+   * B) Profile exists, workspace_mode is NULL   → backfill for legacy, or return
+   *    (null mode = onboarding needed for brand-new users)
+   * C) No profile exists                          → create minimal profile,
+   *    return with workspaceMode=null (onboarding will handle workspace setup)
+   *
+   * IMPORTANT: This function does NOT auto-create organisations any more.
+   * Workspace setup happens via the onboarding screen which calls
+   * setWorkspaceMode() or switchToPersonalWorkspace().
+   */
   const ensureProfile = useCallback(
     async (userId: string, email?: string, name?: string): Promise<AuthProfile | null> => {
       const userEmail = email ?? "";
@@ -213,40 +323,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Step 1: Fetch existing profile
       const existingProf = await fetchProfile(userId);
 
-      // Case A: Profile exists with valid organisation - done
-      if (existingProf?.organisationId) {
-        console.log("[auth:ensure] Profile exists with organisation:", existingProf.organisationId);
-        return existingProf;
-      }
+      // Case A: Profile exists with workspace mode set — done
+      if (existingProf && existingProf.workspaceMode !== null) {
+        console.log("[auth:ensure] Profile exists with workspace_mode:", existingProf.workspaceMode, "orgId:", existingProf.organisationId);
 
-      // Case B: Profile exists but organisation_id is NULL - repair
-      if (existingProf && !existingProf.organisationId) {
-        console.log("[auth:ensure] REPAIR PATH: profile exists but organisation_id is NULL");
-
-        // BEFORE bootstrapping, check for pending invitations
-        if (userEmail) {
-          console.log("[auth:ensure] REPAIR: checking pending invitations for", userEmail);
+        // If org mode but no org_id, try to repair by checking invitations
+        if (existingProf.workspaceMode === 'organisation' && !existingProf.organisationId && userEmail) {
           const invitedOrgId = await acceptPendingInvitation(userId, userEmail);
           if (invitedOrgId) {
-            console.log("[auth:ensure] REPAIR: joined via invitation - orgId =", invitedOrgId);
+            console.log("[auth:ensure] REPAIR: joined via invitation — orgId =", invitedOrgId);
             return { ...existingProf, organisationId: invitedOrgId };
+          }
+          // No invitation found, bootstrap org
+          const orgId = await bootstrapOrganisation(userId, existingProf.name ?? name, existingProf.email ?? email);
+          if (orgId) {
+            return { ...existingProf, organisationId: orgId };
           }
         }
 
-        console.log("[auth:ensure] REPAIR: no pending invitation - bootstrapping organisation");
-        const orgId = await bootstrapOrganisation(userId, existingProf.name ?? name, existingProf.email ?? email);
-        if (orgId) {
-          console.log("[auth:ensure] REPAIR COMPLETE: organisation_id =", orgId);
-          return { ...existingProf, organisationId: orgId };
-        }
-        console.error("[auth:ensure] REPAIR FAILED: could not create organisation for existing profile");
         return existingProf;
       }
 
-      // Case C: No profile exists - full creation path
-      console.log("[auth:ensure] NEW USER: no profile found - creating profile");
+      // Case B: Profile exists but workspace_mode is NULL
+      if (existingProf && existingProf.workspaceMode === null) {
+        console.log("[auth:ensure] Profile exists but workspace_mode is NULL");
 
-      // Step C1: Create profile FIRST (without organisation_id)
+        // If profile has an organisation_id, this is a legacy user — backfill mode
+        if (existingProf.organisationId) {
+          console.log("[auth:ensure] Legacy user — backfilling workspace_mode to 'organisation'");
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase.from("profiles") as any).update({ workspace_mode: "organisation" }).eq("id", userId);
+          return { ...existingProf, workspaceMode: "organisation" as const };
+        }
+
+        // No organisation_id and no workspace_mode — brand-new user who hasn't
+        // gone through onboarding yet. Return with workspaceMode=null so the
+        // onboarding screen can display.
+        console.log("[auth:ensure] Brand-new user — workspace_mode=null (onboarding needed)");
+        return existingProf;
+      }
+
+      // Case C: No profile exists — create minimal profile without bootstrapping
+      console.log("[auth:ensure] NEW USER: no profile found — creating minimal profile");
+
       const { data: newProfile, error: profileError } = await supabase
         .from("profiles")
         .insert({
@@ -255,7 +374,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name: name ?? null,
           access_level: "owner",
         })
-        .select("id, name, email, organisation_id")
+        .select("id, name, email, organisation_id, workspace_mode")
         .single();
 
       if (profileError) {
@@ -263,36 +382,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
 
-      const row = newProfile as { id: string; name: string | null; email: string | null; organisation_id: string | null };
-      console.log("[auth:ensure] Profile created:", row.id);
-
-      // Step C2: BEFORE bootstrapping, check for pending invitations
-      // This prevents creating an orphan organisation that gets immediately abandoned
-      let orgId: string | null = null;
-      if (userEmail) {
-        console.log("[auth:ensure] NEW USER: checking pending invitations for", userEmail);
-        orgId = await acceptPendingInvitation(userId, userEmail);
-        if (orgId) {
-          console.log("[auth:ensure] NEW USER: joined via invitation - orgId =", orgId, "(no org created)");
-        }
-      }
-
-      // Step C3: Only bootstrap a NEW organisation if no invitation was accepted
-      if (!orgId) {
-        console.log("[auth:ensure] NEW USER: no pending invitation - bootstrapping new organisation");
-        orgId = await bootstrapOrganisation(userId, name, email);
-        if (!orgId) {
-          console.error("[auth:ensure] Organisation bootstrap FAILED after profile creation - user may need repair on next login");
-        } else {
-          console.log("[auth:ensure] NEW USER COMPLETE: profile + organisation + membership all created");
-        }
-      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = newProfile as any as { id: string; name: string | null; email: string | null; organisation_id: string | null; workspace_mode: string | null };
+      console.log("[auth:ensure] Minimal profile created:", row.id, "— workspace_mode=null (onboarding needed)");
 
       return {
         id: row.id,
         name: row.name,
         email: row.email,
-        organisationId: orgId,
+        organisationId: null,
+        workspaceMode: null,
       };
     },
     [fetchProfile, bootstrapOrganisation, acceptPendingInvitation]
@@ -304,9 +403,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const mountTime = Date.now();
     console.log("[auth:session] AuthProvider mounted — starting getSession()...");
 
-    // Safety timeout: if getSession() hangs (e.g. network token refresh
-    // for an expired session), force isLoading to false after 8 seconds
-    // so the user doesn't see a permanent white screen.
     const loadingTimeout = setTimeout(() => {
       setIsLoading((prev) => {
         if (prev) {
@@ -318,7 +414,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     }, 8000);
 
-    // On mount, get the current session (restored from SecureStore)
     supabase.auth.getSession().then(({ data: { session: currentSession }, error: sessionErr }) => {
       const elapsed = Date.now() - mountTime;
       clearTimeout(loadingTimeout);
@@ -338,15 +433,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
 
       if (currentSession?.user) {
-        // Use ensureProfile (not fetchProfile) so the repair path runs
-        // for legacy/partially-created users on app restart
         ensureProfile(currentSession.user.id).then(async (prof) => {
-          console.log("[auth:session] Profile after ensure:", !!prof, "orgId:", prof?.organisationId ?? "null");
+          console.log("[auth:session] Profile after ensure:", !!prof, "mode:", prof?.workspaceMode ?? "null", "orgId:", prof?.organisationId ?? "null");
           setProfile(prof);
 
-          // Auto-accept any pending invitations for EXISTING users who
-          // already have an organisation (new-user invitations are handled
-          // inside ensureProfile to prevent orphan organisations)
+          // Auto-accept any pending invitations for users with an organisation
           if (prof && prof.organisationId) {
             const email = prof.email ?? currentSession.user.email;
             if (email) {
@@ -354,7 +445,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const result = await autoAcceptInvitations(prof.id, email);
                 if (result.accepted) {
                   console.log("[auth:session] Auto-accepted invitation for org:", result.orgId);
-                  // Refresh profile to get the updated organisation_id
                   const updatedProf = await fetchProfile(prof.id);
                   if (updatedProf) setProfile(updatedProf);
                 }
@@ -373,7 +463,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     });
 
-    // Listen for auth state changes (sign in, sign out, token refresh)
+    // Listen for auth state changes
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
         console.log("[auth:session] onAuthStateChange:", event, "hasSession:", !!newSession);
@@ -387,12 +477,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             newSession.user.email,
             newSession.user.user_metadata?.name as string | undefined
           );
-          console.log("[auth:session] Profile after SIGNED_IN:", !!prof);
+          console.log("[auth:session] Profile after SIGNED_IN:", !!prof, "mode:", prof?.workspaceMode ?? "null");
           setProfile(prof);
 
-          // Auto-accept any pending invitations for EXISTING users who
-          // already have an organisation (new-user invitations are handled
-          // inside ensureProfile to prevent orphan organisations)
           if (prof && prof.organisationId) {
             const email = prof.email ?? newSession.user.email;
             if (email) {
@@ -400,7 +487,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const result = await autoAcceptInvitations(prof.id, email);
                 if (result.accepted) {
                   console.log("[auth:session] SIGNED_IN auto-accepted invitation for org:", result.orgId);
-                  // Refresh profile to get the updated organisation_id
                   const updatedProf = await fetchProfile(prof.id);
                   if (updatedProf) setProfile(updatedProf);
                 }
@@ -451,7 +537,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return error.message;
         }
 
-        // Profile will be created automatically by the onAuthStateChange listener
         return null;
       } catch (err) {
         const message = err instanceof Error ? err.message : "An unknown error occurred";
@@ -461,7 +546,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsProcessing(false);
       }
     },
-
     []
   );
 
@@ -534,6 +618,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (prof) setProfile(prof);
   }, [user, fetchProfile]);
 
+  /** Set the workspace mode and optionally link to an org. */
+  const setWorkspaceModeFn = useCallback(
+    async (mode: 'personal' | 'organisation', orgId?: string) => {
+      if (!user) return;
+      console.log("[auth] setWorkspaceMode:", mode, "orgId:", orgId ?? "none");
+
+      if (mode === 'personal') {
+        const personalOrgId = await createPersonalOrg(user.id);
+        if (personalOrgId) {
+          const prof = await fetchProfile(user.id);
+          if (prof) setProfile(prof);
+        }
+      } else {
+        // Organisation mode — org may be provided (joining) or needs creation
+        let finalOrgId = orgId ?? null;
+
+        if (!finalOrgId) {
+          // Create a new organisation
+          finalOrgId = await bootstrapOrganisation(user.id, profile?.name ?? undefined, profile?.email ?? undefined);
+        }
+
+        if (finalOrgId) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase.from("profiles") as any).update({
+            organisation_id: finalOrgId,
+            workspace_mode: "organisation",
+          }).eq("id", user.id);
+
+          const prof = await fetchProfile(user.id);
+          if (prof) setProfile(prof);
+        }
+      }
+    },
+    [user, profile, createPersonalOrg, bootstrapOrganisation, fetchProfile]
+  );
+
+  /** Switch to personal workspace (leave current org if in one). */
+  const switchToPersonalWorkspace = useCallback(async () => {
+    if (!user) return;
+    console.log("[auth] switchToPersonalWorkspace");
+
+    // If currently in an org, leave all memberships
+    if (profile?.organisationId) {
+      try {
+        const { data: memberships } = await supabase
+          .from("organisation_members")
+          .select("id")
+          .eq("user_id", user.id);
+
+        if (memberships) {
+          for (const m of memberships as { id: string }[]) {
+            await supabase.from("organisation_members").delete().eq("id", m.id);
+          }
+        }
+      } catch (err) {
+        console.warn("[auth] Failed to clear memberships:", err);
+      }
+    }
+
+    // Now switch to personal workspace (this creates personal org + sets mode)
+    await setWorkspaceModeFn('personal');
+  }, [user, profile, setWorkspaceModeFn]);
+
   // ── Context value ────────────────────────────────────────────────────────
 
   const value = useMemo<AuthState>(
@@ -548,8 +695,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       forgotPassword,
       signOut,
       refreshProfile,
+      setWorkspaceMode: setWorkspaceModeFn,
+      switchToPersonalWorkspace,
     }),
-    [isLoading, session, user, profile, isProcessing, signUp, signIn, forgotPassword, signOut, refreshProfile]
+    [isLoading, session, user, profile, isProcessing, signUp, signIn, forgotPassword, signOut, refreshProfile, setWorkspaceModeFn, switchToPersonalWorkspace]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

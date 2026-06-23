@@ -115,3 +115,6 @@ export type NotificationPreferences = {
   eveningEnabled: boolean;
   instantAlertsEnabled: boolean;
 };
+
+/** Workspace mode: personal (single-user) or organisation (multi-user with roles). */
+export type WorkspaceMode = 'personal' | 'organisation';

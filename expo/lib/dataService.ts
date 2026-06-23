@@ -1672,3 +1672,99 @@ export async function autoAcceptInvitations(
     orgId: result.orgId,
   };
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// WORKSPACE OPERATIONS
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Leave the current organisation by removing all memberships for the user.
+ * The clear_profile_on_member_delete trigger will clear profile.organisation_id.
+ * Returns true on success.
+ */
+export async function leaveOrganisation(userId: string): Promise<boolean> {
+  try {
+    console.log("[dataService] leaveOrganisation for user:", userId);
+
+    // Get all memberships for this user
+    const { data: memberships, error: fetchError } = await supabase
+      .from("organisation_members")
+      .select("id, organisation_id, role")
+      .eq("user_id", userId);
+
+    if (fetchError) {
+      console.error("[dataService] leaveOrganisation fetch error:", fetchError.message);
+      return false;
+    }
+
+    if (!memberships || memberships.length === 0) {
+      console.log("[dataService] leaveOrganisation: no memberships to leave");
+      return true;
+    }
+
+    // Delete each membership (the trigger will clear profile.organisation_id
+    // when the last membership row is removed)
+    for (const m of memberships as { id: string; organisation_id: string; role: string }[]) {
+      const { error: deleteError } = await supabase
+        .from("organisation_members")
+        .delete()
+        .eq("id", m.id);
+
+      if (deleteError) {
+        console.error("[dataService] leaveOrganisation delete error:", deleteError.message);
+        return false;
+      }
+
+      writeAuditLog("organisation_left", "organisation", m.organisation_id, {
+        user_id: userId,
+        previous_role: m.role,
+        left: true,
+      });
+    }
+
+    console.log("[dataService] leaveOrganisation: removed", memberships.length, "memberships");
+    return true;
+  } catch (err) {
+    console.error("[dataService] leaveOrganisation threw:", err);
+    return false;
+  }
+}
+
+/**
+ * Check if the current user is in personal workspace mode.
+ * Reads the workspace_mode column from profiles.
+ */
+export async function isPersonalWorkspace(): Promise<boolean> {
+  const userId = await getUserIdAsync();
+  if (!userId) return false;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase
+    .from("profiles")
+    .select("workspace_mode") as any)
+    .eq("id", userId)
+    .single();
+
+  if (error || !data) return false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data as any).workspace_mode === 'personal';
+}
+
+/**
+ * Check if the current user is in organisation workspace mode.
+ */
+export async function isOrganisationWorkspace(): Promise<boolean> {
+  const userId = await getUserIdAsync();
+  if (!userId) return false;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase
+    .from("profiles")
+    .select("workspace_mode") as any)
+    .eq("id", userId)
+    .single();
+
+  if (error || !data) return false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data as any).workspace_mode === 'organisation';
+}
