@@ -1107,6 +1107,111 @@ export async function updateOrganisationName(
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// ORGANISATION MEMBER MANAGEMENT
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Update a member's role. Only the owner can do this.
+ * Returns true on success.
+ */
+export async function updateMemberRole(
+  membershipId: string,
+  newRole: string
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("organisation_members")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .update({ role: newRole, updated_at: new Date().toISOString() } as any)
+    .eq("id", membershipId);
+
+  if (error) {
+    console.error("[dataService] updateMemberRole error:", error.message);
+    return false;
+  }
+
+  writeAuditLog("staff_updated", "organisation_members", membershipId, undefined, {
+    role: newRole,
+  });
+  return true;
+}
+
+/**
+ * Remove a member from the organisation.
+ * Does NOT check for sole-owner safety — callers MUST validate before calling.
+ * Returns true on success.
+ */
+export async function removeOrganisationMember(membershipId: string): Promise<boolean> {
+  // First get the member info for audit logging
+  const { data: member } = await supabase
+    .from("organisation_members")
+    .select("user_id, organisation_id, role")
+    .eq("id", membershipId)
+    .single();
+
+  const { error } = await supabase
+    .from("organisation_members")
+    .delete()
+    .eq("id", membershipId);
+
+  if (error) {
+    console.error("[dataService] removeOrganisationMember error:", error.message);
+    return false;
+  }
+
+  // Clear the removed user's profile.organisation_id so they get a repair path
+  if (member) {
+    const m = member as { user_id: string; organisation_id: string; role: string };
+    await supabase
+      .from("profiles")
+      .update({ organisation_id: null })
+      .eq("id", m.user_id);
+
+    writeAuditLog("organisation_left", "organisation", m.organisation_id, {
+      user_id: m.user_id,
+      previous_role: m.role,
+      removed: true,
+    });
+  }
+
+  return true;
+}
+
+/**
+ * Check if a member is the sole owner of an organisation.
+ * Returns true if they are the ONLY owner.
+ */
+export async function isMemberSoleOwner(
+  membershipId: string,
+  orgId: string
+): Promise<boolean> {
+  // Get the member's user_id first
+  const { data: member } = await supabase
+    .from("organisation_members")
+    .select("user_id, role")
+    .eq("id", membershipId)
+    .single();
+
+  if (!member || (member as { role: string }).role !== "owner") {
+    return false;
+  }
+
+  // Count other owners
+  const { data, error } = await supabase
+    .from("organisation_members")
+    .select("id")
+    .eq("organisation_id", orgId)
+    .eq("role", "owner")
+    .neq("id", membershipId);
+
+  if (error) {
+    console.error("[dataService] isMemberSoleOwner error:", error.message);
+    return true; // Err on side of caution
+  }
+
+  return (data?.length ?? 0) === 0;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // ORGANISATION INVITATIONS
 // ═════════════════════════════════════════════════════════════════════════════
 

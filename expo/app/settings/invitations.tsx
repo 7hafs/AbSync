@@ -615,9 +615,8 @@ export default function InvitationsScreen() {
         {/* ── Footer ───────────────────────────────────────────────────────── */}
         <View style={styles.footer}>
           <ThemedText variant="secondary" size="small" style={styles.footerText}>
-            Invitations are matched by email. When the invited user signs in,
-            they automatically join your organisation. Role-based permissions
-            will be enforced in a future update.
+            Managers can invite staff and other managers. Only the owner
+            can grant owner permissions to another member.
           </ThemedText>
         </View>
       </ScrollView>
@@ -836,6 +835,17 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(100, 116, 139, 0.2)",
     marginLeft: 13,
     marginVertical: 4,
+  },
+
+  // ── Permission denied state ─────────────────────────────────────────────
+  deniedTitle: {
+    fontSize: 18,
+    marginTop: 8,
+  },
+  deniedSubtext: {
+    textAlign: "center",
+    lineHeight: 22,
+    marginTop: 4,
   },
 
   // ── Empty / error states ────────────────────────────────────────────────

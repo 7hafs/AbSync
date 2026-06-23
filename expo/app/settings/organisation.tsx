@@ -26,28 +26,26 @@ import {
   AlertTriangle,
   ChevronRight,
   UserPlus,
+  ShieldAlert,
+  MoreVertical,
+  Trash2,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react-native";
 import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
 import Colors from "@/constants/colors";
 import useThemeStore from "@/store/useThemeStore";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
+import { useOrganisationRole } from "@/hooks/useOrganisationRole";
+import { ROLE_LABEL, ROLE_COLOR } from "@/lib/roles";
+import { updateMemberRole, removeOrganisationMember, isMemberSoleOwner } from "@/lib/dataService";
 import {
   useOrganisationStore,
   MemberInfo,
 } from "@/store/useOrganisationStore";
 
-const ROLE_LABELS: Record<string, string> = {
-  owner: "Owner",
-  manager: "Manager",
-  staff: "Staff",
-};
 
-const ROLE_COLORS: Record<string, string> = {
-  owner: "#0F766E",
-  manager: "#6366F1",
-  staff: "#64748B",
-};
 
 export default function OrganisationScreen() {
   const router = useRouter();
@@ -58,6 +56,13 @@ export default function OrganisationScreen() {
   const colors = Colors[colorScheme || "light"];
 
   const { profile } = useSupabaseAuth();
+  const {
+    role,
+    isOwner: userIsOwner,
+    canInvite,
+    canEditOrganisation,
+    canManageMembers,
+  } = useOrganisationRole();
   const {
     organisation,
     members,
@@ -70,6 +75,8 @@ export default function OrganisationScreen() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+
+  const [memberMenuOpen, setMemberMenuOpen] = useState<string | null>(null);
 
   // Load organisation data when we have a profile with org ID
   useEffect(() => {
@@ -100,6 +107,100 @@ export default function OrganisationScreen() {
     }
   }, [organisation, nameDraft, updateName]);
 
+  // ── Member actions ──────────────────────────────────────────────────────
+
+  const handlePromote = useCallback(async (member: MemberInfo) => {
+    if (!organisation) return;
+    setMemberMenuOpen(null);
+
+    const nextRole = member.role === "staff" ? "manager" : "owner";
+    const label = ROLE_LABEL[nextRole as keyof typeof ROLE_LABEL] ?? nextRole;
+
+    Alert.alert(
+      "Change Role",
+      `Promote ${member.profile_name ?? member.user_id} to ${label}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Promote",
+          onPress: async () => {
+            const ok = await updateMemberRole(member.id, nextRole);
+            if (ok && profile?.organisationId) {
+              loadOrganisation(profile.organisationId);
+            } else {
+              Alert.alert("Error", "Failed to update member role. Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  }, [organisation, profile?.organisationId, loadOrganisation]);
+
+  const handleDemote = useCallback(async (member: MemberInfo) => {
+    if (!organisation) return;
+    setMemberMenuOpen(null);
+
+    const nextRole = member.role === "owner" ? "manager" : "staff";
+    const label = ROLE_LABEL[nextRole as keyof typeof ROLE_LABEL] ?? nextRole;
+
+    Alert.alert(
+      "Change Role",
+      `Demote ${member.profile_name ?? member.user_id} to ${label}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Demote",
+          style: "destructive",
+          onPress: async () => {
+            const ok = await updateMemberRole(member.id, nextRole);
+            if (ok && profile?.organisationId) {
+              loadOrganisation(profile.organisationId);
+            } else {
+              Alert.alert("Error", "Failed to update member role. Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  }, [organisation, profile?.organisationId, loadOrganisation]);
+
+  const handleRemove = useCallback(async (member: MemberInfo) => {
+    if (!organisation) return;
+    setMemberMenuOpen(null);
+
+    // Check sole owner safety
+    if (member.role === "owner") {
+      const soleOwner = await isMemberSoleOwner(member.id, organisation.id);
+      if (soleOwner) {
+        Alert.alert(
+          "Cannot Remove",
+          "This member is the only owner of the organisation. Assign another owner before removing them."
+        );
+        return;
+      }
+    }
+
+    Alert.alert(
+      "Remove Member",
+      `Remove ${member.profile_name ?? member.user_id} from the organisation? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            const ok = await removeOrganisationMember(member.id);
+            if (ok && profile?.organisationId) {
+              loadOrganisation(profile.organisationId);
+            } else {
+              Alert.alert("Error", "Failed to remove member. Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  }, [organisation, profile?.organisationId, loadOrganisation]);
+
   // ── Derived data ────────────────────────────────────────────────────────
 
   const owner = members.find((m) => m.role === "owner");
@@ -112,18 +213,31 @@ export default function OrganisationScreen() {
 
   // ── Render helpers ──────────────────────────────────────────────────────
 
-  const roleBadge = (role: string) => {
-    const label = ROLE_LABELS[role] ?? role;
-    const roleColor = ROLE_COLORS[role] ?? colors.secondaryText;
+  const roleBadge = (memberRole: string, isCurrentUser: boolean) => {
+    const label = ROLE_LABEL[memberRole as keyof typeof ROLE_LABEL] ?? memberRole;
+    const roleColor = ROLE_COLOR[memberRole as keyof typeof ROLE_COLOR] ?? colors.secondaryText;
     return (
-      <View style={[styles.roleBadge, { backgroundColor: roleColor + "18" }]}>
-        <ThemedText
-          size="small"
-          weight="semibold"
-          style={{ color: roleColor, fontSize: 11 }}
-        >
-          {label}
-        </ThemedText>
+      <View style={styles.badgeRow}>
+        <View style={[styles.roleBadge, { backgroundColor: roleColor + "18" }]}>
+          <ThemedText
+            size="small"
+            weight="semibold"
+            style={{ color: roleColor, fontSize: 11 }}
+          >
+            {label}
+          </ThemedText>
+        </View>
+        {isCurrentUser && (
+          <View style={[styles.youBadge, { backgroundColor: colors.primary + "18" }]}>
+            <ThemedText
+              size="small"
+              weight="semibold"
+              style={{ color: colors.primary, fontSize: 10 }}
+            >
+              You
+            </ThemedText>
+          </View>
+        )}
       </View>
     );
   };
@@ -244,6 +358,19 @@ export default function OrganisationScreen() {
           >
             <Building2 size={36} color={colors.primary} />
 
+            {/* Role badge for current user */}
+            {role && (
+              <View style={[styles.roleBadge, { backgroundColor: (ROLE_COLOR[role] ?? colors.secondaryText) + "18" }]}>
+                <ThemedText
+                  size="small"
+                  weight="semibold"
+                  style={{ color: ROLE_COLOR[role] ?? colors.secondaryText, fontSize: 11 }}
+                >
+                  {ROLE_LABEL[role] ?? role}
+                </ThemedText>
+              </View>
+            )}
+
             {isEditing ? (
               <View style={styles.editNameRow}>
                 <TextInput
@@ -287,13 +414,15 @@ export default function OrganisationScreen() {
             ) : (
               <TouchableOpacity
                 style={styles.nameRow}
-                onPress={startEditing}
-                activeOpacity={0.7}
+                onPress={canEditOrganisation ? startEditing : undefined}
+                activeOpacity={canEditOrganisation ? 0.7 : 1}
               >
                 <ThemedText size="xlarge" weight="bold" style={styles.orgName}>
                   {organisation.name}
                 </ThemedText>
-                <Pencil size={16} color={colors.secondaryText} />
+                {canEditOrganisation && (
+                  <Pencil size={16} color={colors.secondaryText} />
+                )}
               </TouchableOpacity>
             )}
 
@@ -309,27 +438,51 @@ export default function OrganisationScreen() {
         </View>
 
         {/* ── Invite Members Action ──────────────────────────────────────── */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={[
-              styles.inviteButton,
-              { backgroundColor: colors.primary },
-            ]}
-            onPress={() => router.push("/settings/invitations" as never)}
-            activeOpacity={0.8}
-          >
-            <UserPlus size={22} color="white" />
-            <View style={styles.inviteButtonTextContainer}>
-              <ThemedText weight="bold" style={styles.inviteButtonTitle}>
-                Invite Members
-              </ThemedText>
-              <ThemedText style={styles.inviteButtonSubtitle}>
-                Add team members to your organisation
-              </ThemedText>
+        {canInvite && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={[
+                styles.inviteButton,
+                { backgroundColor: colors.primary },
+              ]}
+              onPress={() => router.push("/settings/invitations" as never)}
+              activeOpacity={0.8}
+            >
+              <UserPlus size={22} color="white" />
+              <View style={styles.inviteButtonTextContainer}>
+                <ThemedText weight="bold" style={styles.inviteButtonTitle}>
+                  Invite Members
+                </ThemedText>
+                <ThemedText style={styles.inviteButtonSubtitle}>
+                  Add team members to your organisation
+                </ThemedText>
+              </View>
+              <ChevronRight size={20} color="rgba(255,255,255,0.7)" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── Staff: no invite permission notice ─────────────────────────── */}
+        {!canInvite && (
+          <View style={styles.section}>
+            <View
+              style={[
+                styles.permissionNotice,
+                { backgroundColor: "rgba(239, 68, 68, 0.06)", borderColor: "rgba(239, 68, 68, 0.15)" },
+              ]}
+            >
+              <ShieldAlert size={18} color="#EF4444" />
+              <View style={{ flex: 1 }}>
+                <ThemedText size="small" weight="semibold" style={{ color: "#EF4444" }}>
+                  Invitations restricted
+                </ThemedText>
+                <ThemedText size="small" variant="secondary">
+                  Only owners and managers can invite new members.
+                </ThemedText>
+              </View>
             </View>
-            <ChevronRight size={20} color="rgba(255,255,255,0.7)" />
-          </TouchableOpacity>
-        </View>
+          </View>
+        )}
 
         {/* ── Overview Cards ──────────────────────────────────────────────── */}
         <View style={styles.section}>
@@ -460,7 +613,7 @@ export default function OrganisationScreen() {
                     <ThemedText weight="semibold">
                       {member.profile_name ?? "Unknown User"}
                     </ThemedText>
-                    {roleBadge(member.role)}
+                    {roleBadge(member.role, member.user_id === profile?.id)}
                   </View>
                   {member.profile_email && (
                     <ThemedText variant="secondary" size="small">
@@ -468,6 +621,67 @@ export default function OrganisationScreen() {
                     </ThemedText>
                   )}
                 </View>
+
+                {/* Owner-only: member management menu */}
+                {canManageMembers && member.user_id !== profile?.id && (
+                  <View style={styles.memberMenuContainer}>
+                    <TouchableOpacity
+                      style={styles.memberMenuButton}
+                      onPress={() =>
+                        setMemberMenuOpen(
+                          memberMenuOpen === member.id ? null : member.id
+                        )
+                      }
+                    >
+                      <MoreVertical size={18} color={colors.secondaryText} />
+                    </TouchableOpacity>
+
+                    {memberMenuOpen === member.id && (
+                      <View
+                        style={[
+                          styles.memberContextMenu,
+                          {
+                            backgroundColor: colors.surfaceVariant,
+                            borderColor: colors.border,
+                          },
+                        ]}
+                      >
+                        {member.role !== "owner" && (
+                          <TouchableOpacity
+                            style={styles.menuItem}
+                            onPress={() => handlePromote(member)}
+                          >
+                            <ChevronUp size={16} color={colors.primary} />
+                            <ThemedText size="small" style={{ color: colors.primary }}>
+                              Promote
+                            </ThemedText>
+                          </TouchableOpacity>
+                        )}
+                        {member.role !== "staff" && (
+                          <TouchableOpacity
+                            style={styles.menuItem}
+                            onPress={() => handleDemote(member)}
+                          >
+                            <ChevronDown size={16} color="#F59E0B" />
+                            <ThemedText size="small" style={{ color: "#F59E0B" }}>
+                              Demote
+                            </ThemedText>
+                          </TouchableOpacity>
+                        )}
+                        <View style={styles.menuDivider} />
+                        <TouchableOpacity
+                          style={styles.menuItem}
+                          onPress={() => handleRemove(member)}
+                        >
+                          <Trash2 size={16} color="#EF4444" />
+                          <ThemedText size="small" style={{ color: "#EF4444" }}>
+                            Remove
+                          </ThemedText>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                )}
               </View>
             ))
           )}
@@ -543,8 +757,12 @@ export default function OrganisationScreen() {
             size="small"
             style={styles.footerText}
           >
-            Invite team members to share your calendar, staff records, and
-            absence data. Each member gets a role — staff, manager, or owner.
+            {userIsOwner
+              ? "As the owner, you control who can invite members and manage the organisation. Invite team members to share your calendar, staff records, and absence data."
+              : role === "manager"
+                ? "As a manager, you can invite members and approve absences. Contact the owner to change organisation settings."
+                : "As a staff member, you can view the calendar, create absence requests, and edit your own requests."
+            }
           </ThemedText>
         </View>
       </ScrollView>
@@ -683,6 +901,66 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
+  },
+  badgeRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  youBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  permissionNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+
+  // ── Member management menu ─────────────────────────────────────────────
+  memberMenuContainer: {
+    position: "relative",
+  },
+  memberMenuButton: {
+    padding: 8,
+    borderRadius: 8,
+  },
+  memberContextMenu: {
+    position: "absolute",
+    right: 0,
+    top: 36,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 6,
+    minWidth: 140,
+    zIndex: 100,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: "rgba(100, 116, 139, 0.15)",
+    marginHorizontal: 10,
+    marginVertical: 4,
   },
 
   // ── Setting item (for org ID etc.) ─────────────────────────────────────

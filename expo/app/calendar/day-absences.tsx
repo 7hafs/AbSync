@@ -20,6 +20,7 @@ import {
   Plus,
   Trash2,
   User,
+  ShieldAlert,
 } from 'lucide-react-native';
 import { useColorScheme } from 'react-native';
 import ThemedText from '@/components/ThemedText';
@@ -28,6 +29,7 @@ import Colors, { absenceColors } from '@/constants/colors';
 import useThemeStore from '@/store/useThemeStore';
 import useAbsenceStore from '@/store/useAbsenceStore';
 import useStaffStore from '@/store/useStaffStore';
+import { useOrganisationRole } from '@/hooks/useOrganisationRole';
 
 import { Absence, AbsenceStatus, AbsenceType } from '@/types';
 import { toDateString, todayDateString, formatDateUKLong } from '@/utils/dateUtils';
@@ -84,7 +86,7 @@ export default function DayAbsencesScreen() {
   const { width } = useWindowDimensions();
   const isLargeScreen = width >= 960;
 
-  const canEdit = true;
+  const { canApproveAbsences } = useOrganisationRole();
   const { getStaffById } = useStaffStore();
   const {
     absences,
@@ -119,8 +121,8 @@ export default function DayAbsencesScreen() {
   };
 
   const handleDelete = (absence: Absence) => {
-    if (!canEdit) {
-      Alert.alert('View-only access', 'Only editors can delete absences.');
+    if (!canApproveAbsences) {
+      Alert.alert('Permission required', 'Only owners and managers can delete absences.');
       return;
     }
 
@@ -155,8 +157,8 @@ export default function DayAbsencesScreen() {
   };
 
   const handleStatusUpdate = (absence: Absence, status: AbsenceStatus) => {
-    if (!canEdit) {
-      Alert.alert('View-only access', 'Only editors can approve or reject requests.');
+    if (!canApproveAbsences) {
+      Alert.alert('Permission required', 'Only owners and managers can approve or reject requests.');
       return;
     }
 
@@ -289,7 +291,7 @@ export default function DayAbsencesScreen() {
               <ThemedText variant="secondary" style={styles.emptyCopy}>
                 Add a request for this date to start tracking availability.
               </ThemedText>
-              {canEdit ? (
+              {canApproveAbsences ? (
                 <TouchableOpacity
                   testID="day-add-button"
                   style={[styles.emptyButton, { backgroundColor: colors.primary }]}
