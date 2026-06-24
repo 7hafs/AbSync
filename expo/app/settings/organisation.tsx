@@ -18,6 +18,7 @@ import {
   Crown,
   Hash,
   Shield,
+  ShieldOff,
   UserCircle,
   Pencil,
   Check,
@@ -87,13 +88,14 @@ export default function OrganisationScreen() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const isPersonal = profile?.workspaceMode === "personal";
+  const needsOnboarding = profile?.workspaceMode === null || profile?.workspaceMode === undefined;
 
   // Load organisation data when we have a profile with org ID AND we're in org mode
   useEffect(() => {
-    if (profile?.organisationId && !isPersonal) {
+    if (profile?.organisationId && !isPersonal && !needsOnboarding) {
       loadOrganisation(profile.organisationId);
     }
-  }, [profile?.organisationId, profile?.workspaceMode, loadOrganisation, isPersonal]);
+  }, [profile?.organisationId, profile?.workspaceMode, loadOrganisation, isPersonal, needsOnboarding]);
 
   // ── Create Organisation (personal users) ───────────────────────────────
 
@@ -317,6 +319,55 @@ export default function OrganisationScreen() {
       </View>
     );
   };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ONBOARDING-NEEDED — workspace mode not yet chosen
+  // ═══════════════════════════════════════════════════════════════════════
+
+  if (needsOnboarding) {
+    return (
+      <ThemedView style={styles.container} useGradient>
+        <Stack.Screen options={{ title: "Organisation" }} />
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <View style={[styles.modeBanner, { backgroundColor: "rgba(245, 158, 11, 0.08)", borderColor: "rgba(245, 158, 11, 0.2)" }]}>
+            <ShieldOff size={20} color="#F59E0B" />
+            <View style={{ flex: 1 }}>
+              <ThemedText weight="semibold" style={{ color: "#D97706" }}>
+                Workspace Not Set Up
+              </ThemedText>
+              <ThemedText variant="secondary" size="small">
+                Choose your workspace mode to continue.
+              </ThemedText>
+            </View>
+          </View>
+
+          <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.formHeader}>
+              <Building2 size={24} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <ThemedText weight="bold" style={styles.optionTitle}>
+                  Set Up Your Workspace
+                </ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  Choose between Personal or Organisation mode to get started.
+                </ThemedText>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+              onPress={() => router.push('/onboarding/workspace' as never)}
+              activeOpacity={0.7}
+            >
+              <ArrowRight size={20} color="white" />
+              <ThemedText style={styles.primaryButtonText} weight="bold">
+                Go to Workspace Setup
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </ThemedView>
+    );
+  }
 
   // ═══════════════════════════════════════════════════════════════════════
   // PERSONAL WORKSPACE VIEW — Create / Join Organisation

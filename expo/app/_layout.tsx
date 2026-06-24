@@ -297,7 +297,27 @@ function AuthGate() {
     );
   }
 
-  console.log("[AuthGate:render] User authenticated — rendering AuthenticatedApp");
+  // User is authenticated but profile hasn't loaded yet — show spinner
+  // instead of rendering AuthenticatedApp without a profile. This prevents
+  // the user from getting stuck in the app with no workspace mode set.
+  if (!profile) {
+    console.log("[AuthGate:render] User authenticated but profile is null — showing profile-loading spinner");
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#F4F7F4",
+          gap: 16,
+        }}
+      >
+        <ActivityIndicator size="large" color="#0F766E" />
+      </View>
+    );
+  }
+
+  console.log("[AuthGate:render] User authenticated with profile — rendering AuthenticatedApp");
   return <AuthenticatedApp />;
 }
 

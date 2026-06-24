@@ -196,13 +196,22 @@ export default function DashboardScreen() {
     return 'Good evening';
   }, []);
 
-  const firstName = useMemo(() => {
+  const displayName = useMemo(() => {
     const fullName = profile?.name?.trim();
-    if (!fullName) return null;
-    return fullName.split(' ')[0];
-  }, [profile?.name]);
+    if (fullName) return fullName.split(' ')[0];
+    // Fallback to email prefix when name is missing
+    const emailAddr = profile?.email?.trim();
+    if (emailAddr) {
+      const atIndex = emailAddr.indexOf('@');
+      if (atIndex > 0) {
+        const prefix = emailAddr.substring(0, atIndex);
+        return prefix.charAt(0).toUpperCase() + prefix.slice(1);
+      }
+    }
+    return null;
+  }, [profile?.name, profile?.email]);
 
-  const greetingText = firstName ? `${greeting}, ${firstName} 👋` : 'Welcome back 👋';
+  const greetingText = displayName ? `${greeting}, ${displayName} 👋` : 'Welcome back 👋';
 
   // Today's date display
   const todayDateDisplay = useMemo(() => {

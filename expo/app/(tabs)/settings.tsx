@@ -227,36 +227,55 @@ export default function SettingsScreen() {
           </TouchableOpacity>
 
           {/* Workspace mode display */}
-          <View
-            style={[
-              styles.settingItem,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.settingContent}>
-              {profile?.workspaceMode === 'personal' ? (
-                <User size={22} color={colors.primary} />
-              ) : (
-                <Building2 size={22} color="#6366F1" />
-              )}
-              <View style={styles.settingTextContainer}>
-                <ThemedText weight="semibold">
-                  Current Mode: {profile?.workspaceMode === 'personal'
-                    ? 'Personal Workspace'
-                    : profile?.workspaceMode === 'organisation'
-                      ? 'Organisation Workspace'
-                      : 'Not set'}
-                </ThemedText>
-                <ThemedText variant="secondary" size="small">
-                  {profile?.workspaceMode === 'personal'
-                    ? 'All features unlocked. No teams or approvals.'
-                    : profile?.workspaceMode === 'organisation'
-                      ? 'Shared calendar, roles, and invitations active.'
-                      : 'Choose your workspace mode.'}
-                </ThemedText>
+          {profile?.workspaceMode === null ? (
+            <TouchableOpacity
+              style={[
+                styles.settingItem,
+                { backgroundColor: "rgba(245, 158, 11, 0.06)", borderColor: "rgba(245, 158, 11, 0.2)" },
+              ]}
+              onPress={() => router.push("/onboarding/workspace" as any)}
+            >
+              <View style={styles.settingContent}>
+                <ShieldOff size={22} color="#F59E0B" />
+                <View style={styles.settingTextContainer}>
+                  <ThemedText weight="semibold" style={{ color: "#D97706" }}>
+                    Workspace Not Set Up
+                  </ThemedText>
+                  <ThemedText variant="secondary" size="small">
+                    Tap here to choose Personal or Organisation workspace
+                  </ThemedText>
+                </View>
+              </View>
+              <ChevronRight size={20} color="#F59E0B" />
+            </TouchableOpacity>
+          ) : (
+            <View
+              style={[
+                styles.settingItem,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.settingContent}>
+                {profile?.workspaceMode === 'personal' ? (
+                  <User size={22} color={colors.primary} />
+                ) : (
+                  <Building2 size={22} color="#6366F1" />
+                )}
+                <View style={styles.settingTextContainer}>
+                  <ThemedText weight="semibold">
+                    Current Mode: {profile?.workspaceMode === 'personal'
+                      ? 'Personal Workspace'
+                      : 'Organisation Workspace'}
+                  </ThemedText>
+                  <ThemedText variant="secondary" size="small">
+                    {profile?.workspaceMode === 'personal'
+                      ? 'All features unlocked. No teams or approvals.'
+                      : 'Shared calendar, roles, and invitations active.'}
+                  </ThemedText>
+                </View>
               </View>
             </View>
-          </View>
+          )}
 
           {profile?.workspaceMode === 'organisation' && (
             <TouchableOpacity

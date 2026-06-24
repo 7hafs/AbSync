@@ -307,26 +307,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error("[auth:diag:org] Step B — INSERT organisation_members THREW:", err);
       }
 
-      // Step C: Update profile.organisation_id and workspace_mode
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: updateError } = await (supabase
-          .from("profiles") as any)
-          .update({ organisation_id: organisationId, workspace_mode: "organisation" })
-          .eq("id", userId);
-        if (updateError) {
-          console.error("[auth:diag:org] Step C — UPDATE profiles FAILED:", updateError.message, updateError.code, updateError.details);
-        } else {
-          console.log("[auth:diag:org] Step C — Profile updated — organisation_id:", organisationId);
+      // Step C: Update profile.organisation_id and workspace_mode (with retry)
+      let profileUpdated = false;
+      for (let attempt = 0; attempt < 3 && !profileUpdated; attempt++) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error: updateError } = await (supabase
+            .from("profiles") as any)
+            .update({ organisation_id: organisationId, workspace_mode: "organisation" })
+            .eq("id", userId);
+          if (updateError) {
+            console.error("[auth:diag:org] Step C attempt", attempt + 1, "— UPDATE profiles FAILED:", updateError.message, updateError.code);
+            if (attempt < 2) {
+              await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+            }
+          } else {
+            console.log("[auth:diag:org] Step C — Profile updated — organisation_id:", organisationId);
+            profileUpdated = true;
+          }
+        } catch (err) {
+          console.error("[auth:diag:org] Step C attempt", attempt + 1, "— UPDATE profiles THREW:", err);
+          if (attempt < 2) {
+            await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+          }
         }
-      } catch (err) {
-        console.error("[auth:diag:org] Step C — UPDATE profiles THREW:", err);
+      }
+      if (!profileUpdated) {
+        console.error("[auth:diag:org] Step C — Profile update FAILED after 3 attempts. Organisation", organisationId, "was created but profile may not be updated.");
       }
 
       return organisationId;
     },
     []
   );
+
+  /**
+   * Derive a display name from an email address (prefix before @).
+   * Used as a fallback when no name is available on the profile.
+   */
+  const deriveNameFromEmail = useCallback((emailAddr?: string | null): string | null => {
+    if (!emailAddr) return null;
+    const atIndex = emailAddr.indexOf("@");
+    if (atIndex <= 0) return null;
+    const prefix = emailAddr.substring(0, atIndex);
+    // Capitalise first letter of each dot/underscore-separated segment
+    return prefix
+      .split(/[._-]/)
+      .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1).toLowerCase())
+      .join(" ");
+  }, []);
 
   /**
    * Ensure a profile row exists for the given user, handling three cases:
@@ -337,45 +366,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * C) No profile exists                          → create minimal profile,
    *    return with workspaceMode=null (onboarding will handle workspace setup)
    *
+   * CRITICAL: This function MUST always return a profile (never null) when the
+   * user is authenticated. If profile creation fails, we synthesise a temporary
+   * in-memory profile so the auth gate can correctly route the user to onboarding
+   * instead of leaving them stuck on a blank screen.
+   *
    * REPAIR LOGIC (Case A):
-   *  - Null name/email: if caller provided values, update the DB so the user
-   *    sees their real name instead of "Welcome back".
+   *  - Null name: backfill from caller-provided name, then email-derived name
+   *  - Null email: backfill from caller-provided email (auth metadata)
    *  - State D (workspace_mode='organisation' + organisation_id=NULL):
    *    triggered after org removal. Auto-switch to personal workspace.
    *  - State E (workspace_mode='personal' + organisation_id=NULL):
    *    create a personal org so writes don't fail with requireOrganisationId().
    */
   const ensureProfile = useCallback(
-    async (userId: string, email?: string, name?: string): Promise<AuthProfile | null> => {
+    async (userId: string, email?: string, name?: string): Promise<AuthProfile> => {
       // Step 1: Fetch existing profile
       const existingProf = await fetchProfile(userId);
+
+      // ── Resolve the best available name & email ────────────────────────
+      // Priority: 1) caller-provided (auth metadata)  2) DB-stored  3) email-derived fallback
+      const resolvedEmail = email ?? existingProf?.email ?? null;
+      const resolvedName = name ?? existingProf?.name ?? deriveNameFromEmail(resolvedEmail);
 
       // Case A: Profile exists with workspace mode set
       if (existingProf && existingProf.workspaceMode !== null) {
         console.log("[auth:ensure] Case A — workspace_mode:", existingProf.workspaceMode, "orgId:", existingProf.organisationId ?? "null", "name:", existingProf.name ?? "null");
 
-        let didRepair = false;
+        let needsDbUpdate = false;
 
-        // ── Repair A1: null name/email — fill from caller-provided values ─
-        const needsNameRepair = !existingProf.name && !!name;
-        const needsEmailRepair = !existingProf.email && !!email;
-        if (needsNameRepair || needsEmailRepair) {
-          console.log("[auth:ensure] REPAIR: name or email was null — backfilling from auth metadata");
+        // ── Repair A1: null name — backfill from resolved name ─
+        if (!existingProf.name && resolvedName) {
+          console.log("[auth:ensure] REPAIR A1: name was null — backfilling to:", resolvedName);
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const updatePayload: Record<string, string> = {};
-          if (needsNameRepair) updatePayload.name = name!;
-          if (needsEmailRepair) updatePayload.email = email!;
           const { error: updateErr } = await (supabase.from("profiles") as any)
-            .update(updatePayload)
+            .update({ name: resolvedName })
             .eq("id", userId);
           if (updateErr) {
-            console.warn("[auth:ensure] REPAIR A1: profile update FAILED:", updateErr.message);
+            console.warn("[auth:ensure] REPAIR A1: DB update FAILED:", updateErr.message, "— patching in-memory only");
           } else {
-            if (needsNameRepair) existingProf.name = name!;
-            if (needsEmailRepair) existingProf.email = email!;
-            didRepair = true;
-            console.log("[auth:ensure] REPAIR A1: name/email backfilled");
+            console.log("[auth:ensure] REPAIR A1: DB name updated successfully");
           }
+          existingProf.name = resolvedName;
+          needsDbUpdate = true;
+        }
+
+        // ── Repair A1b: null email — backfill from auth metadata ─
+        if (!existingProf.email && email) {
+          console.log("[auth:ensure] REPAIR A1b: email was null — backfilling");
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error: updateErr } = await (supabase.from("profiles") as any)
+            .update({ email })
+            .eq("id", userId);
+          if (updateErr) {
+            console.warn("[auth:ensure] REPAIR A1b: DB email update FAILED:", updateErr.message);
+          }
+          existingProf.email = email;
+          needsDbUpdate = true;
         }
 
         // ── Repair A2: State D — org mode with no org_id ─
@@ -385,11 +432,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (personalOrgId) {
             const updatedProf = await fetchProfile(userId);
             if (updatedProf) {
+              // Ensure name/email are patched on the updated profile too
+              if (!updatedProf.name && resolvedName) updatedProf.name = resolvedName;
+              if (!updatedProf.email && resolvedEmail) updatedProf.email = resolvedEmail;
               console.log("[auth:ensure] REPAIR A2: switched to personal — orgId:", personalOrgId);
               return updatedProf;
             }
           }
-          console.warn("[auth:ensure] REPAIR A2: createPersonalOrg FAILED — returning existing profile");
+          console.warn("[auth:ensure] REPAIR A2: createPersonalOrg FAILED — returning existing with name patched");
           return existingProf;
         }
 
@@ -400,17 +450,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (personalOrgId) {
             const updatedProf = await fetchProfile(userId);
             if (updatedProf) {
+              if (!updatedProf.name && resolvedName) updatedProf.name = resolvedName;
+              if (!updatedProf.email && resolvedEmail) updatedProf.email = resolvedEmail;
               console.log("[auth:ensure] REPAIR A3: personal org created — orgId:", personalOrgId);
               return updatedProf;
             }
           }
-          console.warn("[auth:ensure] REPAIR A3: createPersonalOrg FAILED — returning existing profile");
+          console.warn("[auth:ensure] REPAIR A3: createPersonalOrg FAILED — returning existing with name patched");
           return existingProf;
-        }
-
-        if (didRepair) {
-          const updatedProf = await fetchProfile(userId);
-          if (updatedProf) return updatedProf;
         }
 
         return existingProf;
@@ -420,24 +467,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (existingProf && existingProf.workspaceMode === null) {
         console.log("[auth:ensure] Case B — profile exists but workspace_mode is NULL");
 
-        // Repair null name/email from caller-provided values
-        const needsNameRepair = !existingProf.name && !!name;
-        const needsEmailRepair = !existingProf.email && !!email;
-        if (needsNameRepair || needsEmailRepair) {
+        // Repair null name/email
+        if ((!existingProf.name && resolvedName) || (!existingProf.email && email)) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const updatePayload: Record<string, string> = {};
-          if (needsNameRepair) updatePayload.name = name!;
-          if (needsEmailRepair) updatePayload.email = email!;
-          await (supabase.from("profiles") as any).update(updatePayload).eq("id", userId);
-          if (needsNameRepair) existingProf.name = name!;
-          if (needsEmailRepair) existingProf.email = email!;
+          if (!existingProf.name && resolvedName) updatePayload.name = resolvedName;
+          if (!existingProf.email && email) updatePayload.email = email;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase.from("profiles") as any).update(updatePayload).eq("id", userId).catch((e: Error) =>
+            console.warn("[auth:ensure] Case B: name/email repair FAILED:", e.message)
+          );
+          if (!existingProf.name && resolvedName) existingProf.name = resolvedName;
+          if (!existingProf.email && email) existingProf.email = email;
         }
 
         // If profile has an organisation_id, this is a legacy user — backfill mode
         if (existingProf.organisationId) {
           console.log("[auth:ensure] Case B: legacy user — backfilling workspace_mode to 'organisation'");
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase.from("profiles") as any).update({ workspace_mode: "organisation" }).eq("id", userId);
+          await (supabase.from("profiles") as any).update({ workspace_mode: "organisation" }).eq("id", userId).catch((e: Error) =>
+            console.warn("[auth:ensure] Case B legacy backfill FAILED:", e.message)
+          );
           return { ...existingProf, workspaceMode: "organisation" as const };
         }
 
@@ -448,15 +498,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return existingProf;
       }
 
-      // Case C: No profile exists — create minimal profile without bootstrapping
+      // Case C: No profile exists — create minimal profile
       console.log("[auth:ensure] Case C: NEW USER — no profile found, creating minimal profile");
+
+      const dbName = resolvedName;
+      const dbEmail = resolvedEmail;
 
       const { data: newProfile, error: profileError } = await supabase
         .from("profiles")
         .insert({
           id: userId,
-          email: email ?? null,
-          name: name ?? null,
+          email: dbEmail,
+          name: dbName,
           access_level: "owner",
         })
         .select("id, name, email, organisation_id, workspace_mode")
@@ -464,22 +517,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (profileError) {
         console.error("[auth:ensure] Case C: Profile creation FAILED:", profileError.message, profileError.code);
-        return null;
+        // ── FALLBACK: synthesise an in-memory profile so auth gate can route ─
+        // The profile will be repaired when the write succeeds on a later attempt.
+        console.log("[auth:ensure] Case C: Synthesising in-memory fallback profile");
+        return {
+          id: userId,
+          name: dbName,
+          email: dbEmail,
+          organisationId: null,
+          workspaceMode: null,
+        };
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const row = newProfile as any as { id: string; name: string | null; email: string | null; organisation_id: string | null; workspace_mode: string | null };
-      console.log("[auth:ensure] Case C: Minimal profile created — id:", row.id, "name:", row.name ?? "null", "email:", row.email ?? "null", "workspace_mode=null (onboarding needed)");
+      console.log("[auth:ensure] Case C: Minimal profile created — id:", row.id, "name:", row.name ?? "null", "ws_mode=null");
 
       return {
         id: row.id,
-        name: row.name,
-        email: row.email,
+        name: row.name ?? dbName,
+        email: row.email ?? dbEmail,
         organisationId: null,
         workspaceMode: null,
       };
     },
-    [fetchProfile, bootstrapOrganisation, acceptPendingInvitation, createPersonalOrg]
+    [fetchProfile, bootstrapOrganisation, acceptPendingInvitation, createPersonalOrg, deriveNameFromEmail]
   );
 
   // ── Session listener ─────────────────────────────────────────────────────
