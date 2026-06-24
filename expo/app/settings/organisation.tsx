@@ -31,6 +31,9 @@ import {
   Trash2,
   ChevronUp,
   ChevronDown,
+  User,
+  ArrowRight,
+  Mail,
 } from "lucide-react-native";
 import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
@@ -55,7 +58,7 @@ export default function OrganisationScreen() {
     isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
 
-  const { profile } = useSupabaseAuth();
+  const { profile, setWorkspaceMode, switchToPersonalWorkspace, refreshProfile } = useSupabaseAuth();
   const {
     role,
     isOwner: userIsOwner,
@@ -73,23 +76,47 @@ export default function OrganisationScreen() {
     updateName,
   } = useOrganisationStore();
 
-  const {
-    setWorkspaceMode,
-    switchToPersonalWorkspace,
-  } = useSupabaseAuth();
-
   const [isEditing, setIsEditing] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-
   const [memberMenuOpen, setMemberMenuOpen] = useState<string | null>(null);
 
-  // Load organisation data when we have a profile with org ID
+  // ── Create/join flow for personal users ────────────────────────────────
+  const [orgName, setOrgName] = useState("");
+  const [isCreatingOrg, setIsCreatingOrg] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const isPersonal = profile?.workspaceMode === "personal";
+
+  // Load organisation data when we have a profile with org ID AND we're in org mode
   useEffect(() => {
-    if (profile?.organisationId) {
+    if (profile?.organisationId && !isPersonal) {
       loadOrganisation(profile.organisationId);
     }
-  }, [profile?.organisationId, loadOrganisation]);
+  }, [profile?.organisationId, profile?.workspaceMode, loadOrganisation, isPersonal]);
+
+  // ── Create Organisation (personal users) ───────────────────────────────
+
+  const handleCreateOrganisation = useCallback(async () => {
+    if (!orgName.trim()) {
+      setCreateError("Please enter an organisation name.");
+      return;
+    }
+    setIsCreatingOrg(true);
+    setCreateError(null);
+    try {
+      console.log("[org:diag] Creating organisation with name:", orgName.trim());
+      await setWorkspaceMode("organisation", orgName.trim());
+      await refreshProfile();
+      console.log("[org:diag] Organisation created — profile updated");
+      router.back();
+    } catch (err) {
+      console.error("[org:diag] Organisation creation FAILED:", err);
+      setCreateError("Failed to create organisation. Please try again.");
+    } finally {
+      setIsCreatingOrg(false);
+    }
+  }, [orgName, setWorkspaceMode, refreshProfile, router]);
 
   // ── Leave organisation ──────────────────────────────────────────────────
 
@@ -291,6 +318,131 @@ export default function OrganisationScreen() {
     );
   };
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // PERSONAL WORKSPACE VIEW — Create / Join Organisation
+  // ═══════════════════════════════════════════════════════════════════════
+
+  if (isPersonal) {
+    return (
+      <ThemedView style={styles.container} useGradient>
+        <Stack.Screen options={{ title: "Organisation" }} />
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          {/* Current mode banner */}
+          <View style={[styles.modeBanner, { backgroundColor: "rgba(15, 118, 110, 0.08)", borderColor: "rgba(15, 118, 110, 0.2)" }]}>
+            <User size={20} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <ThemedText weight="semibold" style={{ color: colors.primary }}>
+                Current Mode: Personal Workspace
+              </ThemedText>
+              <ThemedText variant="secondary" size="small">
+                All features unlocked. No teams or approvals.
+              </ThemedText>
+            </View>
+          </View>
+
+          {/* Create Organisation Card */}
+          <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.formHeader}>
+              <Building2 size={24} color="#6366F1" />
+              <View style={{ flex: 1 }}>
+                <ThemedText weight="bold" style={styles.optionTitle}>
+                  Create Organisation
+                </ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  Set up a new team workspace with shared calendar, roles, and invitations.
+                </ThemedText>
+              </View>
+            </View>
+
+            <ThemedText weight="semibold" style={styles.label}>
+              Organisation Name
+            </ThemedText>
+            <TextInput
+              style={[
+                styles.textInput,
+                {
+                  color: colors.text,
+                  backgroundColor: colors.surfaceVariant,
+                  borderColor: colors.border,
+                },
+              ]}
+              value={orgName}
+              onChangeText={(t) => { setOrgName(t); setCreateError(null); }}
+              placeholder="e.g. Acme Corp"
+              placeholderTextColor={colors.secondaryText}
+              autoFocus={false}
+              returnKeyType="done"
+              onSubmitEditing={handleCreateOrganisation}
+            />
+
+            {createError && (
+              <ThemedText size="small" style={styles.formErrorText}>
+                {createError}
+              </ThemedText>
+            )}
+
+            <TouchableOpacity
+              style={[styles.primaryButton, { backgroundColor: "#6366F1", opacity: isCreatingOrg ? 0.7 : 1 }]}
+              onPress={handleCreateOrganisation}
+              disabled={isCreatingOrg || !orgName.trim()}
+              activeOpacity={0.7}
+            >
+              {isCreatingOrg ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <>
+                  <Building2 size={20} color="white" />
+                  <ThemedText style={styles.primaryButtonText} weight="bold">
+                    Create Organisation
+                  </ThemedText>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Divider */}
+          <View style={styles.dividerRow}>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            <ThemedText variant="secondary" size="small" style={styles.dividerText}>or</ThemedText>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+          </View>
+
+          {/* Join Organisation Card */}
+          <TouchableOpacity
+            style={[
+              styles.joinCard,
+              { backgroundColor: colors.card, borderColor: "rgba(99, 102, 241, 0.2)" },
+            ]}
+            onPress={() => router.push('/onboarding/workspace' as never)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.joinIcon, { backgroundColor: "rgba(99, 102, 241, 0.1)" }]}>
+              <Mail size={28} color="#6366F1" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <ThemedText weight="bold" style={[styles.optionTitle, { color: "#6366F1" }]}>
+                Join Organisation
+              </ThemedText>
+              <ThemedText variant="secondary" size="small">
+                Enter an invitation token to join an existing team.
+              </ThemedText>
+            </View>
+            <ArrowRight size={22} color="#6366F1" />
+          </TouchableOpacity>
+
+          <ThemedText variant="secondary" size="small" style={styles.footerNote}>
+            Creating or joining an organisation will switch you out of Personal Workspace.{"\n"}
+            Your personal data will be kept safe.
+          </ThemedText>
+        </ScrollView>
+      </ThemedView>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ORGANISATION WORKSPACE VIEW — Org Details, Members, etc.
+  // ═══════════════════════════════════════════════════════════════════════
+
   // ── Loading state ───────────────────────────────────────────────────────
 
   if (isLoading) {
@@ -397,6 +549,19 @@ export default function OrganisationScreen() {
         }}
       />
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Current mode banner */}
+        <View style={[styles.modeBanner, { backgroundColor: "rgba(99, 102, 241, 0.06)", borderColor: "rgba(99, 102, 241, 0.15)" }]}>
+          <Building2 size={20} color="#6366F1" />
+          <View style={{ flex: 1 }}>
+            <ThemedText weight="semibold" style={{ color: "#6366F1" }}>
+              Current Mode: Organisation Workspace
+            </ThemedText>
+            <ThemedText variant="secondary" size="small">
+              Shared calendar, roles, and invitations active.
+            </ThemedText>
+          </View>
+        </View>
+
         {/* ── Organisation Name Hero ──────────────────────────────────────── */}
         <View style={styles.section}>
           <View
@@ -860,6 +1025,93 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     marginBottom: 16,
+  },
+
+  // ── Mode banner ─────────────────────────────────────────────────────────
+  modeBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+
+  // ── Create Organisation form ───────────────────────────────────────────
+  formCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 24,
+    gap: 16,
+  },
+  formHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 14,
+    marginBottom: 4,
+  },
+  optionTitle: { fontSize: 17 },
+
+  // ── Join card ───────────────────────────────────────────────────────────
+  joinCard: {
+    flexDirection: "row",
+    borderWidth: 2,
+    borderRadius: 20,
+    padding: 20,
+    gap: 16,
+    alignItems: "center",
+  },
+  joinIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // ── Divider ─────────────────────────────────────────────────────────────
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginVertical: 8,
+    paddingHorizontal: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontSize: 13,
+  },
+
+  // ── Form fields (shared with invite/join screens) ─────────────────────
+  label: { fontSize: 13, marginBottom: -8 },
+  textInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+  },
+  formErrorText: { color: "#EF4444", fontSize: 13 },
+  primaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  primaryButtonText: {
+    color: "white",
+    fontSize: 16,
+  },
+  footerNote: {
+    textAlign: "center",
+    marginTop: 16,
+    lineHeight: 20,
   },
 
   // ── Invite button ──────────────────────────────────────────────────────

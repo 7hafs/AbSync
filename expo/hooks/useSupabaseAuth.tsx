@@ -331,39 +331,86 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /**
    * Ensure a profile row exists for the given user, handling three cases:
    *
-   * A) Profile exists with workspace_mode set   → return it (done)
+   * A) Profile exists with workspace_mode set   → repair if needed, then return
    * B) Profile exists, workspace_mode is NULL   → backfill for legacy, or return
    *    (null mode = onboarding needed for brand-new users)
    * C) No profile exists                          → create minimal profile,
    *    return with workspaceMode=null (onboarding will handle workspace setup)
    *
-   * IMPORTANT: This function does NOT auto-create organisations any more.
-   * Workspace setup happens via the onboarding screen which calls
-   * setWorkspaceMode() or switchToPersonalWorkspace().
+   * REPAIR LOGIC (Case A):
+   *  - Null name/email: if caller provided values, update the DB so the user
+   *    sees their real name instead of "Welcome back".
+   *  - State D (workspace_mode='organisation' + organisation_id=NULL):
+   *    triggered after org removal. Auto-switch to personal workspace.
+   *  - State E (workspace_mode='personal' + organisation_id=NULL):
+   *    create a personal org so writes don't fail with requireOrganisationId().
    */
   const ensureProfile = useCallback(
     async (userId: string, email?: string, name?: string): Promise<AuthProfile | null> => {
-      const userEmail = email ?? "";
-
       // Step 1: Fetch existing profile
       const existingProf = await fetchProfile(userId);
 
-      // Case A: Profile exists with workspace mode set — done
+      // Case A: Profile exists with workspace mode set
       if (existingProf && existingProf.workspaceMode !== null) {
-        console.log("[auth:ensure] Profile exists with workspace_mode:", existingProf.workspaceMode, "orgId:", existingProf.organisationId);
+        console.log("[auth:ensure] Case A — workspace_mode:", existingProf.workspaceMode, "orgId:", existingProf.organisationId ?? "null", "name:", existingProf.name ?? "null");
 
-        // If org mode but no org_id, try to repair by checking invitations
-        if (existingProf.workspaceMode === 'organisation' && !existingProf.organisationId && userEmail) {
-          const invitedOrgId = await acceptPendingInvitation(userId, userEmail);
-          if (invitedOrgId) {
-            console.log("[auth:ensure] REPAIR: joined via invitation — orgId =", invitedOrgId);
-            return { ...existingProf, organisationId: invitedOrgId };
+        let didRepair = false;
+
+        // ── Repair A1: null name/email — fill from caller-provided values ─
+        const needsNameRepair = !existingProf.name && !!name;
+        const needsEmailRepair = !existingProf.email && !!email;
+        if (needsNameRepair || needsEmailRepair) {
+          console.log("[auth:ensure] REPAIR: name or email was null — backfilling from auth metadata");
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const updatePayload: Record<string, string> = {};
+          if (needsNameRepair) updatePayload.name = name!;
+          if (needsEmailRepair) updatePayload.email = email!;
+          const { error: updateErr } = await (supabase.from("profiles") as any)
+            .update(updatePayload)
+            .eq("id", userId);
+          if (updateErr) {
+            console.warn("[auth:ensure] REPAIR A1: profile update FAILED:", updateErr.message);
+          } else {
+            if (needsNameRepair) existingProf.name = name!;
+            if (needsEmailRepair) existingProf.email = email!;
+            didRepair = true;
+            console.log("[auth:ensure] REPAIR A1: name/email backfilled");
           }
-          // No invitation found, bootstrap org
-          const orgId = await bootstrapOrganisation(userId, existingProf.name ?? name, existingProf.email ?? email);
-          if (orgId) {
-            return { ...existingProf, organisationId: orgId };
+        }
+
+        // ── Repair A2: State D — org mode with no org_id ─
+        if (existingProf.workspaceMode === 'organisation' && !existingProf.organisationId) {
+          console.log("[auth:ensure] REPAIR A2: INVALID STATE D (org mode + null org_id) → switching to personal");
+          const personalOrgId = await createPersonalOrg(userId);
+          if (personalOrgId) {
+            const updatedProf = await fetchProfile(userId);
+            if (updatedProf) {
+              console.log("[auth:ensure] REPAIR A2: switched to personal — orgId:", personalOrgId);
+              return updatedProf;
+            }
           }
+          console.warn("[auth:ensure] REPAIR A2: createPersonalOrg FAILED — returning existing profile");
+          return existingProf;
+        }
+
+        // ── Repair A3: State E — personal mode with no org_id ─
+        if (existingProf.workspaceMode === 'personal' && !existingProf.organisationId) {
+          console.log("[auth:ensure] REPAIR A3: INVALID STATE E (personal mode + null org_id) → creating personal org");
+          const personalOrgId = await createPersonalOrg(userId);
+          if (personalOrgId) {
+            const updatedProf = await fetchProfile(userId);
+            if (updatedProf) {
+              console.log("[auth:ensure] REPAIR A3: personal org created — orgId:", personalOrgId);
+              return updatedProf;
+            }
+          }
+          console.warn("[auth:ensure] REPAIR A3: createPersonalOrg FAILED — returning existing profile");
+          return existingProf;
+        }
+
+        if (didRepair) {
+          const updatedProf = await fetchProfile(userId);
+          if (updatedProf) return updatedProf;
         }
 
         return existingProf;
@@ -371,11 +418,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Case B: Profile exists but workspace_mode is NULL
       if (existingProf && existingProf.workspaceMode === null) {
-        console.log("[auth:ensure] Profile exists but workspace_mode is NULL");
+        console.log("[auth:ensure] Case B — profile exists but workspace_mode is NULL");
+
+        // Repair null name/email from caller-provided values
+        const needsNameRepair = !existingProf.name && !!name;
+        const needsEmailRepair = !existingProf.email && !!email;
+        if (needsNameRepair || needsEmailRepair) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const updatePayload: Record<string, string> = {};
+          if (needsNameRepair) updatePayload.name = name!;
+          if (needsEmailRepair) updatePayload.email = email!;
+          await (supabase.from("profiles") as any).update(updatePayload).eq("id", userId);
+          if (needsNameRepair) existingProf.name = name!;
+          if (needsEmailRepair) existingProf.email = email!;
+        }
 
         // If profile has an organisation_id, this is a legacy user — backfill mode
         if (existingProf.organisationId) {
-          console.log("[auth:ensure] Legacy user — backfilling workspace_mode to 'organisation'");
+          console.log("[auth:ensure] Case B: legacy user — backfilling workspace_mode to 'organisation'");
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (supabase.from("profiles") as any).update({ workspace_mode: "organisation" }).eq("id", userId);
           return { ...existingProf, workspaceMode: "organisation" as const };
@@ -384,12 +444,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // No organisation_id and no workspace_mode — brand-new user who hasn't
         // gone through onboarding yet. Return with workspaceMode=null so the
         // onboarding screen can display.
-        console.log("[auth:ensure] Brand-new user — workspace_mode=null (onboarding needed)");
+        console.log("[auth:ensure] Case B: brand-new user — workspace_mode=null (onboarding needed)");
         return existingProf;
       }
 
       // Case C: No profile exists — create minimal profile without bootstrapping
-      console.log("[auth:ensure] NEW USER: no profile found — creating minimal profile");
+      console.log("[auth:ensure] Case C: NEW USER — no profile found, creating minimal profile");
 
       const { data: newProfile, error: profileError } = await supabase
         .from("profiles")
@@ -403,13 +463,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (profileError) {
-        console.error("[auth:ensure] Profile creation FAILED:", profileError.message, profileError.code);
+        console.error("[auth:ensure] Case C: Profile creation FAILED:", profileError.message, profileError.code);
         return null;
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const row = newProfile as any as { id: string; name: string | null; email: string | null; organisation_id: string | null; workspace_mode: string | null };
-      console.log("[auth:ensure] Minimal profile created:", row.id, "— workspace_mode=null (onboarding needed)");
+      console.log("[auth:ensure] Case C: Minimal profile created — id:", row.id, "name:", row.name ?? "null", "email:", row.email ?? "null", "workspace_mode=null (onboarding needed)");
 
       return {
         id: row.id,
@@ -419,7 +479,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         workspaceMode: null,
       };
     },
-    [fetchProfile, bootstrapOrganisation, acceptPendingInvitation]
+    [fetchProfile, bootstrapOrganisation, acceptPendingInvitation, createPersonalOrg]
   );
 
   // ── Session listener ─────────────────────────────────────────────────────
@@ -458,8 +518,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
 
       if (currentSession?.user) {
-        ensureProfile(currentSession.user.id).then(async (prof) => {
-          console.log("[auth:session] Profile after ensure:", !!prof, "mode:", prof?.workspaceMode ?? "null", "orgId:", prof?.organisationId ?? "null");
+        ensureProfile(
+          currentSession.user.id,
+          currentSession.user.email,
+          currentSession.user.user_metadata?.name as string | undefined
+        ).then(async (prof) => {
+          console.log("[auth:session] Profile after ensure:", !!prof, "mode:", prof?.workspaceMode ?? "null", "orgId:", prof?.organisationId ?? "null", "name:", prof?.name ?? "null");
           setProfile(prof);
 
           // Auto-accept any pending invitations for users with an organisation
