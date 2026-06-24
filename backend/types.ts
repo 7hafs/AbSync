@@ -340,6 +340,60 @@ export type Database = {
           },
         ]
       }
+      organisation_invitations: {
+        Row: {
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          invited_by: string
+          organisation_id: string
+          role: string
+          status: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          expires_at: string
+          id?: string
+          invited_by: string
+          organisation_id: string
+          role?: string
+          status?: string
+          token: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          invited_by?: string
+          organisation_id?: string
+          role?: string
+          status?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organisation_invitations_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organisation_invitations_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organisation_members: {
         Row: {
           created_at: string
@@ -385,7 +439,7 @@ export type Database = {
           id: string
           name: string
           owner_id: string | null
-          settings: Json | null
+          settings: Json
           slug: string | null
           updated_at: string
         }
@@ -394,7 +448,7 @@ export type Database = {
           id?: string
           name: string
           owner_id?: string | null
-          settings?: Json | null
+          settings?: Json
           slug?: string | null
           updated_at?: string
         }
@@ -403,7 +457,7 @@ export type Database = {
           id?: string
           name?: string
           owner_id?: string | null
-          settings?: Json | null
+          settings?: Json
           slug?: string | null
           updated_at?: string
         }
@@ -428,6 +482,7 @@ export type Database = {
           organisation_id: string | null
           updated_at: string | null
           workspace_id: string | null
+          workspace_mode: string | null
         }
         Insert: {
           access_level?: string | null
@@ -439,6 +494,7 @@ export type Database = {
           organisation_id?: string | null
           updated_at?: string | null
           workspace_id?: string | null
+          workspace_mode?: string | null
         }
         Update: {
           access_level?: string | null
@@ -450,6 +506,7 @@ export type Database = {
           organisation_id?: string | null
           updated_at?: string | null
           workspace_id?: string | null
+          workspace_mode?: string | null
         }
         Relationships: [
           {
@@ -587,6 +644,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_invitation_rpc: {
+        Args: { p_token: string; p_user_email: string; p_user_id: string }
+        Returns: Json
+      }
+      can_manage_org: { Args: { org_id: string }; Returns: boolean }
+      get_user_email: { Args: never; Returns: string }
+      get_user_organisation_id: { Args: never; Returns: string }
+      is_member_of_org: { Args: { org_id: string }; Returns: boolean }
+      is_org_owner: { Args: { org_id: string }; Returns: boolean }
       user_id: { Args: never; Returns: string }
     }
     Enums: {

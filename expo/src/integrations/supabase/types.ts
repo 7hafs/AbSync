@@ -103,6 +103,7 @@ export type Database = {
           id: string
           new_values: Json | null
           old_values: Json | null
+          organisation_id: string | null
           user_id: string
         }
         Insert: {
@@ -113,6 +114,7 @@ export type Database = {
           id?: string
           new_values?: Json | null
           old_values?: Json | null
+          organisation_id?: string | null
           user_id: string
         }
         Update: {
@@ -123,9 +125,17 @@ export type Database = {
           id?: string
           new_values?: Json | null
           old_values?: Json | null
+          organisation_id?: string | null
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "audit_logs_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "audit_logs_user_id_fkey"
             columns: ["user_id"]
@@ -291,6 +301,7 @@ export type Database = {
           evening_enabled: boolean | null
           instant_alerts_enabled: boolean | null
           morning_enabled: boolean | null
+          organisation_id: string | null
           updated_at: string | null
           user_id: string
         }
@@ -299,6 +310,7 @@ export type Database = {
           evening_enabled?: boolean | null
           instant_alerts_enabled?: boolean | null
           morning_enabled?: boolean | null
+          organisation_id?: string | null
           updated_at?: string | null
           user_id: string
         }
@@ -307,14 +319,115 @@ export type Database = {
           evening_enabled?: boolean | null
           instant_alerts_enabled?: boolean | null
           morning_enabled?: boolean | null
+          organisation_id?: string | null
           updated_at?: string | null
           user_id?: string
         }
         Relationships: [
           {
+            foreignKeyName: "notification_preferences_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "notification_preferences_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organisation_invitations: {
+        Row: {
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          invited_by: string
+          organisation_id: string
+          role: string
+          status: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          expires_at: string
+          id?: string
+          invited_by: string
+          organisation_id: string
+          role?: string
+          status?: string
+          token: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          invited_by?: string
+          organisation_id?: string
+          role?: string
+          status?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organisation_invitations_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organisation_invitations_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organisation_members: {
+        Row: {
+          created_at: string
+          id: string
+          organisation_id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organisation_id: string
+          role?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organisation_id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organisation_members_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organisation_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -325,6 +438,8 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          owner_id: string | null
+          settings: Json
           slug: string | null
           updated_at: string
         }
@@ -332,6 +447,8 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          owner_id?: string | null
+          settings?: Json
           slug?: string | null
           updated_at?: string
         }
@@ -339,10 +456,20 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          owner_id?: string | null
+          settings?: Json
           slug?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "organisations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -352,8 +479,10 @@ export type Database = {
           email: string | null
           id: string
           name: string | null
+          organisation_id: string | null
           updated_at: string | null
           workspace_id: string | null
+          workspace_mode: string | null
         }
         Insert: {
           access_level?: string | null
@@ -362,8 +491,10 @@ export type Database = {
           email?: string | null
           id: string
           name?: string | null
+          organisation_id?: string | null
           updated_at?: string | null
           workspace_id?: string | null
+          workspace_mode?: string | null
         }
         Update: {
           access_level?: string | null
@@ -372,10 +503,20 @@ export type Database = {
           email?: string | null
           id?: string
           name?: string | null
+          organisation_id?: string | null
           updated_at?: string | null
           workspace_id?: string | null
+          workspace_mode?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_organisation_id_fkey"
+            columns: ["organisation_id"]
+            isOneToOne: false
+            referencedRelation: "organisations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       reminders: {
         Row: {
@@ -503,6 +644,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_invitation_rpc: {
+        Args: { p_token: string; p_user_email: string; p_user_id: string }
+        Returns: Json
+      }
+      can_manage_org: { Args: { org_id: string }; Returns: boolean }
+      get_user_email: { Args: never; Returns: string }
+      get_user_organisation_id: { Args: never; Returns: string }
+      is_member_of_org: { Args: { org_id: string }; Returns: boolean }
+      is_org_owner: { Args: { org_id: string }; Returns: boolean }
       user_id: { Args: never; Returns: string }
     }
     Enums: {
