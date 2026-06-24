@@ -183,6 +183,10 @@ CREATE POLICY "profiles_update_own" ON profiles FOR UPDATE TO authenticated
   USING (id = user_id()) WITH CHECK (id = user_id());
 
 -- 3c. organisations RLS
+-- ⚠️  First, drop any pre-existing weak policies that allow reading ALL organisations
+DROP POLICY IF EXISTS "Authenticated users can read organisations" ON organisations;
+DROP POLICY IF EXISTS "Users can create organisations" ON organisations;
+
 ALTER TABLE organisations ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "organisations_select_member" ON organisations;
 CREATE POLICY "organisations_select_member" ON organisations FOR SELECT TO authenticated
@@ -240,7 +244,7 @@ DO $$
 DECLARE
   tbl text;
 BEGIN
-  FOREACH tbl IN ARRAY ARRAY['absences','staff_members','calendar_events','notes','reminders','departments','audit_logs'] LOOP
+  FOREACH tbl IN ARRAY ARRAY['absences','staff_members','calendar_events','notes','reminders','audit_logs'] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
     EXECUTE format('DROP POLICY IF EXISTS "%s_select_org" ON %I', tbl, tbl);
     EXECUTE format('CREATE POLICY "%s_select_org" ON %I FOR SELECT TO authenticated USING (organisation_id = public.get_user_organisation_id())', tbl, tbl);
@@ -265,6 +269,30 @@ CREATE POLICY "notif_prefs_update_own" ON notification_preferences FOR UPDATE TO
   USING (user_id = user_id()) WITH CHECK (user_id = user_id() AND organisation_id = public.get_user_organisation_id());
 DROP POLICY IF EXISTS "notif_prefs_delete_own" ON notification_preferences;
 CREATE POLICY "notif_prefs_delete_own" ON notification_preferences FOR DELETE TO authenticated USING (user_id = user_id());
+
+-- 3g. departments RLS (no user_id column — policies are org-scoped, not per-user)
+-- ⚠️  First, drop pre-existing weak policies that allow reading ALL departments
+DROP POLICY IF EXISTS "Authenticated users can read departments" ON departments;
+DROP POLICY IF EXISTS "Users can create departments" ON departments;
+
+ALTER TABLE departments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "departments_select_org" ON departments;
+CREATE POLICY "departments_select_org" ON departments FOR SELECT TO authenticated
+  USING (organisation_id = public.get_user_organisation_id());
+
+DROP POLICY IF EXISTS "departments_insert_org" ON departments;
+CREATE POLICY "departments_insert_org" ON departments FOR INSERT TO authenticated
+  WITH CHECK (organisation_id = public.get_user_organisation_id());
+
+DROP POLICY IF EXISTS "departments_update_org" ON departments;
+CREATE POLICY "departments_update_org" ON departments FOR UPDATE TO authenticated
+  USING (organisation_id = public.get_user_organisation_id())
+  WITH CHECK (organisation_id = public.get_user_organisation_id());
+
+DROP POLICY IF EXISTS "departments_delete_org" ON departments;
+CREATE POLICY "departments_delete_org" ON departments FOR DELETE TO authenticated
+  USING (organisation_id = public.get_user_organisation_id());
 
 -- ╔════════════════════════════════════════════════════════════════════════════╗
 -- ║ STEP 4: CLEAR PROFILE TRIGGER                                            ║

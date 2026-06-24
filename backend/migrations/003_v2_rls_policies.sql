@@ -136,6 +136,10 @@ CREATE POLICY "profiles_update_own" ON profiles
 -- TABLE: organisations
 -- ═════════════════════════════════════════════════════════════════════════════
 
+-- ⚠️  Drop pre-existing weak policies that allow reading/creating ALL organisations
+DROP POLICY IF EXISTS "Authenticated users can read organisations" ON organisations;
+DROP POLICY IF EXISTS "Users can create organisations" ON organisations;
+
 ALTER TABLE organisations ENABLE ROW LEVEL SECURITY;
 
 -- Read: Members can read their own organisation
@@ -425,6 +429,10 @@ CREATE POLICY "reminders_delete_own" ON reminders
 -- ═════════════════════════════════════════════════════════════════════════════
 -- TABLE: departments
 -- ═════════════════════════════════════════════════════════════════════════════
+
+-- ⚠️  Drop pre-existing weak policies that allow reading/creating ALL departments
+DROP POLICY IF EXISTS "Authenticated users can read departments" ON departments;
+DROP POLICY IF EXISTS "Users can create departments" ON departments;
 
 ALTER TABLE departments ENABLE ROW LEVEL SECURITY;
 
