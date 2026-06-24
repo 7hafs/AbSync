@@ -107,18 +107,22 @@ export default function OrganisationScreen() {
     setIsCreatingOrg(true);
     setCreateError(null);
     try {
-      console.log("[org:diag] Creating organisation with name:", orgName.trim());
+      console.log("[org:diag:create] ===== Creating organisation =====");
+      console.log("[org:diag:create] Name:", orgName.trim());
+      console.log("[org:diag:create] Current profile — orgId:", profile?.organisationId ?? "NULL", "wsMode:", profile?.workspaceMode ?? "NULL");
       await setWorkspaceMode("organisation", orgName.trim());
+      console.log("[org:diag:create] setWorkspaceMode returned — refreshing profile");
       await refreshProfile();
-      console.log("[org:diag] Organisation created — profile updated");
+      console.log("[org:diag:create] Profile after refresh — orgId:", profile?.organisationId ?? "NULL", "wsMode:", profile?.workspaceMode ?? "NULL");
+      console.log("[org:diag:create] ===== Organisation creation COMPLETE =====");
       router.back();
     } catch (err) {
-      console.error("[org:diag] Organisation creation FAILED:", err);
+      console.error("[org:diag:create] Organisation creation THREW:", err);
       setCreateError("Failed to create organisation. Please try again.");
     } finally {
       setIsCreatingOrg(false);
     }
-  }, [orgName, setWorkspaceMode, refreshProfile, router]);
+  }, [orgName, setWorkspaceMode, refreshProfile, router, profile]);
 
   // ── Leave organisation ──────────────────────────────────────────────────
 

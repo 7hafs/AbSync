@@ -482,6 +482,7 @@ export type Database = {
           organisation_id: string | null
           updated_at: string | null
           workspace_id: string | null
+          workspace_mode: string | null
         }
         Insert: {
           access_level?: string | null
@@ -493,6 +494,7 @@ export type Database = {
           organisation_id?: string | null
           updated_at?: string | null
           workspace_id?: string | null
+          workspace_mode?: string | null
         }
         Update: {
           access_level?: string | null
@@ -504,6 +506,7 @@ export type Database = {
           organisation_id?: string | null
           updated_at?: string | null
           workspace_id?: string | null
+          workspace_mode?: string | null
         }
         Relationships: [
           {
