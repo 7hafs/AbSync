@@ -60,7 +60,7 @@ export interface AuthState {
   /** Refresh the profile from the database. */
   refreshProfile: () => Promise<void>;
   /** Set the workspace mode (and create personal org if switching to personal). */
-  setWorkspaceMode: (mode: 'personal' | 'organisation', orgId?: string) => Promise<void>;
+  setWorkspaceMode: (mode: 'personal' | 'organisation', orgIdOrName?: string) => Promise<void>;
   /** Switch to personal workspace (leave current org if in one). */
   switchToPersonalWorkspace: () => Promise<void>;
 }
@@ -115,17 +115,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const createPersonalOrg = useCallback(
     async (userId: string): Promise<string | null> => {
       try {
+        console.log("[auth:diag:personal] Checking for existing personal org for user:", userId);
         // Check if personal org already exists
-        const { data: existing } = await supabase
+        const { data: existing, error: selectErr } = await supabase
           .from("organisations")
           .select("id")
           .eq("owner_id", userId)
           .eq("name", "Personal Workspace")
           .limit(1);
 
+        if (selectErr) {
+          console.error("[auth:diag:personal] SELECT existing org FAILED:", selectErr.message, selectErr.code);
+        }
+
         if (existing && existing.length > 0) {
           const orgId = (existing[0] as { id: string }).id;
-          console.log("[auth:personal] Reusing existing personal org:", orgId);
+          console.log("[auth:diag:personal] Reusing existing personal org:", orgId);
 
           // Ensure membership exists
           const { error: memberErr } = await supabase
@@ -136,19 +141,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               role: "owner",
             }, { onConflict: "organisation_id,user_id" });
           if (memberErr) {
-            console.warn("[auth:personal] Membership upsert failed:", memberErr.message);
+            console.error("[auth:diag:personal] Membership upsert FAILED:", memberErr.message, memberErr.code);
+          } else {
+            console.log("[auth:diag:personal] Membership upsert SUCCESS");
           }
 
           // Update profile
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase.from("profiles") as any).update({
+          const { error: profileErr } = await (supabase.from("profiles") as any).update({
             organisation_id: orgId,
             workspace_mode: "personal",
           }).eq("id", userId);
+          if (profileErr) {
+            console.error("[auth:diag:personal] Profile update FAILED:", profileErr.message, profileErr.code);
+          } else {
+            console.log("[auth:diag:personal] Profile update SUCCESS — orgId:", orgId);
+          }
 
           return orgId;
         }
 
+        console.log("[auth:diag:personal] No existing personal org — creating new one");
         // Create new personal org
         const { data: org, error: orgError } = await supabase
           .from("organisations")
@@ -160,30 +173,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .single();
 
         if (orgError) {
-          console.error("[auth:personal] Failed to create personal org:", orgError.message);
+          console.error("[auth:diag:personal] INSERT organisation FAILED:", orgError.message, orgError.code);
           return null;
         }
 
         const orgId = org.id;
-        console.log("[auth:personal] Created personal org:", orgId);
+        console.log("[auth:diag:personal] Organisation created:", orgId);
 
         // Create membership
-        await supabase.from("organisation_members").insert({
+        const { error: memberErr } = await supabase.from("organisation_members").insert({
           organisation_id: orgId,
           user_id: userId,
           role: "owner",
         });
+        if (memberErr) {
+          console.error("[auth:diag:personal] Membership INSERT FAILED:", memberErr.message, memberErr.code);
+        } else {
+          console.log("[auth:diag:personal] Membership INSERT SUCCESS");
+        }
 
         // Update profile
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase.from("profiles") as any).update({
+        const { error: profileErr } = await (supabase.from("profiles") as any).update({
           organisation_id: orgId,
           workspace_mode: "personal",
         }).eq("id", userId);
+        if (profileErr) {
+          console.error("[auth:diag:personal] Profile update FAILED:", profileErr.message, profileErr.code);
+        } else {
+          console.log("[auth:diag:personal] Profile update SUCCESS");
+        }
 
         return orgId;
       } catch (err) {
-        console.error("[auth:personal] createPersonalOrg threw:", err);
+        console.error("[auth:diag:personal] createPersonalOrg THREW:", err);
         return null;
       }
     },
@@ -243,6 +266,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (userId: string, name?: string, email?: string): Promise<string | null> => {
       const orgName = name ?? email ?? "My Organisation";
 
+      console.log("[auth:diag:org] bootstrapOrganisation START — user:", userId, "name:", orgName);
+
       // Step A: Create the organisation
       let organisationId: string | null = null;
       try {
@@ -253,13 +278,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .single();
 
         if (orgError) {
-          console.error("[auth:org] Organisation creation FAILED:", orgError.message, orgError.code);
+          console.error("[auth:diag:org] Step A — INSERT organisations FAILED:", orgError.message, orgError.code, orgError.details);
           return null;
         }
         organisationId = org.id;
-        console.log("[auth:org] Organisation created:", organisationId, "name:", orgName);
+        console.log("[auth:diag:org] Step A — Organisation created:", organisationId, "name:", orgName);
       } catch (err) {
-        console.error("[auth:org] Organisation creation THREW:", err);
+        console.error("[auth:diag:org] Step A — INSERT organisations THREW:", err);
         return null;
       }
 
@@ -273,13 +298,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             role: "owner",
           });
         if (memberError) {
-          console.warn("[auth:membership] Membership creation FAILED:", memberError.message, memberError.code);
+          console.error("[auth:diag:org] Step B — INSERT organisation_members FAILED:", memberError.message, memberError.code, memberError.details);
           // Non-fatal — membership can be repaired later
         } else {
-          console.log("[auth:membership] Membership created: user=", userId, "org=", organisationId, "role=owner");
+          console.log("[auth:diag:org] Step B — Membership created: user=", userId, "org=", organisationId, "role=owner");
         }
       } catch (err) {
-        console.warn("[auth:membership] Membership creation THREW:", err);
+        console.error("[auth:diag:org] Step B — INSERT organisation_members THREW:", err);
       }
 
       // Step C: Update profile.organisation_id and workspace_mode
@@ -290,12 +315,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .update({ organisation_id: organisationId, workspace_mode: "organisation" })
           .eq("id", userId);
         if (updateError) {
-          console.error("[auth:profile] Update organisation_id FAILED:", updateError.message, updateError.code);
+          console.error("[auth:diag:org] Step C — UPDATE profiles FAILED:", updateError.message, updateError.code, updateError.details);
         } else {
-          console.log("[auth:profile] Updated organisation_id to:", organisationId);
+          console.log("[auth:diag:org] Step C — Profile updated — organisation_id:", organisationId);
         }
       } catch (err) {
-        console.error("[auth:profile] Update organisation_id THREW:", err);
+        console.error("[auth:diag:org] Step C — UPDATE profiles THREW:", err);
       }
 
       return organisationId;
@@ -618,36 +643,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (prof) setProfile(prof);
   }, [user, fetchProfile]);
 
-  /** Set the workspace mode and optionally link to an org. */
+  /** Set the workspace mode and optionally link to an org or provide a name for org creation. */
   const setWorkspaceModeFn = useCallback(
-    async (mode: 'personal' | 'organisation', orgId?: string) => {
+    async (mode: 'personal' | 'organisation', orgIdOrName?: string) => {
       if (!user) return;
-      console.log("[auth] setWorkspaceMode:", mode, "orgId:", orgId ?? "none");
+      console.log("[auth] setWorkspaceMode:", mode, "orgIdOrName:", orgIdOrName ?? "none");
 
       if (mode === 'personal') {
+        console.log("[auth:diag] createPersonalOrg START for user:", user.id);
         const personalOrgId = await createPersonalOrg(user.id);
         if (personalOrgId) {
+          console.log("[auth:diag] createPersonalOrg SUCCESS — orgId:", personalOrgId);
           const prof = await fetchProfile(user.id);
           if (prof) setProfile(prof);
+        } else {
+          console.error("[auth:diag] createPersonalOrg FAILED — returned null");
         }
       } else {
-        // Organisation mode — org may be provided (joining) or needs creation
-        let finalOrgId = orgId ?? null;
+        // Organisation mode — orgIdOrName may be a UUID (joining existing org)
+        // or a display name (creating a new org)
+        let finalOrgId: string | null = null;
 
-        if (!finalOrgId) {
-          // Create a new organisation
-          finalOrgId = await bootstrapOrganisation(user.id, profile?.name ?? undefined, profile?.email ?? undefined);
+        // Check if orgIdOrName looks like a UUID (joining flow)
+        const isUuid = orgIdOrName && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgIdOrName);
+
+        if (orgIdOrName && isUuid) {
+          // Joining an existing org — use the UUID directly
+          finalOrgId = orgIdOrName;
+          console.log("[auth:diag] Joining existing org:", finalOrgId);
+        } else {
+          // Creating a new org — use orgIdOrName as the org name, fall back to profile/email
+          const orgDisplayName = orgIdOrName || profile?.name || profile?.email || "My Organisation";
+          console.log("[auth:diag] bootstrapOrganisation START for user:", user.id, "name:", orgDisplayName);
+          finalOrgId = await bootstrapOrganisation(user.id, orgDisplayName, profile?.email ?? undefined);
+          if (finalOrgId) {
+            console.log("[auth:diag] bootstrapOrganisation SUCCESS — orgId:", finalOrgId);
+          } else {
+            console.error("[auth:diag] bootstrapOrganisation FAILED — returned null");
+          }
         }
 
         if (finalOrgId) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase.from("profiles") as any).update({
+          const { error: profileUpdateErr } = await (supabase.from("profiles") as any).update({
             organisation_id: finalOrgId,
             workspace_mode: "organisation",
           }).eq("id", user.id);
+          if (profileUpdateErr) {
+            console.error("[auth:diag] Profile update FAILED:", profileUpdateErr.message, profileUpdateErr.code);
+          } else {
+            console.log("[auth:diag] Profile update SUCCESS — orgId:", finalOrgId);
+          }
 
           const prof = await fetchProfile(user.id);
-          if (prof) setProfile(prof);
+          if (prof) {
+            console.log("[auth:diag] Profile fetched after setWorkspaceMode — workspace_mode:", prof.workspaceMode, "orgId:", prof.organisationId);
+            setProfile(prof);
+          }
         }
       }
     },

@@ -1611,7 +1611,7 @@ export async function acceptInvitation(
   userId: string,
   userEmail: string
 ): Promise<{ success: boolean; orgId?: string; error?: string }> {
-  console.log("[dataService] acceptInvitation RPC: token=", token.substring(0, 8) + "...", "userId=", userId);
+  console.log("[diag:acceptInv] RPC START — token:", token.substring(0, 8) + "...", "userId:", userId, "email:", userEmail);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.rpc as any)("accept_invitation_rpc", {
@@ -1621,7 +1621,7 @@ export async function acceptInvitation(
   });
 
   if (error) {
-    console.error("[dataService] acceptInvitation RPC error:", error.message, error.code);
+    console.error("[diag:acceptInv] RPC call FAILED:", error.message, error.code, error.details);
     // Network or RPC-level failure — the database transaction was not committed
     return {
       success: false,
@@ -1629,15 +1629,17 @@ export async function acceptInvitation(
     };
   }
 
+  console.log("[diag:acceptInv] RPC call returned — data:", JSON.stringify(data));
+
   // The RPC returns a jsonb object: { success, org_id?, error? }
   const result = data as unknown as { success: boolean; org_id?: string; error?: string };
 
   if (!result.success) {
-    console.log("[dataService] acceptInvitation RPC returned failure:", result.error);
+    console.error("[diag:acceptInv] RPC returned failure:", result.error);
     return { success: false, error: result.error ?? "Unknown error" };
   }
 
-  console.log("[dataService] acceptInvitation RPC success: orgId=", result.org_id, "role=", userEmail);
+  console.log("[diag:acceptInv] RPC SUCCESS — orgId:", result.org_id);
   return { success: true, orgId: result.org_id };
 }
 
