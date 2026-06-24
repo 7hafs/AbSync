@@ -552,6 +552,10 @@ function AuthenticatedApp() {
         options={{ title: "Support & About" }}
       />
       <Stack.Screen
+        name="settings/workspace"
+        options={{ title: "Workspace" }}
+      />
+      <Stack.Screen
         name="settings/organisation"
         options={{ title: "Organisation" }}
       />

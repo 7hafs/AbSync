@@ -62,7 +62,7 @@ export default function SettingsScreen() {
     setEveningEnabled,
     setInstantAlertsEnabled,
   } = useNotificationStore();
-  const { profile, signOut, setWorkspaceMode, switchToPersonalWorkspace, refreshProfile } = useSupabaseAuth();
+  const { profile, signOut, switchToPersonalWorkspace, switchToOrganisationWorkspace, refreshProfile } = useSupabaseAuth();
   const colorScheme =
     isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
@@ -207,6 +207,32 @@ export default function SettingsScreen() {
             </View>
           </View>
 
+          {/* Workspace Switcher — always visible */}
+          <TouchableOpacity
+            style={[
+              styles.settingItem,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            onPress={() => router.push("/settings/workspace" as any)}
+          >
+            <View style={styles.settingContent}>
+              {profile?.workspaceMode === 'organisation' ? (
+                <Building2 size={22} color="#6366F1" />
+              ) : (
+                <User size={22} color={colors.primary} />
+              )}
+              <View style={styles.settingTextContainer}>
+                <ThemedText weight="semibold">Workspace</ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  {profile?.workspaceMode === 'organisation'
+                    ? 'Organisation Workspace'
+                    : 'Personal Workspace'}
+                </ThemedText>
+              </View>
+            </View>
+            <ChevronRight size={20} color={colors.secondaryText} />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={[
               styles.settingItem,
@@ -277,6 +303,7 @@ export default function SettingsScreen() {
             </View>
           )}
 
+          {/* Quick switch actions */}
           {profile?.workspaceMode === 'organisation' && (
             <TouchableOpacity
               style={[
@@ -286,7 +313,7 @@ export default function SettingsScreen() {
               onPress={() => {
                 Alert.alert(
                   'Switch to Personal Workspace',
-                  'This will leave your current organisation and switch to a personal workspace. Your personal data remains safe. Continue?',
+                  'This switches your view to your personal workspace. You remain a member of your organisation and can switch back any time.',
                   [
                     { text: 'Cancel', style: 'cancel' },
                     {
@@ -294,7 +321,7 @@ export default function SettingsScreen() {
                       onPress: async () => {
                         try {
                           await switchToPersonalWorkspace();
-                          Alert.alert('Switched', 'You are now in Personal Workspace mode.');
+                          Alert.alert('Switched', 'You are now viewing your Personal Workspace.');
                         } catch {
                           Alert.alert('Error', 'Failed to switch workspace mode.');
                         }
@@ -309,7 +336,7 @@ export default function SettingsScreen() {
                 <View style={styles.settingTextContainer}>
                   <ThemedText weight="semibold">Switch to Personal Workspace</ThemedText>
                   <ThemedText variant="secondary" size="small">
-                    Leave your organisation and work independently
+                    View your private data (membership preserved)
                   </ThemedText>
                 </View>
               </View>
@@ -323,7 +350,7 @@ export default function SettingsScreen() {
                 styles.settingItem,
                 { backgroundColor: colors.card, borderColor: colors.border },
               ]}
-              onPress={() => router.push('/settings/organisation' as any)}
+              onPress={() => router.push('/settings/workspace' as any)}
             >
               <View style={styles.settingContent}>
                 <Building2 size={22} color="#6366F1" />

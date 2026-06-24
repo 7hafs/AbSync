@@ -59,7 +59,7 @@ export default function OrganisationScreen() {
     isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
 
-  const { profile, setWorkspaceMode, switchToPersonalWorkspace, refreshProfile } = useSupabaseAuth();
+  const { profile, setWorkspaceMode, leaveOrganisation, refreshProfile } = useSupabaseAuth();
   const {
     role,
     isOwner: userIsOwner,
@@ -140,7 +140,7 @@ export default function OrganisationScreen() {
 
     Alert.alert(
       'Leave Organisation',
-      `Are you sure you want to leave ${organisation.name}? Your personal data will remain safe.`,
+      `Are you sure you want to leave ${organisation.name}? This permanently removes your membership. Your personal data will remain safe.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -149,8 +149,8 @@ export default function OrganisationScreen() {
           onPress: async () => {
             setIsLeaving(true);
             try {
-              await switchToPersonalWorkspace();
-              Alert.alert('Left Organisation', 'You are now in Personal Workspace mode.');
+              await leaveOrganisation();
+              Alert.alert('Left Organisation', 'You have left the organisation and are now in Personal Workspace.');
               router.back();
             } catch (err) {
               Alert.alert('Error', 'Failed to leave organisation. Please try again.');
@@ -161,7 +161,7 @@ export default function OrganisationScreen() {
         },
       ]
     );
-  }, [organisation, userIsOwner, members, profile, switchToPersonalWorkspace, router]);
+  }, [organisation, userIsOwner, members, profile, leaveOrganisation, router]);
 
   // ── Edit name handlers ──────────────────────────────────────────────────
 

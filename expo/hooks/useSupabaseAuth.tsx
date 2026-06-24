@@ -22,9 +22,13 @@ import React, {
   useState,
   useCallback,
 } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase, getAuthRedirectUrl } from "@/lib/supabase";
 import { autoAcceptInvitations, acceptInvitation } from "@/lib/dataService";
 import { Session, User } from "@supabase/supabase-js";
+
+/** AsyncStorage key for persisting the user's personal organisation ID. */
+const PERSONAL_ORG_ID_KEY = "personal_org_id";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,8 +65,12 @@ export interface AuthState {
   refreshProfile: () => Promise<void>;
   /** Set the workspace mode (and create personal org if switching to personal). */
   setWorkspaceMode: (mode: 'personal' | 'organisation', orgIdOrName?: string) => Promise<void>;
-  /** Switch to personal workspace (leave current org if in one). */
+  /** Switch to personal workspace — only changes the view, never deletes memberships or overwrites organisation_id. */
   switchToPersonalWorkspace: () => Promise<void>;
+  /** Switch back to organisation workspace — only changes the view. Validates membership still exists. */
+  switchToOrganisationWorkspace: () => Promise<void>;
+  /** Permanently leave the current organisation — removes memberships and switches to personal. */
+  leaveOrganisation: () => Promise<void>;
 }
 
 // ── Context ──────────────────────────────────────────────────────────────────
@@ -107,15 +115,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /**
-   * Create a hidden personal organisation for a user (one per user).
-   * This is NOT a real shared organisation — it exists purely so that
-   * requireOrganisationId() and RLS work identically for personal users.
-   * Returns the synthetic organisation_id, or null on failure.
+   * Ensure a personal organisation exists for a user (one per user).
+   * Creates the org + membership row if needed. Returns the org ID.
+   *
+   * When updateProfile is true (onboarding / repair): also sets
+   * organisation_id + workspace_mode on the profile.
+   *
+   * When updateProfile is false (workspace switching): only ensures
+   * the org exists. NEVER overwrites profile.organisation_id.
    */
-  const createPersonalOrg = useCallback(
-    async (userId: string): Promise<string | null> => {
+  const ensurePersonalOrg = useCallback(
+    async (userId: string, updateProfile: boolean): Promise<string | null> => {
       try {
-        console.log("[auth:diag:personal] Checking for existing personal org for user:", userId);
+        console.log("[auth:diag:personal] Checking for existing personal org for user:", userId, "updateProfile:", updateProfile);
         // Check if personal org already exists
         const { data: existing, error: selectErr } = await supabase
           .from("organisations")
@@ -146,16 +158,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.log("[auth:diag:personal] Membership upsert SUCCESS");
           }
 
-          // Update profile
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { error: profileErr } = await (supabase.from("profiles") as any).update({
-            organisation_id: orgId,
-            workspace_mode: "personal",
-          }).eq("id", userId);
-          if (profileErr) {
-            console.error("[auth:diag:personal] Profile update FAILED:", profileErr.message, profileErr.code);
-          } else {
-            console.log("[auth:diag:personal] Profile update SUCCESS — orgId:", orgId);
+          if (updateProfile) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { error: profileErr } = await (supabase.from("profiles") as any).update({
+              organisation_id: orgId,
+              workspace_mode: "personal",
+            }).eq("id", userId);
+            if (profileErr) {
+              console.error("[auth:diag:personal] Profile update FAILED:", profileErr.message, profileErr.code);
+            } else {
+              console.log("[auth:diag:personal] Profile update SUCCESS — orgId:", orgId);
+            }
           }
 
           return orgId;
@@ -192,25 +205,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log("[auth:diag:personal] Membership INSERT SUCCESS");
         }
 
-        // Update profile
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: profileErr } = await (supabase.from("profiles") as any).update({
-          organisation_id: orgId,
-          workspace_mode: "personal",
-        }).eq("id", userId);
-        if (profileErr) {
-          console.error("[auth:diag:personal] Profile update FAILED:", profileErr.message, profileErr.code);
-        } else {
-          console.log("[auth:diag:personal] Profile update SUCCESS");
+        if (updateProfile) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error: profileErr } = await (supabase.from("profiles") as any).update({
+            organisation_id: orgId,
+            workspace_mode: "personal",
+          }).eq("id", userId);
+          if (profileErr) {
+            console.error("[auth:diag:personal] Profile update FAILED:", profileErr.message, profileErr.code);
+          } else {
+            console.log("[auth:diag:personal] Profile update SUCCESS");
+          }
         }
 
         return orgId;
       } catch (err) {
-        console.error("[auth:diag:personal] createPersonalOrg THREW:", err);
+        console.error("[auth:diag:personal] ensurePersonalOrg THREW:", err);
         return null;
       }
     },
     []
+  );
+
+  /**
+   * Legacy wrapper — calls ensurePersonalOrg with updateProfile=true.
+   * Used by onboarding, repair paths, and setWorkspaceMode where we DO
+   * want to set organisation_id on the profile.
+   */
+  const createPersonalOrg = useCallback(
+    async (userId: string): Promise<string | null> => {
+      return ensurePersonalOrg(userId, true);
+    },
+    [ensurePersonalOrg]
   );
 
   /**
@@ -832,32 +858,144 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user, profile, createPersonalOrg, bootstrapOrganisation, fetchProfile]
   );
 
-  /** Switch to personal workspace (leave current org if in one). */
+  /**
+   * Switch to personal workspace — ONLY changes workspace_mode to 'personal'.
+   *
+   * This is a VIEW-ONLY switch. It:
+   *   - Ensures a personal org exists (creates one if needed)
+   *   - Stores the personal org ID in AsyncStorage so dataService can resolve it
+   *   - Updates workspace_mode to 'personal' on the profile
+   *
+   * It NEVER:
+   *   - Deletes organisation_members rows
+   *   - Overwrites profile.organisation_id
+   *   - Revokes access to any organisation
+   */
   const switchToPersonalWorkspace = useCallback(async () => {
     if (!user) return;
-    console.log("[auth] switchToPersonalWorkspace");
+    console.log("[auth:workspace] switchToPersonalWorkspace — switching view only");
 
-    // If currently in an org, leave all memberships
-    if (profile?.organisationId) {
-      try {
-        const { data: memberships } = await supabase
-          .from("organisation_members")
-          .select("id")
-          .eq("user_id", user.id);
-
-        if (memberships) {
-          for (const m of memberships as { id: string }[]) {
-            await supabase.from("organisation_members").delete().eq("id", m.id);
-          }
-        }
-      } catch (err) {
-        console.warn("[auth] Failed to clear memberships:", err);
-      }
+    // Step 1: Ensure a personal org exists (create if needed)
+    // This is the data-scaffolding org for personal-mode writes.
+    // IMPORTANT: pass updateProfile=false so we NEVER overwrite organisation_id.
+    const personalOrgId = await ensurePersonalOrg(user.id, false);
+    if (!personalOrgId) {
+      console.error("[auth:workspace] switchToPersonalWorkspace: failed to ensure personal org");
+      return;
     }
 
-    // Now switch to personal workspace (this creates personal org + sets mode)
-    await setWorkspaceModeFn('personal');
-  }, [user, profile, setWorkspaceModeFn]);
+    // Step 2: Persist the personal org ID so dataService can resolve it
+    await AsyncStorage.setItem(PERSONAL_ORG_ID_KEY, personalOrgId);
+    console.log("[auth:workspace] Personal org ID cached:", personalOrgId);
+
+    // Step 3: Update ONLY workspace_mode — never touch organisation_id or memberships
+    const { error: updateErr } = await supabase
+      .from("profiles")
+      .update({ workspace_mode: "personal" } as any)
+      .eq("id", user.id);
+
+    if (updateErr) {
+      console.error("[auth:workspace] switchToPersonalWorkspace: profile update FAILED:", updateErr.message);
+      return;
+    }
+
+    console.log("[auth:workspace] switchToPersonalWorkspace: workspace_mode set to 'personal'");
+
+    // Step 4: Refresh the in-memory profile
+    const prof = await fetchProfile(user.id);
+    if (prof) {
+      console.log("[auth:workspace] switchToPersonalWorkspace: profile refreshed — mode:", prof.workspaceMode);
+      setProfile(prof);
+    }
+  }, [user, ensurePersonalOrg, fetchProfile]);
+
+  /**
+   * Switch to organisation workspace — ONLY changes workspace_mode to 'organisation'.
+   *
+   * Validates that the user still has a valid membership before switching.
+   * NEVER creates organisations, never deletes memberships.
+   */
+  const switchToOrganisationWorkspace = useCallback(async () => {
+    if (!user || !profile?.organisationId) {
+      console.error("[auth:workspace] switchToOrganisationWorkspace: no user or no organisation_id");
+      return;
+    }
+
+    console.log("[auth:workspace] switchToOrganisationWorkspace — switching view only");
+
+    // Verify membership still exists for this org
+    const { data: membership, error: memberErr } = await supabase
+      .from("organisation_members")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("organisation_id", profile.organisationId)
+      .limit(1);
+
+    if (memberErr || !membership || membership.length === 0) {
+      console.error(
+        "[auth:workspace] switchToOrganisationWorkspace: no membership found for org",
+        profile.organisationId,
+        "— cannot switch"
+      );
+      return;
+    }
+
+    // Update ONLY workspace_mode
+    const { error: updateErr } = await supabase
+      .from("profiles")
+      .update({ workspace_mode: "organisation" } as any)
+      .eq("id", user.id);
+
+    if (updateErr) {
+      console.error("[auth:workspace] switchToOrganisationWorkspace: profile update FAILED:", updateErr.message);
+      return;
+    }
+
+    console.log("[auth:workspace] switchToOrganisationWorkspace: workspace_mode set to 'organisation'");
+
+    const prof = await fetchProfile(user.id);
+    if (prof) {
+      console.log("[auth:workspace] switchToOrganisationWorkspace: profile refreshed — mode:", prof.workspaceMode);
+      setProfile(prof);
+    }
+  }, [user, profile, fetchProfile]);
+
+  /**
+   * Permanently leave the current organisation — removes all memberships
+   * and switches to personal workspace. This IS a destructive action; use
+   * switchToPersonalWorkspace() for non-destructive view switching.
+   */
+  const leaveOrganisation = useCallback(async () => {
+    if (!user) return;
+    console.log("[auth:workspace] leaveOrganisation — permanently leaving org");
+
+    // Delete all organisation memberships for this user
+    const { data: memberships, error: fetchErr } = await supabase
+      .from("organisation_members")
+      .select("id")
+      .eq("user_id", user.id);
+
+    if (fetchErr) {
+      console.error("[auth:workspace] leaveOrganisation: fetch memberships FAILED:", fetchErr.message);
+      return;
+    }
+
+    if (memberships && memberships.length > 0) {
+      for (const m of memberships as { id: string }[]) {
+        const { error: delErr } = await supabase
+          .from("organisation_members")
+          .delete()
+          .eq("id", m.id);
+        if (delErr) {
+          console.error("[auth:workspace] leaveOrganisation: delete membership FAILED:", delErr.message);
+        }
+      }
+      console.log("[auth:workspace] leaveOrganisation: removed", memberships.length, "memberships");
+    }
+
+    // Now switch to personal workspace
+    await switchToPersonalWorkspace();
+  }, [user, switchToPersonalWorkspace]);
 
   // ── Context value ────────────────────────────────────────────────────────
 
@@ -875,8 +1013,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshProfile,
       setWorkspaceMode: setWorkspaceModeFn,
       switchToPersonalWorkspace,
+      switchToOrganisationWorkspace,
+      leaveOrganisation,
     }),
-    [isLoading, session, user, profile, isProcessing, signUp, signIn, forgotPassword, signOut, refreshProfile, setWorkspaceModeFn, switchToPersonalWorkspace]
+    [isLoading, session, user, profile, isProcessing, signUp, signIn, forgotPassword, signOut, refreshProfile, setWorkspaceModeFn, switchToPersonalWorkspace, switchToOrganisationWorkspace, leaveOrganisation]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

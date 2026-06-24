@@ -29,23 +29,71 @@ async function getUserIdAsync(): Promise<string | null> {
   return data.session?.user?.id ?? null;
 }
 
-/** Get the current user's organisation_id from their profile. */
+/**
+ * Get the effective organisation_id for the current user.
+ *
+ * If workspace_mode is 'personal', returns the personal org ID
+ * (cached in AsyncStorage or looked up from organisations table).
+ *
+ * If workspace_mode is 'organisation', returns the profile's
+ * organisation_id (the real shared org).
+ *
+ * This is the single source of truth for which org's data should
+ * be visible at any moment.
+ */
 async function getOrganisationIdAsync(): Promise<string | null> {
   const userId = await getUserIdAsync();
   if (!userId) return null;
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("organisation_id")
+    .select("organisation_id, workspace_mode")
     .eq("id", userId)
     .single();
 
   if (error || !data) {
-    console.warn("[dataService] Could not fetch organisation_id for user:", userId, error?.message);
+    console.warn("[dataService] Could not fetch profile for user:", userId, error?.message);
     return null;
   }
 
-  const orgId = (data as { organisation_id: string | null }).organisation_id;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const row = data as any as { organisation_id: string | null; workspace_mode: string | null };
+
+  // In personal mode: return the personal org ID (scaffolding org for writes).
+  // This is NOT the same as organisation_id — that field holds the user's
+  // real organisation membership and is never overwritten on mode switch.
+  if (row.workspace_mode === "personal") {
+    try {
+      // Try AsyncStorage cache first (set by switchToPersonalWorkspace)
+      const cached = await AsyncStorage.getItem("personal_org_id");
+      if (cached) {
+        console.log("[dataService] Personal mode — using cached personal org ID:", cached);
+        return cached;
+      }
+    } catch { /* AsyncStorage read may fail */ }
+
+    // Fallback: query the "Personal Workspace" org owned by this user
+    const { data: personalOrg } = await supabase
+      .from("organisations")
+      .select("id")
+      .eq("owner_id", userId)
+      .eq("name", "Personal Workspace")
+      .limit(1);
+
+    if (personalOrg && personalOrg.length > 0) {
+      const orgId = (personalOrg[0] as { id: string }).id;
+      console.log("[dataService] Personal mode — found personal org by query:", orgId);
+      // Cache for next time
+      try { await AsyncStorage.setItem("personal_org_id", orgId); } catch { /* ignore */ }
+      return orgId;
+    }
+
+    console.warn("[dataService] Personal mode — no personal org found for user:", userId);
+    return null;
+  }
+
+  // In organisation mode: return the profile's organisation_id (the real org)
+  const orgId = row.organisation_id;
   if (!orgId) {
     console.warn("[dataService] User has no organisation_id set:", userId);
   }

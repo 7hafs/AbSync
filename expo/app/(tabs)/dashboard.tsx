@@ -23,6 +23,8 @@ import {
   FileText,
   Bell,
   ChevronRight,
+  User,
+  Building2,
 } from 'lucide-react-native';
 import { useColorScheme } from 'react-native';
 import ThemedText from '@/components/ThemedText';
@@ -266,6 +268,28 @@ export default function DashboardScreen() {
           <ThemedText variant="secondary" style={styles.headerDate}>
             {todayDateDisplay}
           </ThemedText>
+          {/* Workspace indicator */}
+          <TouchableOpacity
+            style={styles.workspacePill}
+            onPress={() => router.push('/settings/workspace' as never)}
+            activeOpacity={0.7}
+          >
+            {profile?.workspaceMode === 'organisation' ? (
+              <>
+                <Building2 size={11} color="#6366F1" />
+                <ThemedText style={styles.workspacePillText} numberOfLines={1}>
+                  Organisation
+                </ThemedText>
+              </>
+            ) : (
+              <>
+                <User size={11} color={colors.primary} />
+                <ThemedText style={styles.workspacePillText} numberOfLines={1}>
+                  Personal
+                </ThemedText>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
         <TouchableOpacity
           style={[styles.notifyBtn, { backgroundColor: colors.surfaceVariant }]}
@@ -557,6 +581,22 @@ const styles = StyleSheet.create({
   headerLeft: { gap: 2 },
   headerTitle: { fontSize: 26, letterSpacing: -0.5 },
   headerDate: { fontSize: 13 },
+  workspacePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: 'rgba(128,128,128,0.08)',
+  },
+  workspacePillText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: '#6B7280',
+  },
   notifyBtn: {
     width: 40,
     height: 40,
