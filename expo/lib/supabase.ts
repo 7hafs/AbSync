@@ -13,6 +13,15 @@ import * as SecureStore from "expo-secure-store";
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL as string;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY as string;
 
+const projectRef = supabaseUrl?.split("//")[1]?.split(".")[0] ?? "unknown";
+console.log("[SUPABASE]", {
+  url: supabaseUrl,
+  projectRef,
+  anonKeyPrefix: supabaseAnonKey?.substring(0, 20) + "...",
+  expectedRef: "mvtxgvxfpepbdxoxcoaw",
+  matchesExpected: projectRef === "mvtxgvxfpepbdxoxcoaw",
+});
+
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
     "Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY"

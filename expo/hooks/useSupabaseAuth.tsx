@@ -330,13 +330,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Step A: Create the organisation
       let organisationId: string | null = null;
       try {
-        console.log("[org:create]", {
+        const payload = { name: orgName, owner_id: userId };
+        console.log("[ORG CREATE PAYLOAD]", {
           userId: userId,
-          ownerIdBeingSent: userId,
+          userIdType: typeof userId,
+          userIdLength: userId.length,
+          owner_id: userId,
+          organisationName: orgName,
+          payload,
         });
         const { data: org, error: orgError } = await supabase
           .from("organisations")
-          .insert({ name: orgName, owner_id: userId })
+          .insert(payload)
           .select("id")
           .single();
 
