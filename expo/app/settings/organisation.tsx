@@ -92,6 +92,8 @@ export default function OrganisationScreen() {
 
   const isPersonal = profile?.workspaceMode === "personal";
   const needsOnboarding = profile?.workspaceMode === null || profile?.workspaceMode === undefined;
+  /** Invariant violation: org mode with no org linked — user is stranded. Show Create/Join. */
+  const isBrokenOrgState = profile?.workspaceMode === "organisation" && !profile?.organisationId;
 
   // Load organisation data when we have a profile with org ID AND we're in org mode
   useEffect(() => {
@@ -415,6 +417,217 @@ export default function OrganisationScreen() {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
+  // BROKEN STATE — org mode but no organisation linked
+  // This is an invariant violation. Show Create/Join so the user is never stranded.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  if (isBrokenOrgState) {
+    return (
+      <ThemedView style={styles.container} useGradient>
+        <Stack.Screen options={{ title: "Organisation" }} />
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          {/* Broken state warning banner */}
+          <View style={[styles.modeBanner, { backgroundColor: "rgba(239, 68, 68, 0.08)", borderColor: "rgba(239, 68, 68, 0.2)" }]}>
+            <AlertTriangle size={20} color="#EF4444" />
+            <View style={{ flex: 1 }}>
+              <ThemedText weight="semibold" style={{ color: "#EF4444" }}>
+                Workspace State Mismatch
+              </ThemedText>
+              <ThemedText variant="secondary" size="small">
+                You are in Organisation mode but are not linked to any organisation. Create or join one below.
+              </ThemedText>
+            </View>
+          </View>
+
+          {/* Create Organisation form — same as personal-mode flow */}
+          {createSuccess ? (
+            <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: "#22C55E" }]}>
+              <View style={styles.successIcon}>
+                <Check size={32} color="white" />
+              </View>
+              <ThemedText weight="bold" style={[styles.successTitle, { color: "#16A34A" }]}>
+                Organisation Created!
+              </ThemedText>
+              <ThemedText variant="secondary" style={styles.successSubtitle}>
+                Your new team workspace is ready.{"\n"}
+                You are now in Organisation Workspace mode.
+              </ThemedText>
+              <TouchableOpacity
+                style={[styles.primaryButton, { backgroundColor: "#22C55E" }]}
+                onPress={handleGoToWorkspace}
+                activeOpacity={0.7}
+              >
+                <Building2 size={20} color="white" />
+                <ThemedText style={styles.primaryButtonText} weight="bold">
+                  Go to Workspace
+                </ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.secondaryButton, { backgroundColor: colors.surfaceVariant }]}
+                onPress={() => { setCreateSuccess(false); setOrgName(""); setOrgSlug(""); setOrgDescription(""); }}
+              >
+                <ThemedText variant="secondary" weight="semibold">
+                  Create Another
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.formHeader}>
+                <Building2 size={24} color="#6366F1" />
+                <View style={{ flex: 1 }}>
+                  <ThemedText weight="bold" style={styles.optionTitle}>
+                    Create Organisation
+                  </ThemedText>
+                  <ThemedText variant="secondary" size="small">
+                    Set up a new team workspace with shared calendar, roles, and invitations.
+                  </ThemedText>
+                </View>
+              </View>
+
+              <ThemedText weight="semibold" style={styles.label}>
+                Organisation Name *
+              </ThemedText>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  {
+                    color: colors.text,
+                    backgroundColor: colors.surfaceVariant,
+                    borderColor: createError ? "#EF4444" : colors.border,
+                  },
+                ]}
+                value={orgName}
+                onChangeText={handleNameChange}
+                placeholder="e.g. Acme Corp"
+                placeholderTextColor={colors.secondaryText}
+                autoFocus
+                returnKeyType="next"
+                maxLength={60}
+              />
+
+              <ThemedText weight="semibold" style={styles.label}>
+                URL Slug (optional)
+              </ThemedText>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  {
+                    color: colors.text,
+                    backgroundColor: colors.surfaceVariant,
+                    borderColor: colors.border,
+                  },
+                ]}
+                value={orgSlug}
+                onChangeText={setOrgSlug}
+                placeholder={generateSlug(orgName) || "auto-generated"}
+                placeholderTextColor={colors.secondaryText}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="next"
+                maxLength={40}
+              />
+              <ThemedText variant="secondary" size="small" style={{ marginTop: -8 }}>
+                Used for sharing and linking. Auto-generated from name.
+              </ThemedText>
+
+              <ThemedText weight="semibold" style={styles.label}>
+                Description (optional)
+              </ThemedText>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  styles.textAreaInput,
+                  {
+                    color: colors.text,
+                    backgroundColor: colors.surfaceVariant,
+                    borderColor: colors.border,
+                  },
+                ]}
+                value={orgDescription}
+                onChangeText={setOrgDescription}
+                placeholder="What does your organisation do?"
+                placeholderTextColor={colors.secondaryText}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+                maxLength={200}
+              />
+
+              {createError && (
+                <View style={styles.errorBanner}>
+                  <AlertTriangle size={14} color="#EF4444" />
+                  <ThemedText size="small" style={{ color: "#EF4444", flex: 1 }}>
+                    {createError}
+                  </ThemedText>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.primaryButton, { backgroundColor: "#6366F1", opacity: isCreatingOrg ? 0.7 : 1 }]}
+                onPress={handleCreateOrganisation}
+                disabled={isCreatingOrg || !orgName.trim()}
+                activeOpacity={0.7}
+              >
+                {isCreatingOrg ? (
+                  <>
+                    <ActivityIndicator size="small" color="white" />
+                    <ThemedText style={styles.primaryButtonText} weight="bold">
+                      Creating...
+                    </ThemedText>
+                  </>
+                ) : (
+                  <>
+                    <Building2 size={20} color="white" />
+                    <ThemedText style={styles.primaryButtonText} weight="bold">
+                      Create Organisation
+                    </ThemedText>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Divider */}
+          <View style={styles.dividerRow}>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            <ThemedText variant="secondary" size="small" style={styles.dividerText}>or</ThemedText>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+          </View>
+
+          {/* Join Organisation Card */}
+          <TouchableOpacity
+            style={[
+              styles.joinCard,
+              { backgroundColor: colors.card, borderColor: "rgba(99, 102, 241, 0.2)" },
+            ]}
+            onPress={() => router.push('/settings/join' as never)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.joinIcon, { backgroundColor: "rgba(99, 102, 241, 0.1)" }]}>
+              <Mail size={28} color="#6366F1" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <ThemedText weight="bold" style={[styles.optionTitle, { color: "#6366F1" }]}>
+                Join Organisation
+              </ThemedText>
+              <ThemedText variant="secondary" size="small">
+                Enter an invitation token to join an existing team.
+              </ThemedText>
+            </View>
+            <ArrowRight size={22} color="#6366F1" />
+          </TouchableOpacity>
+
+          <ThemedText variant="secondary" size="small" style={styles.footerNote}>
+            Creating or joining an organisation will link your profile and switch to shared workspace.{"\n"}
+            Your personal data will be kept safe.
+          </ThemedText>
+        </ScrollView>
+      </ThemedView>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
   // PERSONAL WORKSPACE VIEW — Create / Join Organisation
   // ═══════════════════════════════════════════════════════════════════════
 
@@ -687,28 +900,36 @@ export default function OrganisationScreen() {
     );
   }
 
-  // ── No organisation state ───────────────────────────────────────────────
+  // ── No organisation loaded ───────────────────────────────────────────────
+  // This can happen during loading or if the org data hasn't been fetched yet.
+  // The broken-state invariant above (isBrokenOrgState) catches the case where
+  // workspace_mode='organisation' but no org_id exists on the profile.
 
   if (!organisation) {
     return (
       <ThemedView style={styles.container} useGradient>
         <Stack.Screen options={{ title: "Organisation" }} />
         <View style={styles.centerState}>
-          <Building2 size={48} color={colors.secondaryText} />
+          <ActivityIndicator size="large" color={colors.primary} />
           <ThemedText
             variant="secondary"
-            style={styles.emptyText}
+            style={styles.loadingText}
           >
-            No organisation found
+            Loading organisation data...
           </ThemedText>
-          <ThemedText
-            variant="secondary"
-            size="small"
-            style={styles.emptySubtext}
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary, marginTop: 16 }]}
+            onPress={() => {
+              if (profile?.organisationId) {
+                loadOrganisation(profile.organisationId);
+              }
+            }}
           >
-            An organisation is created automatically when you sign up.{"\n"}
-            If you just signed up, try pulling to refresh.
-          </ThemedText>
+            <RefreshCw size={16} color="white" />
+            <ThemedText style={styles.retryButtonText} weight="semibold">
+              Refresh
+            </ThemedText>
+          </TouchableOpacity>
         </View>
       </ThemedView>
     );

@@ -310,11 +310,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log("[auth:diag:org] ===== bootstrapOrganisation START =====");
       console.log("[auth:diag:org] user:", userId, "name:", orgName);
+
+      // Diagnostic: compare app user.id with auth.jwt()->>'sub' from the DB
+      try {
+        const { data: jwtCheck, error: jwtError } = await supabase.rpc("diagnose_auth_id" as any);
+        console.log("[auth:diag:org] JWT DIAGNOSTIC:", JSON.stringify({
+          appUserId: userId,
+          appUserIdType: typeof userId,
+          appUserIdLength: userId.length,
+          rpcResult: jwtCheck,
+          rpcError: jwtError?.message ?? null,
+        }));
+      } catch (jwtDiagErr) {
+        console.error("[auth:diag:org] JWT DIAGNOSTIC THREW:", jwtDiagErr);
+      }
+
       await dumpDbState(userId, "BEFORE org create");
 
       // Step A: Create the organisation
       let organisationId: string | null = null;
       try {
+        console.log("[org:create]", {
+          userId: userId,
+          ownerIdBeingSent: userId,
+        });
         const { data: org, error: orgError } = await supabase
           .from("organisations")
           .insert({ name: orgName, owner_id: userId })

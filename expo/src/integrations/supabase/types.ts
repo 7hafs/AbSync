@@ -649,6 +649,7 @@ export type Database = {
         Returns: Json
       }
       can_manage_org: { Args: { org_id: string }; Returns: boolean }
+      diagnose_auth_id: { Args: never; Returns: Json }
       get_user_email: { Args: never; Returns: string }
       get_user_organisation_id: { Args: never; Returns: string }
       is_member_of_org: { Args: { org_id: string }; Returns: boolean }
