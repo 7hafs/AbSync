@@ -270,26 +270,43 @@ export default function DashboardScreen() {
           </ThemedText>
           {/* Workspace indicator */}
           <TouchableOpacity
-            style={styles.workspacePill}
+            style={[
+              styles.workspacePill,
+              {
+                backgroundColor:
+                  profile?.workspaceMode === 'organisation'
+                    ? 'rgba(99, 102, 241, 0.1)'
+                    : 'rgba(15, 118, 110, 0.1)',
+                borderColor:
+                  profile?.workspaceMode === 'organisation'
+                    ? 'rgba(99, 102, 241, 0.25)'
+                    : 'rgba(15, 118, 110, 0.25)',
+              },
+            ]}
             onPress={() => router.push('/settings/workspace' as never)}
             activeOpacity={0.7}
           >
             {profile?.workspaceMode === 'organisation' ? (
               <>
-                <Building2 size={11} color="#6366F1" />
-                <ThemedText style={styles.workspacePillText} numberOfLines={1}>
-                  Organisation
+                <View style={[styles.workspaceDot, { backgroundColor: '#6366F1' }]} />
+                <ThemedText style={[styles.workspacePillText, { color: '#4F46E5' }]} numberOfLines={1}>
+                  Organisation Workspace
                 </ThemedText>
               </>
             ) : (
               <>
-                <User size={11} color={colors.primary} />
-                <ThemedText style={styles.workspacePillText} numberOfLines={1}>
-                  Personal
+                <View style={[styles.workspaceDot, { backgroundColor: colors.primary }]} />
+                <ThemedText style={[styles.workspacePillText, { color: colors.primary }]} numberOfLines={1}>
+                  Personal Workspace
                 </ThemedText>
               </>
             )}
           </TouchableOpacity>
+          {!profile?.workspaceMode && (
+            <ThemedText variant="secondary" size="small" style={{ marginTop: 2 }}>
+              Tap to set up your workspace
+            </ThemedText>
+          )}
         </View>
         <TouchableOpacity
           style={[styles.notifyBtn, { backgroundColor: colors.surfaceVariant }]}
@@ -584,18 +601,22 @@ const styles = StyleSheet.create({
   workspacePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     alignSelf: 'flex-start',
-    marginTop: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-    backgroundColor: 'rgba(128,128,128,0.08)',
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  workspaceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   workspacePillText: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '700' as const,
   },
   notifyBtn: {
     width: 40,
