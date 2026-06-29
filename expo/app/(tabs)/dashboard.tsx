@@ -23,6 +23,7 @@ import {
   FileText,
   Bell,
   ChevronRight,
+  ArrowRight,
   User,
   Building2,
 } from 'lucide-react-native';
@@ -275,12 +276,12 @@ export default function DashboardScreen() {
               {
                 backgroundColor:
                   profile?.workspaceMode === 'organisation'
-                    ? 'rgba(99, 102, 241, 0.1)'
-                    : 'rgba(15, 118, 110, 0.1)',
+                    ? 'rgba(99, 102, 241, 0.12)'
+                    : 'rgba(15, 118, 110, 0.12)',
                 borderColor:
                   profile?.workspaceMode === 'organisation'
-                    ? 'rgba(99, 102, 241, 0.25)'
-                    : 'rgba(15, 118, 110, 0.25)',
+                    ? 'rgba(99, 102, 241, 0.3)'
+                    : 'rgba(15, 118, 110, 0.3)',
               },
             ]}
             onPress={() => router.push('/settings/workspace' as never)}
@@ -288,23 +289,29 @@ export default function DashboardScreen() {
           >
             {profile?.workspaceMode === 'organisation' ? (
               <>
-                <View style={[styles.workspaceDot, { backgroundColor: '#6366F1' }]} />
+                <Building2 size={13} color="#6366F1" />
                 <ThemedText style={[styles.workspacePillText, { color: '#4F46E5' }]} numberOfLines={1}>
                   Organisation Workspace
                 </ThemedText>
               </>
             ) : (
               <>
-                <View style={[styles.workspaceDot, { backgroundColor: colors.primary }]} />
+                <User size={13} color={colors.primary} />
                 <ThemedText style={[styles.workspacePillText, { color: colors.primary }]} numberOfLines={1}>
                   Personal Workspace
                 </ThemedText>
               </>
             )}
+            <ArrowRight size={12} color={profile?.workspaceMode === 'organisation' ? '#6366F1' : colors.primary} style={{ opacity: 0.5 }} />
           </TouchableOpacity>
-          {!profile?.workspaceMode && (
-            <ThemedText variant="secondary" size="small" style={{ marginTop: 2 }}>
-              Tap to set up your workspace
+          {profile?.workspaceMode === 'personal' && (
+            <ThemedText variant="secondary" size="small" style={{ marginTop: 2, paddingLeft: 4 }}>
+              Private data visible only to you.
+            </ThemedText>
+          )}
+          {profile?.workspaceMode === 'organisation' && (
+            <ThemedText variant="secondary" size="small" style={{ marginTop: 2, paddingLeft: 4 }}>
+              Shared workspace with your team.
             </ThemedText>
           )}
         </View>
@@ -601,22 +608,18 @@ const styles = StyleSheet.create({
   workspacePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
     alignSelf: 'flex-start',
     marginTop: 8,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 12,
-    borderWidth: 1,
-  },
-  workspaceDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    borderWidth: 1.5,
   },
   workspacePillText: {
     fontSize: 12,
     fontWeight: '700' as const,
+    letterSpacing: 0.2,
   },
   notifyBtn: {
     width: 40,

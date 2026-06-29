@@ -84,8 +84,11 @@ export default function OrganisationScreen() {
 
   // ── Create/join flow for personal users ────────────────────────────────
   const [orgName, setOrgName] = useState("");
+  const [orgSlug, setOrgSlug] = useState("");
+  const [orgDescription, setOrgDescription] = useState("");
   const [isCreatingOrg, setIsCreatingOrg] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createSuccess, setCreateSuccess] = useState(false);
 
   const isPersonal = profile?.workspaceMode === "personal";
   const needsOnboarding = profile?.workspaceMode === null || profile?.workspaceMode === undefined;
@@ -97,32 +100,66 @@ export default function OrganisationScreen() {
     }
   }, [profile?.organisationId, profile?.workspaceMode, loadOrganisation, isPersonal, needsOnboarding]);
 
+  // ── Slug auto-generation from name ────────────────────────────────────
+
+  const generateSlug = useCallback((name: string): string => {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .substring(0, 40);
+  }, []);
+
+  const handleNameChange = useCallback((text: string) => {
+    setOrgName(text);
+    setCreateError(null);
+    // Auto-generate slug from name (only if user hasn't manually edited slug)
+    setOrgSlug((prev) => {
+      if (!prev || prev === generateSlug(orgName)) {
+        return generateSlug(text);
+      }
+      return prev;
+    });
+  }, [orgName, generateSlug]);
+
   // ── Create Organisation (personal users) ───────────────────────────────
 
   const handleCreateOrganisation = useCallback(async () => {
-    if (!orgName.trim()) {
-      setCreateError("Please enter an organisation name.");
+    const trimmedName = orgName.trim();
+    if (!trimmedName) {
+      setCreateError("Organisation name is required.");
+      return;
+    }
+    if (trimmedName.length < 2) {
+      setCreateError("Name must be at least 2 characters.");
       return;
     }
     setIsCreatingOrg(true);
     setCreateError(null);
+    setCreateSuccess(false);
     try {
       console.log("[org:diag:create] ===== Creating organisation =====");
-      console.log("[org:diag:create] Name:", orgName.trim());
+      console.log("[org:diag:create] Name:", trimmedName, "Slug:", orgSlug || "(auto)");
       console.log("[org:diag:create] Current profile — orgId:", profile?.organisationId ?? "NULL", "wsMode:", profile?.workspaceMode ?? "NULL");
-      await setWorkspaceMode("organisation", orgName.trim());
+      await setWorkspaceMode("organisation", trimmedName);
       console.log("[org:diag:create] setWorkspaceMode returned — refreshing profile");
       await refreshProfile();
       console.log("[org:diag:create] Profile after refresh — orgId:", profile?.organisationId ?? "NULL", "wsMode:", profile?.workspaceMode ?? "NULL");
+      setCreateSuccess(true);
       console.log("[org:diag:create] ===== Organisation creation COMPLETE =====");
-      router.back();
     } catch (err) {
       console.error("[org:diag:create] Organisation creation THREW:", err);
       setCreateError("Failed to create organisation. Please try again.");
     } finally {
       setIsCreatingOrg(false);
     }
-  }, [orgName, setWorkspaceMode, refreshProfile, router, profile]);
+  }, [orgName, orgSlug, setWorkspaceMode, refreshProfile, router, profile]);
+
+  const handleGoToWorkspace = useCallback(() => {
+    router.replace("/settings/workspace" as never);
+  }, [router]);
 
   // ── Leave organisation ──────────────────────────────────────────────────
 
@@ -396,64 +433,155 @@ export default function OrganisationScreen() {
           </View>
 
           {/* Create Organisation Card */}
-          <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.formHeader}>
-              <Building2 size={24} color="#6366F1" />
-              <View style={{ flex: 1 }}>
-                <ThemedText weight="bold" style={styles.optionTitle}>
-                  Create Organisation
-                </ThemedText>
-                <ThemedText variant="secondary" size="small">
-                  Set up a new team workspace with shared calendar, roles, and invitations.
-                </ThemedText>
+          {createSuccess ? (
+            /* Success state */
+            <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: "#22C55E" }]}>
+              <View style={styles.successIcon}>
+                <Check size={32} color="white" />
               </View>
-            </View>
-
-            <ThemedText weight="semibold" style={styles.label}>
-              Organisation Name
-            </ThemedText>
-            <TextInput
-              style={[
-                styles.textInput,
-                {
-                  color: colors.text,
-                  backgroundColor: colors.surfaceVariant,
-                  borderColor: colors.border,
-                },
-              ]}
-              value={orgName}
-              onChangeText={(t) => { setOrgName(t); setCreateError(null); }}
-              placeholder="e.g. Acme Corp"
-              placeholderTextColor={colors.secondaryText}
-              autoFocus={false}
-              returnKeyType="done"
-              onSubmitEditing={handleCreateOrganisation}
-            />
-
-            {createError && (
-              <ThemedText size="small" style={styles.formErrorText}>
-                {createError}
+              <ThemedText weight="bold" style={[styles.successTitle, { color: "#16A34A" }]}>
+                Organisation Created!
               </ThemedText>
-            )}
-
-            <TouchableOpacity
-              style={[styles.primaryButton, { backgroundColor: "#6366F1", opacity: isCreatingOrg ? 0.7 : 1 }]}
-              onPress={handleCreateOrganisation}
-              disabled={isCreatingOrg || !orgName.trim()}
-              activeOpacity={0.7}
-            >
-              {isCreatingOrg ? (
-                <ActivityIndicator size="small" color="white" />
-              ) : (
-                <>
-                  <Building2 size={20} color="white" />
-                  <ThemedText style={styles.primaryButtonText} weight="bold">
+              <ThemedText variant="secondary" style={styles.successSubtitle}>
+                Your new team workspace is ready.{"\n"}
+                You are now in Organisation Workspace mode.
+              </ThemedText>
+              <TouchableOpacity
+                style={[styles.primaryButton, { backgroundColor: "#22C55E" }]}
+                onPress={handleGoToWorkspace}
+                activeOpacity={0.7}
+              >
+                <Building2 size={20} color="white" />
+                <ThemedText style={styles.primaryButtonText} weight="bold">
+                  Go to Workspace
+                </ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.secondaryButton, { backgroundColor: colors.surfaceVariant }]}
+                onPress={() => { setCreateSuccess(false); setOrgName(""); setOrgSlug(""); setOrgDescription(""); }}
+              >
+                <ThemedText variant="secondary" weight="semibold">
+                  Create Another
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            /* Creation form */
+            <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.formHeader}>
+                <Building2 size={24} color="#6366F1" />
+                <View style={{ flex: 1 }}>
+                  <ThemedText weight="bold" style={styles.optionTitle}>
                     Create Organisation
                   </ThemedText>
-                </>
+                  <ThemedText variant="secondary" size="small">
+                    Set up a new team workspace with shared calendar, roles, and invitations.
+                  </ThemedText>
+                </View>
+              </View>
+
+              <ThemedText weight="semibold" style={styles.label}>
+                Organisation Name *
+              </ThemedText>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  {
+                    color: colors.text,
+                    backgroundColor: colors.surfaceVariant,
+                    borderColor: createError ? "#EF4444" : colors.border,
+                  },
+                ]}
+                value={orgName}
+                onChangeText={handleNameChange}
+                placeholder="e.g. Acme Corp"
+                placeholderTextColor={colors.secondaryText}
+                autoFocus
+                returnKeyType="next"
+                maxLength={60}
+              />
+
+              <ThemedText weight="semibold" style={styles.label}>
+                URL Slug (optional)
+              </ThemedText>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  {
+                    color: colors.text,
+                    backgroundColor: colors.surfaceVariant,
+                    borderColor: colors.border,
+                  },
+                ]}
+                value={orgSlug}
+                onChangeText={setOrgSlug}
+                placeholder={generateSlug(orgName) || "auto-generated"}
+                placeholderTextColor={colors.secondaryText}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="next"
+                maxLength={40}
+              />
+              <ThemedText variant="secondary" size="small" style={{ marginTop: -8 }}>
+                Used for sharing and linking. Auto-generated from name.
+              </ThemedText>
+
+              <ThemedText weight="semibold" style={styles.label}>
+                Description (optional)
+              </ThemedText>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  styles.textAreaInput,
+                  {
+                    color: colors.text,
+                    backgroundColor: colors.surfaceVariant,
+                    borderColor: colors.border,
+                  },
+                ]}
+                value={orgDescription}
+                onChangeText={setOrgDescription}
+                placeholder="What does your organisation do?"
+                placeholderTextColor={colors.secondaryText}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+                maxLength={200}
+              />
+
+              {createError && (
+                <View style={styles.errorBanner}>
+                  <AlertTriangle size={14} color="#EF4444" />
+                  <ThemedText size="small" style={{ color: "#EF4444", flex: 1 }}>
+                    {createError}
+                  </ThemedText>
+                </View>
               )}
-            </TouchableOpacity>
-          </View>
+
+              <TouchableOpacity
+                style={[styles.primaryButton, { backgroundColor: "#6366F1", opacity: isCreatingOrg ? 0.7 : 1 }]}
+                onPress={handleCreateOrganisation}
+                disabled={isCreatingOrg || !orgName.trim()}
+                activeOpacity={0.7}
+              >
+                {isCreatingOrg ? (
+                  <>
+                    <ActivityIndicator size="small" color="white" />
+                    <ThemedText style={styles.primaryButtonText} weight="bold">
+                      Creating...
+                    </ThemedText>
+                  </>
+                ) : (
+                  <>
+                    <Building2 size={20} color="white" />
+                    <ThemedText style={styles.primaryButtonText} weight="bold">
+                      Create Organisation
+                    </ThemedText>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Divider */}
           <View style={styles.dividerRow}>
@@ -468,7 +596,7 @@ export default function OrganisationScreen() {
               styles.joinCard,
               { backgroundColor: colors.card, borderColor: "rgba(99, 102, 241, 0.2)" },
             ]}
-            onPress={() => router.push('/onboarding/workspace' as never)}
+            onPress={() => router.push('/settings/join' as never)}
             activeOpacity={0.7}
           >
             <View style={[styles.joinIcon, { backgroundColor: "rgba(99, 102, 241, 0.1)" }]}>
@@ -1151,6 +1279,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   formErrorText: { color: "#EF4444", fontSize: 13 },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: "rgba(239, 68, 68, 0.08)",
+  },
+  textAreaInput: {
+    minHeight: 80,
+    paddingTop: 12,
+  },
+
+  // ── Success state ──────────────────────────────────────────────────────
+  successIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#22C55E",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+  },
+  successTitle: {
+    fontSize: 20,
+    textAlign: "center",
+    marginTop: 8,
+  },
+  successSubtitle: {
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  secondaryButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
   primaryButton: {
     flexDirection: "row",
     alignItems: "center",

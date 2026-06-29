@@ -564,6 +564,10 @@ function AuthenticatedApp() {
         options={{ title: "Invitations" }}
       />
       <Stack.Screen
+        name="settings/join"
+        options={{ title: "Join Organisation" }}
+      />
+      <Stack.Screen
         name="onboarding/workspace"
         options={{ headerShown: false, gestureEnabled: false }}
       />

@@ -329,7 +329,7 @@ export default function WorkspaceSwitcherScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.noOrgBtn, { backgroundColor: colors.surfaceVariant }]}
-                    onPress={() => router.push("/onboarding/workspace" as never)}
+                    onPress={() => router.push("/settings/join" as never)}
                     activeOpacity={0.7}
                   >
                     <Users size={14} color="#6366F1" />
