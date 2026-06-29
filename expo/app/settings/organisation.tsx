@@ -145,13 +145,17 @@ export default function OrganisationScreen() {
       console.log("[org:diag:create] Current profile — orgId:", profile?.organisationId ?? "NULL", "wsMode:", profile?.workspaceMode ?? "NULL");
       await setWorkspaceMode("organisation", trimmedName);
       console.log("[org:diag:create] setWorkspaceMode returned — refreshing profile");
+      // Refresh the profile from DB to get the ACTUAL new state
       await refreshProfile();
-      console.log("[org:diag:create] Profile after refresh — orgId:", profile?.organisationId ?? "NULL", "wsMode:", profile?.workspaceMode ?? "NULL");
+      // NOTE: profile variable is stale here (React closure) — the real verification
+      // is that setWorkspaceMode didn't throw. If it threw, we'd be in the catch.
+      console.log("[org:diag:create] ===== Organisation creation COMPLETE (no throw = success) =====");
       setCreateSuccess(true);
-      console.log("[org:diag:create] ===== Organisation creation COMPLETE =====");
     } catch (err) {
-      console.error("[org:diag:create] Organisation creation THREW:", err);
-      setCreateError("Failed to create organisation. Please try again.");
+      const message = err instanceof Error ? err.message : "Unknown error";
+      console.error("[org:diag:create] Organisation creation FAILED:", message);
+      setCreateError(message || "Failed to create organisation. Please try again.");
+      setCreateSuccess(false);
     } finally {
       setIsCreatingOrg(false);
     }

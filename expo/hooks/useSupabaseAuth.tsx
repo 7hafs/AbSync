@@ -324,14 +324,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (orgError) {
           console.error("[auth:diag:org] Step A — INSERT organisations FAILED:", orgError.message, orgError.code, orgError.details, orgError.hint);
           await dumpDbState(userId, "AFTER org create FAILED");
-          return null;
+          throw new Error(`Organisation creation failed: ${orgError.message} (code: ${orgError.code})`);
         }
         organisationId = org.id;
         console.log("[auth:diag:org] Step A — Organisation created SUCCESS:", organisationId, "name:", orgName);
         await dumpDbState(userId, "AFTER org create");
       } catch (err) {
         console.error("[auth:diag:org] Step A — INSERT organisations THREW:", err);
-        return null;
+        throw err instanceof Error ? err : new Error("Organisation creation failed with unknown error");
       }
 
       // Step B: Create membership row
@@ -382,7 +382,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
       if (!profileUpdated) {
-        console.error("[auth:diag:org] Step C — Profile update FAILED after 3 attempts. Organisation", organisationId, "was created but profile may not be updated.");
+        const errMsg = `Profile update FAILED after 3 attempts. Organisation ${organisationId} was created but profile may not be updated.`;
+        console.error("[auth:diag:org] Step C — " + errMsg);
+        throw new Error(errMsg);
       }
       await dumpDbState(userId, "FINAL after bootstrapOrganisation");
       console.log("[auth:diag:org] ===== bootstrapOrganisation END — returning orgId:", organisationId, "=====");
@@ -840,6 +842,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           console.error("[auth:diag:setWM] createPersonalOrg FAILED — returned null");
+          throw new Error("Personal workspace setup failed — could not create or find personal organisation. Try signing out and back in.");
         }
       } else {
         // Organisation mode — orgIdOrName may be a UUID (joining existing org)
@@ -877,6 +880,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }).eq("id", user.id).select("id, organisation_id, workspace_mode");
           if (profileUpdateErr) {
             console.error("[auth:diag:setWM] Profile update FAILED:", profileUpdateErr.message, profileUpdateErr.code, profileUpdateErr.details, profileUpdateErr.hint);
+            throw new Error(`Profile update failed: ${profileUpdateErr.message} (code: ${profileUpdateErr.code})`);
           } else {
             console.log("[auth:diag:setWM] Profile update SUCCESS — result:", JSON.stringify(updateResult), "expected orgId:", finalOrgId);
           }
@@ -887,9 +891,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setProfile(prof);
           } else {
             console.error("[auth:diag:setWM] fetchProfile returned NULL after setWorkspaceMode");
+            throw new Error("Profile fetch returned null after workspace mode change — database may be out of sync");
           }
         } else {
-          console.error("[auth:diag:setWM] No finalOrgId — skipping profile update");
+          console.error("[auth:diag:setWM] No finalOrgId — organisation creation returned null");
+          throw new Error("Organisation creation failed — no organisation ID returned. Check RLS policies and database connectivity.");
         }
       }
       await dumpDbState(user.id, "AFTER setWorkspaceMode (" + mode + ")");
@@ -976,7 +982,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error("[auth:diag:swOrg] FAILED: profile.organisationId is NULL — cannot switch to org workspace");
       console.error("[auth:diag:swOrg] This means the profile has no organisation_id set in the DB or the React state is stale");
       await dumpDbState(user.id, "AFTER switch to org FAILED (null organisationId)");
-      return;
+      throw new Error("Cannot switch to Organisation Workspace — you are not linked to any organisation. Create or join one first.");
     }
 
     console.log("[auth:diag:swOrg] profile.organisationId:", profile.organisationId);
@@ -992,7 +998,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (memberErr) {
       console.error("[auth:diag:swOrg] Membership lookup FAILED:", memberErr.message, memberErr.code, memberErr.details, memberErr.hint);
       await dumpDbState(user.id, "AFTER switch to org FAILED (membership lookup error)");
-      return;
+      throw new Error(`Membership verification failed: ${memberErr.message} (code: ${memberErr.code})`);
     }
 
     if (!membership || membership.length === 0) {
@@ -1003,7 +1009,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         "— cannot switch"
       );
       await dumpDbState(user.id, "AFTER switch to org FAILED (no membership)");
-      return;
+      throw new Error(`You are no longer a member of this organisation. Your membership may have been revoked, or the data is out of sync. Try refreshing.`);
     }
 
     console.log("[auth:diag:swOrg] Membership verified:", JSON.stringify(membership));
@@ -1018,7 +1024,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (updateErr) {
       console.error("[auth:diag:swOrg] profile update FAILED:", updateErr.message, updateErr.code, updateErr.details, updateErr.hint);
       await dumpDbState(user.id, "AFTER switch to org FAILED (profile update error)");
-      return;
+      throw new Error(`Workspace switch failed: ${updateErr.message} (code: ${updateErr.code})`);
     }
 
     console.log("[auth:diag:swOrg] profile update result:", JSON.stringify(updateResult));
