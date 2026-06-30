@@ -118,7 +118,8 @@ function AuthGate() {
 
         const url =
           (await Linking.getInitialURL()) ??
-          (Platform.OS === "web" ? window.location.href : null);
+          (Platform.OS === "web" ? window.location.href : null) ??
+          (typeof document !== "undefined" ? document.URL : null);
 
         const elapsed = Date.now() - startTime;
         console.log(`[AuthGate:recovery:1] getInitialURL took ${elapsed}ms`);

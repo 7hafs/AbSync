@@ -196,7 +196,7 @@ CREATE POLICY "organisations_select_member" ON organisations FOR SELECT TO authe
   USING (public.is_member_of_org(id));
 DROP POLICY IF EXISTS "organisations_insert_auth" ON organisations;
 CREATE POLICY "organisations_insert_auth" ON organisations FOR INSERT TO authenticated
-  WITH CHECK (owner_id = (auth.jwt() ->> 'sub'));
+  WITH CHECK (owner_id = user_id());
 DROP POLICY IF EXISTS "organisations_update_owner" ON organisations;
 CREATE POLICY "organisations_update_owner" ON organisations FOR UPDATE TO authenticated
   USING (public.is_org_owner(id)) WITH CHECK (public.is_org_owner(id));

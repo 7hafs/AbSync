@@ -58,38 +58,30 @@ function ResetPasswordScreen() {
     const verifySession = async () => {
       try {
         console.log("[reset-password:11] Checking for active session...");
-        const { data: { session: existingSession }, error: sessionError } = await supabase.auth.getSession();
 
-        if (sessionError) {
-          console.warn("[reset-password:11] getSession returned error:", sessionError.message);
+        // Try up to 5 times with increasing delays (500ms, 1s, 1.5s, 2s, 2.5s)
+        for (let attempt = 0; attempt < 5; attempt++) {
+          if (cancelled) return;
+
+          const { data: { session: existingSession }, error: sessionError } = await supabase.auth.getSession();
+          console.log("[reset-password:11] Attempt", attempt + 1, "— session found:", !!existingSession, "error:", sessionError?.message ?? "none");
+
+          if (existingSession) {
+            console.log("[reset-password:11] Session found — user ID:", existingSession.user.id);
+            if (!cancelled) setPhase("form");
+            return;
+          }
+
+          // Not found yet — wait before retrying
+          if (attempt < 4) {
+            const delay = 500 + attempt * 500;
+            console.log("[reset-password:11] No session — retrying in", delay, "ms...");
+            await new Promise((r) => setTimeout(r, delay));
+          }
         }
 
-        if (existingSession) {
-          console.log("[reset-password:11] Session found — user ID:", existingSession.user.id);
-          if (!cancelled) setPhase("form");
-          return;
-        }
-
-        // Session not found — AuthGate either hasn't finished or failed
-        console.log("[reset-password:11] No session — retrying in 500ms...");
-
-        // Retry once after a delay (AuthGate may still be processing)
-        await new Promise((r) => setTimeout(r, 500));
-        if (cancelled) return;
-
-        const { data: { session: retrySession }, error: retryError } = await supabase.auth.getSession();
-        if (retryError) {
-          console.warn("[reset-password:11] Retry getSession returned error:", retryError.message);
-        }
-
-        if (retrySession) {
-          console.log("[reset-password:11] Session found on retry — user ID:", retrySession.user.id);
-          if (!cancelled) setPhase("form");
-          return;
-        }
-
-        // Still no session — show error
-        console.log("[reset-password:11] No session after retry — showing error UI");
+        // All attempts exhausted
+        console.log("[reset-password:11] No session after 5 attempts — showing error UI");
         if (!cancelled) {
           setPhase("error");
           setErrorMessage(
@@ -97,7 +89,6 @@ function ResetPasswordScreen() {
           );
         }
       } catch (err) {
-        // LOG #12: Uncaught exception during session check
         console.error("[reset-password:12] SESSION CHECK CRASH:", err);
         if (err instanceof Error) {
           console.error("[reset-password:12] Stack:", err.stack);
