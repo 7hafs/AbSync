@@ -155,23 +155,23 @@ RAISE NOTICE 'Step 3/7: RLS Policies';
 
 CREATE OR REPLACE FUNCTION public.get_user_organisation_id()
 RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$ SELECT organisation_id FROM public.profiles WHERE id = (current_setting('request.jwt.claims', true)::jsonb ->> 'sub') LIMIT 1; $$;
+AS $$ SELECT organisation_id FROM public.profiles WHERE id = (auth.jwt() ->> 'sub') LIMIT 1; $$;
 
 CREATE OR REPLACE FUNCTION public.is_member_of_org(org_id uuid)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$ SELECT EXISTS (SELECT 1 FROM public.organisation_members WHERE organisation_id = org_id AND user_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'sub')); $$;
+AS $$ SELECT EXISTS (SELECT 1 FROM public.organisation_members WHERE organisation_id = org_id AND user_id = (auth.jwt() ->> 'sub')); $$;
 
 CREATE OR REPLACE FUNCTION public.can_manage_org(org_id uuid)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$ SELECT EXISTS (SELECT 1 FROM public.organisation_members WHERE organisation_id = org_id AND user_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'sub') AND role IN ('owner', 'manager')); $$;
+AS $$ SELECT EXISTS (SELECT 1 FROM public.organisation_members WHERE organisation_id = org_id AND user_id = (auth.jwt() ->> 'sub') AND role IN ('owner', 'manager')); $$;
 
 CREATE OR REPLACE FUNCTION public.is_org_owner(org_id uuid)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$ SELECT EXISTS (SELECT 1 FROM public.organisation_members WHERE organisation_id = org_id AND user_id = (current_setting('request.jwt.claims', true)::jsonb ->> 'sub') AND role = 'owner'); $$;
+AS $$ SELECT EXISTS (SELECT 1 FROM public.organisation_members WHERE organisation_id = org_id AND user_id = (auth.jwt() ->> 'sub') AND role = 'owner'); $$;
 
 CREATE OR REPLACE FUNCTION public.get_user_email()
 RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
-AS $$ SELECT email FROM public.profiles WHERE id = (current_setting('request.jwt.claims', true)::jsonb ->> 'sub') LIMIT 1; $$;
+AS $$ SELECT email FROM public.profiles WHERE id = (auth.jwt() ->> 'sub') LIMIT 1; $$;
 
 -- 3b. profiles RLS
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
@@ -195,6 +195,8 @@ DROP POLICY IF EXISTS "organisations_select_member" ON organisations;
 CREATE POLICY "organisations_select_member" ON organisations FOR SELECT TO authenticated
   USING (public.is_member_of_org(id));
 DROP POLICY IF EXISTS "organisations_insert_auth" ON organisations;
+-- NOTE: user_id() is the canonical Rork Auth function (proven to work).
+-- Do NOT use current_setting('request.jwt.claims') — it returns NULL in this setup.
 CREATE POLICY "organisations_insert_auth" ON organisations FOR INSERT TO authenticated
   WITH CHECK (owner_id = user_id());
 DROP POLICY IF EXISTS "organisations_update_owner" ON organisations;
