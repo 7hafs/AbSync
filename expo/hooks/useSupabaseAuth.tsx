@@ -174,49 +174,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return orgId;
         }
 
-        console.log("[auth:diag:personal] No existing personal org — creating new one");
-        // Create new personal org
-        const { data: org, error: orgError } = await supabase
-          .from("organisations")
-          .insert({
-            name: "Personal Workspace",
-            owner_id: userId,
-          })
-          .select("id")
-          .single();
+        // ── Create new personal org via SECURITY DEFINER RPC ──
+        // Same RPC as bootstrapOrganisation — bypasses RLS entirely.
+        // The RPC atomically creates org + membership + updates profile.
+        console.log("[auth:diag:personal] No existing personal org — creating via RPC");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: rpcResult, error: rpcError } = await supabase.rpc(
+          'create_organisation_for_user' as any,
+          {
+            p_name: 'Personal Workspace',
+            p_owner_id: userId,
+            p_update_profile: updateProfile,
+            p_workspace_mode: 'personal',
+          } as any
+        );
 
-        if (orgError) {
-          console.error("[auth:diag:personal] INSERT organisation FAILED:", orgError.message, orgError.code);
+        if (rpcError) {
+          console.error("[auth:diag:personal] RPC FAILED:", rpcError.message, rpcError.code);
           return null;
         }
 
-        const orgId = org.id;
-        console.log("[auth:diag:personal] Organisation created:", orgId);
-
-        // Create membership
-        const { error: memberErr } = await supabase.from("organisation_members").insert({
-          organisation_id: orgId,
-          user_id: userId,
-          role: "owner",
-        });
-        if (memberErr) {
-          console.error("[auth:diag:personal] Membership INSERT FAILED:", memberErr.message, memberErr.code);
-        } else {
-          console.log("[auth:diag:personal] Membership INSERT SUCCESS");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = rpcResult as any;
+        if (!result || result.success !== true) {
+          console.error("[auth:diag:personal] RPC success=false:", result?.error, "diagnostics:", JSON.stringify(result?.diagnostics));
+          return null;
         }
 
-        if (updateProfile) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { error: profileErr } = await (supabase.from("profiles") as any).update({
-            organisation_id: orgId,
-            workspace_mode: "personal",
-          }).eq("id", userId);
-          if (profileErr) {
-            console.error("[auth:diag:personal] Profile update FAILED:", profileErr.message, profileErr.code);
-          } else {
-            console.log("[auth:diag:personal] Profile update SUCCESS");
-          }
-        }
+        const orgId = result.org_id as string;
+        console.log("[auth:diag:personal] RPC SUCCESS — org created:", orgId, "action:", result.action, "diagnostics:", JSON.stringify(result.diagnostics));
 
         return orgId;
       } catch (err) {
@@ -311,105 +297,108 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log("[auth:diag:org] ===== bootstrapOrganisation START =====");
       console.log("[auth:diag:org] user:", userId, "name:", orgName);
 
-      // Diagnostic: compare app user.id with auth.jwt()->>'sub' from the DB
+      // ── COMPREHENSIVE LIVE DIAGNOSTIC ────────────────────────────────
+      // Calls inspect_organisations_schema() which returns:
+      //   - auth_context: { user_id_fn, jwt_sub, jwt_claims_setting, auth_role, ... }
+      //   - triggers: all triggers on organisations table (BEFORE INSERT check)
+      //   - policies: all RLS policies on organisations
+      //   - rls_enabled: boolean
+      //   - owner_id_type: column data type
+      // This runs with SECURITY INVOKER so it sees exactly what the INSERT sees.
       try {
-        const { data: jwtCheck, error: jwtError } = await supabase.rpc("diagnose_auth_id" as any);
-        console.log("[auth:diag:org] JWT DIAGNOSTIC:", JSON.stringify({
-          appUserId: userId,
-          appUserIdType: typeof userId,
-          appUserIdLength: userId.length,
-          rpcResult: jwtCheck,
-          rpcError: jwtError?.message ?? null,
-        }));
-      } catch (jwtDiagErr) {
-        console.error("[auth:diag:org] JWT DIAGNOSTIC THREW:", jwtDiagErr);
+        const { data: schemaDiag, error: schemaDiagErr } = await supabase.rpc(
+          "inspect_organisations_schema" as any
+        );
+        console.log("[auth:diag:org] ===== LIVE SCHEMA DIAGNOSTIC =====");
+        console.log("[auth:diag:org] app user.id:", userId, "type:", typeof userId, "length:", userId.length);
+        console.log("[auth:diag:org] RPC result:", JSON.stringify(schemaDiag, null, 2));
+        if (schemaDiagErr) {
+          console.error("[auth:diag:org] RPC error:", schemaDiagErr.message, schemaDiagErr.code);
+        }
+        // Also call debug_auth_context() directly for a focused auth comparison
+        const { data: authCtx, error: authCtxErr } = await supabase.rpc(
+          "debug_auth_context" as any
+        );
+        console.log("[auth:diag:org] debug_auth_context():", JSON.stringify(authCtx, null, 2));
+        if (authCtxErr) {
+          console.error("[auth:diag:org] debug_auth_context error:", authCtxErr.message, authCtxErr.code);
+        }
+        console.log("[auth:diag:org] ===== END SCHEMA DIAGNOSTIC =====");
+      } catch (diagErr) {
+        console.error("[auth:diag:org] SCHEMA DIAGNOSTIC THREW:", diagErr);
       }
 
       await dumpDbState(userId, "BEFORE org create");
 
-      // Step A: Create the organisation
+      // ════════════════════════════════════════════════════════════════════
+      // ATOMIC ORG CREATION VIA SECURITY DEFINER RPC
+      //
+      // Previous direct INSERT into organisations was failing with RLS 42501
+      // even though the policy was `owner_id = user_id()`. The root cause
+      // is that user_id() may not resolve correctly in the PostgREST RLS
+      // context for this Rork Auth setup.
+      //
+      // This RPC runs as SECURITY DEFINER (function owner = postgres),
+      // bypassing RLS entirely. It atomically:
+      //   A. INSERT organisation (or reuse if exists)
+      //   B. INSERT owner membership (ON CONFLICT update to owner)
+      //   C. UPDATE profile.organisation_id + workspace_mode
+      //
+      // Same pattern as accept_invitation_rpc which works correctly.
+      // The RPC returns diagnostic info (auth_user_id, jwt_sub) for logging.
+      // ════════════════════════════════════════════════════════════════════
       let organisationId: string | null = null;
       try {
-        const payload = { name: orgName, owner_id: userId };
+        const rpcPayload = {
+          p_name: orgName,
+          p_owner_id: userId,
+          p_update_profile: true,
+          p_workspace_mode: 'organisation' as const,
+        };
         console.log("[ORG CREATE PAYLOAD]", {
           userId: userId,
           userIdType: typeof userId,
           userIdLength: userId.length,
           owner_id: userId,
           organisationName: orgName,
-          payload,
+          rpc: 'create_organisation_for_user',
+          rpcPayload,
         });
-        const { data: org, error: orgError } = await supabase
-          .from("organisations")
-          .insert(payload)
-          .select("id")
-          .single();
 
-        if (orgError) {
-          console.error("[auth:diag:org] Step A — INSERT organisations FAILED:", orgError.message, orgError.code, orgError.details, orgError.hint);
-          await dumpDbState(userId, "AFTER org create FAILED");
-          throw new Error(`Organisation creation failed: ${orgError.message} (code: ${orgError.code})`);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: rpcResult, error: rpcError } = await supabase.rpc(
+          'create_organisation_for_user' as any,
+          rpcPayload as any
+        );
+
+        if (rpcError) {
+          console.error("[auth:diag:org] RPC create_organisation_for_user FAILED:",
+            rpcError.message, rpcError.code, rpcError.details, rpcError.hint);
+          await dumpDbState(userId, "AFTER org create FAILED (RPC)");
+          throw new Error(`Organisation creation failed: ${rpcError.message} (code: ${rpcError.code})`);
         }
-        organisationId = org.id;
-        console.log("[auth:diag:org] Step A — Organisation created SUCCESS:", organisationId, "name:", orgName);
-        await dumpDbState(userId, "AFTER org create");
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = rpcResult as any;
+        console.log("[auth:diag:org] RPC result:", JSON.stringify(result, null, 2));
+
+        if (!result || result.success !== true) {
+          const errMsg = result?.error || 'Unknown error from create_organisation_for_user RPC';
+          console.error("[auth:diag:org] RPC returned success=false:", errMsg);
+          console.error("[auth:diag:org] RPC diagnostics:", JSON.stringify(result?.diagnostics, null, 2));
+          await dumpDbState(userId, "AFTER org create FAILED (RPC success=false)");
+          throw new Error(`Organisation creation failed: ${errMsg}`);
+        }
+
+        organisationId = result.org_id as string;
+        console.log("[auth:diag:org] RPC SUCCESS — org_id:", organisationId, "action:", result.action);
+        console.log("[auth:diag:org] RPC diagnostics:", JSON.stringify(result.diagnostics, null, 2));
+        await dumpDbState(userId, "AFTER org create (RPC)");
       } catch (err) {
-        console.error("[auth:diag:org] Step A — INSERT organisations THREW:", err);
-        throw err instanceof Error ? err : new Error("Organisation creation failed with unknown error");
+        console.error("[auth:diag:org] Step A (RPC) THREW:", err);
+        throw err instanceof Error ? err : new Error('Organisation creation failed with unknown error');
       }
 
-      // Step B: Create membership row
-      try {
-        const { data: insertedMember, error: memberError } = await supabase
-          .from("organisation_members")
-          .insert({
-            organisation_id: organisationId,
-            user_id: userId,
-            role: "owner",
-          })
-          .select("id, organisation_id, user_id, role");
-        if (memberError) {
-          console.error("[auth:diag:org] Step B — INSERT organisation_members FAILED:", memberError.message, memberError.code, memberError.details, memberError.hint);
-          // Non-fatal — membership can be repaired later
-        } else {
-          console.log("[auth:diag:org] Step B — Membership created SUCCESS:", JSON.stringify(insertedMember));
-        }
-        await dumpDbState(userId, "AFTER membership insert");
-      } catch (err) {
-        console.error("[auth:diag:org] Step B — INSERT organisation_members THREW:", err);
-      }
-
-      // Step C: Update profile.organisation_id and workspace_mode (with retry)
-      let profileUpdated = false;
-      for (let attempt = 0; attempt < 3 && !profileUpdated; attempt++) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: updateResult, error: updateError } = await (supabase
-            .from("profiles") as any)
-            .update({ organisation_id: organisationId, workspace_mode: "organisation" })
-            .eq("id", userId)
-            .select("id, organisation_id, workspace_mode");
-          if (updateError) {
-            console.error("[auth:diag:org] Step C attempt", attempt + 1, "— UPDATE profiles FAILED:", updateError.message, updateError.code, updateError.details, updateError.hint);
-            if (attempt < 2) {
-              await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
-            }
-          } else {
-            console.log("[auth:diag:org] Step C — Profile updated SUCCESS — result:", JSON.stringify(updateResult), "expected org_id:", organisationId);
-            profileUpdated = true;
-          }
-        } catch (err) {
-          console.error("[auth:diag:org] Step C attempt", attempt + 1, "— UPDATE profiles THREW:", err);
-          if (attempt < 2) {
-            await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
-          }
-        }
-      }
-      if (!profileUpdated) {
-        const errMsg = `Profile update FAILED after 3 attempts. Organisation ${organisationId} was created but profile may not be updated.`;
-        console.error("[auth:diag:org] Step C — " + errMsg);
-        throw new Error(errMsg);
-      }
       await dumpDbState(userId, "FINAL after bootstrapOrganisation");
       console.log("[auth:diag:org] ===== bootstrapOrganisation END — returning orgId:", organisationId, "=====");
 
