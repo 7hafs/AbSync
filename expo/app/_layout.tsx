@@ -3,7 +3,7 @@ import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Linking from "expo-linking";
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useColorScheme, Platform, View, ActivityIndicator } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import useStaffStore from "@/store/useStaffStore";
@@ -77,27 +77,9 @@ function AuthGate() {
   const router = useRouter();
   const recoveryHandled = useRef(false);
   const recoveryInProgress = useRef(false);
-  const [showLoadingUI, setShowLoadingUI] = useState(false);
 
   const inAuthGroup = segments[0] === "auth";
   const inOnboarding = segments[0] === "onboarding";
-
-  // ── Loading indicator fallback ────────────────────────────────────────
-  // After 2 seconds of isLoading, show a spinner instead of a blank white
-  // screen. This prevents the app from looking broken while getSession()
-  // resolves (which can take seconds if it tries to refresh an expired
-  // token over a slow network).
-  useEffect(() => {
-    if (!isLoading) {
-      setShowLoadingUI(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      console.log("[AuthGate:loadingUI] Showing spinner after 2s of isLoading");
-      setShowLoadingUI(true);
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [isLoading]);
 
   // ── Handle URL-based recovery tokens (password reset) ─────────────────
   //
@@ -107,23 +89,39 @@ function AuthGate() {
   // We disabled detectSessionInUrl on the Supabase client so we can
   // control the flow: parse the hash ourselves, set the session, then
   // navigate to the dedicated reset-password screen.
+  //
+  // CRITICAL: On web, Linking.getInitialURL() strips the hash fragment.
+  // We must use window.location.href directly to get the full URL including
+  // the #access_token=...&type=recovery hash.
   useEffect(() => {
     if (recoveryHandled.current) return;
 
-    const handleUrl = async () => {
+    const handleUrl = async (overrideUrl?: string) => {
       try {
         // LOG #1: Current URL on app startup
         console.log("[AuthGate:recovery:1] Getting initial URL...");
         const startTime = Date.now();
 
-        const url =
-          (await Linking.getInitialURL()) ??
-          (Platform.OS === "web" ? window.location.href : null) ??
-          (typeof document !== "undefined" ? document.URL : null);
+        // On web, always use window.location.href — it includes the hash
+        // fragment (#access_token=...&type=recovery) which
+        // Linking.getInitialURL() strips on web.
+        // On native, use Linking.getInitialURL() which includes the full
+        // deep-link URL with hash for custom schemes.
+        let url: string | null;
+        if (overrideUrl) {
+          url = overrideUrl;
+        } else if (Platform.OS === "web" && typeof window !== "undefined") {
+          url = window.location.href;
+        } else {
+          url = await Linking.getInitialURL();
+        }
 
         const elapsed = Date.now() - startTime;
-        console.log(`[AuthGate:recovery:1] getInitialURL took ${elapsed}ms`);
+        console.log(`[AuthGate:recovery:1] URL lookup took ${elapsed}ms`);
         console.log("[AuthGate:recovery:1] URL:", url ? `${url.substring(0, 200)}` : "null");
+        if (url && url.length > 200) {
+          console.log("[AuthGate:recovery:1] URL (full):", url);
+        }
 
         if (!url) {
           console.log("[AuthGate:recovery:1] No initial URL — recovery not possible");
@@ -131,8 +129,10 @@ function AuthGate() {
         }
 
         // LOG #2: Parse hash parameters
-        const decodedUrl = decodeURIComponent(url);
-        const hashIndex = decodedUrl.indexOf("#");
+        // Use the raw (non-decoded) URL to find the hash, because
+        // decodeURIComponent can corrupt the fragment if it contains
+        // URL-encoded characters that look like %xx sequences.
+        const hashIndex = url.indexOf("#");
         console.log("[AuthGate:recovery:2] Hash fragment index:", hashIndex);
 
         if (hashIndex === -1) {
@@ -140,8 +140,8 @@ function AuthGate() {
           return;
         }
 
-        const fragment = decodedUrl.substring(hashIndex + 1);
-        console.log("[AuthGate:recovery:2] Raw fragment:", fragment.substring(0, 300));
+        const fragment = url.substring(hashIndex + 1);
+        console.log("[AuthGate:recovery:2] Raw fragment (first 300 chars):", fragment.substring(0, 300));
 
         const params = new URLSearchParams(fragment);
         const paramKeys = Array.from(params.keys());
@@ -209,6 +209,21 @@ function AuthGate() {
     };
 
     handleUrl();
+
+    // ── Listen for URL changes (warm launches) ──────────────────────────
+    // On native, if the app is already running and the user taps a
+    // recovery deep link, Linking fires a 'url' event. On web, if the
+    // hash changes (e.g. SPA navigation), we also want to check.
+    const subscription = Linking.addEventListener("url", (event: { url: string }) => {
+      console.log("[AuthGate:recovery] URL event received:", event.url?.substring(0, 200));
+      if (!recoveryHandled.current) {
+        handleUrl(event.url);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -259,27 +274,23 @@ function AuthGate() {
   // ── Render ────────────────────────────────────────────────────────────
 
   if (isLoading) {
-    if (showLoadingUI) {
-      // After 2 seconds, show a spinner so the user doesn't stare at white
-      console.log("[AuthGate:render] Showing loading spinner");
-      return (
-        <View
-          style={{
-            flex: 1,
-            justifyContent: "center",
-            alignItems: "center",
-            backgroundColor: "#F4F7F4",
-            gap: 16,
-          }}
-        >
-          <ActivityIndicator size="large" color="#0F766E" />
-        </View>
-      );
-    }
-    // First 2 seconds — minimal white flash is acceptable while
-    // getSession() resolves quickly in the normal case
-    console.log("[AuthGate:render] isLoading, no UI yet (will show spinner at 2s)");
-    return null;
+    // Always show a spinner during loading — never render null (blank
+    // screen). Returning null for the first few seconds appeared as a
+    // blank white screen on web when recovery links were opened.
+    console.log("[AuthGate:render] isLoading — showing spinner, recoveryInProgress:", recoveryInProgress.current);
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#F4F7F4",
+          gap: 16,
+        }}
+      >
+        <ActivityIndicator size="large" color="#0F766E" />
+      </View>
+    );
   }
 
   if (!user) {
