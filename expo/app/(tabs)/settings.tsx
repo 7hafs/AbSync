@@ -44,7 +44,7 @@ import { useColorScheme } from "react-native";
 import useNotificationStore from "@/store/useNotificationStore";
 import useAbsenceStore from "@/store/useAbsenceStore";
 import { sendTestNotification } from "@/utils/notificationService";
-import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
+import { useSupabaseAuth, friendlyAuthError } from "@/hooks/useSupabaseAuth";
 import { supabase, getAuthRedirectUrl } from "@/lib/supabase";
 import {
   exportBackupFile,
@@ -385,7 +385,7 @@ export default function SettingsScreen() {
                           { redirectTo: getAuthRedirectUrl() }
                         );
                         if (error) {
-                          Alert.alert("Error", error.message);
+                          Alert.alert("Error", friendlyAuthError(error));
                         } else {
                           Alert.alert("Email Sent", "Check your inbox for the password reset link.");
                         }

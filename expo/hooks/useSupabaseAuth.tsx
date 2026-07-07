@@ -73,6 +73,34 @@ export interface AuthState {
   leaveOrganisation: () => Promise<void>;
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Convert a Supabase auth error into a user-friendly message.
+ * Rate-limit / over-request errors are translated so users never see raw
+ * "For security purposes, you can only request this after X seconds" text.
+ */
+/** Exported so other screens (e.g. Settings) can reuse the same friendly text. */
+export function friendlyAuthError(err: unknown): string {
+  const raw =
+    err && typeof err === "object" && "message" in err
+      ? String((err as { message?: unknown }).message ?? "")
+      : String(err ?? "");
+  const lower = raw.toLowerCase();
+
+  // Supabase rate limits on password resets / OTP
+  if (
+    lower.includes("for security purposes") ||
+    lower.includes("rate limit") ||
+    lower.includes("too many") ||
+    lower.includes("over_request_rate_limit") ||
+    lower.includes("you can only request this after")
+  ) {
+    return "You've requested too many password reset emails in a short period. Please wait a while before trying again.";
+  }
+  return raw || "An unexpected error occurred. Please try again.";
+}
+
 // ── Context ──────────────────────────────────────────────────────────────────
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -802,14 +830,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (error) {
           console.error("[auth] Forgot password error:", error.message);
-          return error.message;
+          return friendlyAuthError(error);
         }
 
         return null;
       } catch (err) {
         const message = err instanceof Error ? err.message : "An unknown error occurred";
         console.error("[auth] Forgot password exception:", message);
-        return message;
+        return friendlyAuthError(err);
       } finally {
         setIsProcessing(false);
       }
