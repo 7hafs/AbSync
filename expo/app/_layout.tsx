@@ -514,6 +514,7 @@ function AuthenticatedApp() {
         headerTitleStyle: {
           fontWeight: "bold" as const,
         },
+        headerBackTitle: "",
         contentStyle: {
           backgroundColor: colors.background,
         },
@@ -537,12 +538,24 @@ function AuthenticatedApp() {
         options={{ presentation: "modal", title: "Absence" }}
       />
       <Stack.Screen
+        name="calendar/day-absences"
+        options={{ title: "Day View" }}
+      />
+      <Stack.Screen
         name="staff/staff-form"
         options={{ presentation: "modal", title: "Staff" }}
       />
       <Stack.Screen
         name="staff/bulk-import"
         options={{ presentation: "modal", title: "Bulk Import" }}
+      />
+      <Stack.Screen
+        name="notes/note-editor"
+        options={{ title: "Note" }}
+      />
+      <Stack.Screen
+        name="reminders/reminder-form"
+        options={{ title: "Reminder" }}
       />
       <Stack.Screen
         name="settings/archived-staff"
