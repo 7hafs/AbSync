@@ -18,7 +18,6 @@ import {
   ArrowRight,
   Check,
   RefreshCw,
-  Bug,
 } from "lucide-react-native";
 import ThemedView from "@/components/ThemedView";
 import ThemedText from "@/components/ThemedText";
@@ -355,105 +354,6 @@ export default function WorkspaceSwitcherScreen() {
           </ThemedText>
         </View>
 
-        {/* ── DEBUG: Live State Card ────────────────────────────────────── */}
-        <View style={[styles.debugCard, { backgroundColor: "#1E1B4B", borderColor: "#4338CA" }]}>
-          <View style={styles.debugHeader}>
-            <Bug size={16} color="#A5B4FC" />
-            <ThemedText weight="bold" style={{ color: "#C7D2FE", fontSize: 13 }}>
-              Developer Debug — Live State
-            </ThemedText>
-          </View>
-          <View style={styles.debugRow}>
-            <ThemedText style={styles.debugLabel}>User ID:</ThemedText>
-            <ThemedText style={styles.debugValue} numberOfLines={1} selectable>
-              {profile?.id ?? "NULL"}
-            </ThemedText>
-          </View>
-          <View style={styles.debugRow}>
-            <ThemedText style={styles.debugLabel}>workspace_mode:</ThemedText>
-            <ThemedText style={[styles.debugValue, { color: profile?.workspaceMode === "personal" ? "#6EE7B7" : profile?.workspaceMode === "organisation" ? "#A5B4FC" : "#FCA5A5" }]}>
-              {profile?.workspaceMode ?? "NULL"}
-            </ThemedText>
-          </View>
-          <View style={styles.debugRow}>
-            <ThemedText style={styles.debugLabel}>organisation_id:</ThemedText>
-            <ThemedText style={styles.debugValue} numberOfLines={1} selectable>
-              {profile?.organisationId ?? "NULL"}
-            </ThemedText>
-          </View>
-          <View style={styles.debugRow}>
-            <ThemedText style={styles.debugLabel}>Has org membership:</ThemedText>
-            <ThemedText style={[styles.debugValue, { color: hasOrg ? "#6EE7B7" : "#FCA5A5" }]}>
-              {hasOrg ? "YES" : "NO"}
-            </ThemedText>
-          </View>
-          <View style={styles.debugRow}>
-            <ThemedText style={styles.debugLabel}>isPersonal:</ThemedText>
-            <ThemedText style={[styles.debugValue, { color: isPersonal ? "#6EE7B7" : "#9CA3AF" }]}>
-              {String(isPersonal)}
-            </ThemedText>
-          </View>
-          <View style={styles.debugRow}>
-            <ThemedText style={styles.debugLabel}>isOrg:</ThemedText>
-            <ThemedText style={[styles.debugValue, { color: isOrg ? "#A5B4FC" : "#9CA3AF" }]}>
-              {String(isOrg)}
-            </ThemedText>
-          </View>
-          {orgDetails && (
-            <>
-              <View style={[styles.debugDivider, { backgroundColor: "#4338CA" }]} />
-              <View style={styles.debugRow}>
-                <ThemedText style={styles.debugLabel}>Org Name:</ThemedText>
-                <ThemedText style={styles.debugValue}>
-                  {orgDetails.org.name}
-                </ThemedText>
-              </View>
-              <View style={styles.debugRow}>
-                <ThemedText style={styles.debugLabel}>Members:</ThemedText>
-                <ThemedText style={styles.debugValue}>
-                  {orgDetails.memberCount}
-                </ThemedText>
-              </View>
-              <View style={styles.debugRow}>
-                <ThemedText style={styles.debugLabel}>Your Role:</ThemedText>
-                <ThemedText style={styles.debugValue}>
-                  {orgDetails.userRole}
-                </ThemedText>
-              </View>
-            </>
-          )}
-          <TouchableOpacity
-            style={[styles.debugRefreshBtn, { backgroundColor: "#4338CA" }]}
-            onPress={async () => {
-              await refreshProfile();
-              if (profile?.organisationId) {
-                setIsLoadingOrg(true);
-                Promise.all([
-                  fetchOrganisation(profile.organisationId),
-                  fetchOrganisationMembers(profile.organisationId),
-                ])
-                  .then(([org, members]) => {
-                    if (org) {
-                      const userMember = members.find((m) => m.user_id === profile.id);
-                      setOrgDetails({
-                        org,
-                        memberCount: members.length,
-                        userRole: userMember?.role ?? "unknown",
-                      });
-                    }
-                  })
-                  .catch(() => setOrgDetails(null))
-                  .finally(() => setIsLoadingOrg(false));
-              }
-            }}
-            activeOpacity={0.7}
-          >
-            <RefreshCw size={14} color="#C7D2FE" />
-            <ThemedText size="small" weight="bold" style={{ color: "#C7D2FE" }}>
-              Refresh Debug State
-            </ThemedText>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
     </ThemedView>
   );
@@ -541,49 +441,4 @@ const styles = StyleSheet.create({
   footer: { marginTop: 16, alignItems: "center", paddingHorizontal: 8 },
   footerText: { textAlign: "center", lineHeight: 18 },
 
-  // Debug card
-  debugCard: {
-    marginTop: 20,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    padding: 16,
-    gap: 10,
-  },
-  debugHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 4,
-  },
-  debugRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  debugLabel: {
-    color: "#A5B4FC",
-    fontSize: 12,
-    fontWeight: "600" as const,
-  },
-  debugValue: {
-    color: "#E0E7FF",
-    fontSize: 12,
-    fontWeight: "700" as const,
-    fontFamily: "monospace" as const,
-    maxWidth: "60%" as const,
-    textAlign: "right" as const,
-  },
-  debugDivider: {
-    height: 1,
-    marginVertical: 2,
-  },
-  debugRefreshBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    borderRadius: 10,
-    paddingVertical: 10,
-    marginTop: 4,
-  },
 });

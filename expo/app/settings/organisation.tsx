@@ -1318,7 +1318,7 @@ export default function OrganisationScreen() {
           )}
         </View>
 
-        {/* ── Organisation ID (debug) ─────────────────────────────────────── */}
+        {/* ── Organisation Details ─────────────────────────────────────────── */}
         <View style={styles.section}>
           <ThemedText size="large" weight="bold" style={styles.sectionTitle}>
             Details
