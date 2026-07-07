@@ -19,6 +19,8 @@
 --
 -- Estimated runtime: < 5 seconds on an empty/small database.
 -- All steps run in a single transaction — any failure rolls back everything.
+--
+-- Step 8 — Create Organisation RPC (SECURITY DEFINER, bypasses RLS)
 -- ============================================================================
 
 BEGIN;
@@ -27,7 +29,7 @@ BEGIN;
 -- ║ STEP 1: ORGANISATION FOUNDATION                                          ║
 -- ╚════════════════════════════════════════════════════════════════════════════╝
 
-RAISE NOTICE 'Step 1/7: Organisation Foundation';
+RAISE NOTICE 'Step 1/8: Organisation Foundation';
 
 -- 1a. Add owner_id and settings to organisations
 ALTER TABLE organisations
@@ -121,7 +123,7 @@ UPDATE notification_preferences np SET organisation_id = p.organisation_id FROM 
 -- ║ STEP 2: ORGANISATION INVITATIONS                                         ║
 -- ╚════════════════════════════════════════════════════════════════════════════╝
 
-RAISE NOTICE 'Step 2/7: Organisation Invitations';
+RAISE NOTICE 'Step 2/8: Organisation Invitations';
 
 CREATE TABLE IF NOT EXISTS organisation_invitations (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -146,7 +148,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_active_invitation   ON organisation_invitat
 -- ║ STEP 3: RLS POLICIES                                                     ║
 -- ╚════════════════════════════════════════════════════════════════════════════╝
 
-RAISE NOTICE 'Step 3/7: RLS Policies';
+RAISE NOTICE 'Step 3/8: RLS Policies';
 
 -- 3a. Helper functions (use auth.jwt() ->> 'sub' — Rork Auth)
 -- NOTE: user_id() is NOT accessible inside SECURITY DEFINER functions with
@@ -303,7 +305,7 @@ CREATE POLICY "departments_delete_org" ON departments FOR DELETE TO authenticate
 -- ║ STEP 4: CLEAR PROFILE TRIGGER                                            ║
 -- ╚════════════════════════════════════════════════════════════════════════════╝
 
-RAISE NOTICE 'Step 4/7: Clear Profile Trigger';
+RAISE NOTICE 'Step 4/8: Clear Profile Trigger';
 
 CREATE OR REPLACE FUNCTION public.clear_profile_on_member_delete()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
@@ -326,7 +328,7 @@ CREATE TRIGGER clear_profile_on_member_delete
 -- ║ STEP 5: ACCEPT INVITATION RPC                                            ║
 -- ╚════════════════════════════════════════════════════════════════════════════╝
 
-RAISE NOTICE 'Step 5/7: Accept Invitation RPC';
+RAISE NOTICE 'Step 5/8: Accept Invitation RPC';
 
 CREATE OR REPLACE FUNCTION public.accept_invitation_rpc(
   p_token text, p_user_id text, p_user_email text
@@ -418,7 +420,7 @@ $$;
 -- ║ STEP 6: WORKSPACE MODE                                                   ║
 -- ╚════════════════════════════════════════════════════════════════════════════╝
 
-RAISE NOTICE 'Step 6/7: Workspace Mode';
+RAISE NOTICE 'Step 6/8: Workspace Mode';
 
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS workspace_mode text;
 
@@ -432,7 +434,7 @@ WHERE workspace_mode IS NULL AND organisation_id IS NOT NULL;
 -- ║ STEP 7: FIX MEMBER INSERT RLS                                            ║
 -- ╚════════════════════════════════════════════════════════════════════════════╝
 
-RAISE NOTICE 'Step 7/7: Fix Member Insert RLS';
+RAISE NOTICE 'Step 7/8: Fix Member Insert RLS';
 
 -- Drop the combined policy (may not exist if 003 just created it, but safe to drop)
 DROP POLICY IF EXISTS "org_members_insert" ON organisation_members;
@@ -453,12 +455,112 @@ DROP POLICY IF EXISTS "org_members_insert_managed" ON organisation_members;
 CREATE POLICY "org_members_insert_managed" ON organisation_members FOR INSERT TO authenticated
   WITH CHECK (public.can_manage_org(organisation_id) AND user_id IS NOT NULL);
 
+-- ╔════════════════════════════════════════════════════════════════════════════╗
+-- ║ STEP 8: CREATE ORGANISATION RPC                                            ║
+-- ╚════════════════════════════════════════════════════════════════════════════╝
+
+RAISE NOTICE 'Step 8/8: Create Organisation RPC';
+
+-- SECURITY DEFINER function that atomically creates an organisation +
+-- owner membership + updates profile. Bypasses RLS entirely (runs as
+-- postgres function owner). Same pattern as accept_invitation_rpc.
+-- The app calls this via supabase.rpc('create_organisation_for_user', ...).
+-- Used by bootstrapOrganisation (org workspace) and ensurePersonalOrg (personal).
+-- Grants: EXECUTE only to authenticated (NOT PUBLIC).
+
+CREATE OR REPLACE FUNCTION public.create_organisation_for_user(
+  p_name text,
+  p_owner_id text,
+  p_update_profile boolean DEFAULT true,
+  p_workspace_mode text DEFAULT 'organisation'
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_org_id uuid;
+  v_existing_org_id uuid;
+  v_auth_user_id text;
+  v_jwt_sub text;
+  v_action text;
+BEGIN
+  -- Capture auth context for diagnostics
+  BEGIN
+    v_auth_user_id := user_id();
+  EXCEPTION WHEN OTHERS THEN
+    v_auth_user_id := NULL;
+  END;
+  BEGIN
+    v_jwt_sub := auth.jwt() ->> 'sub';
+  EXCEPTION WHEN OTHERS THEN
+    v_jwt_sub := NULL;
+  END;
+
+  -- Check if an org with this name + owner already exists (reuse for idempotency)
+  SELECT id INTO v_existing_org_id
+  FROM public.organisations
+  WHERE owner_id = p_owner_id AND name = p_name
+  LIMIT 1;
+
+  IF v_existing_org_id IS NOT NULL THEN
+    v_org_id := v_existing_org_id;
+    v_action := 'reused';
+  ELSE
+    -- Insert new organisation
+    INSERT INTO public.organisations (name, owner_id)
+    VALUES (p_name, p_owner_id)
+    RETURNING id INTO v_org_id;
+    v_action := 'created';
+  END IF;
+
+  -- Insert or update owner membership (upsert)
+  INSERT INTO public.organisation_members (organisation_id, user_id, role)
+  VALUES (v_org_id, p_owner_id, 'owner')
+  ON CONFLICT (organisation_id, user_id)
+  DO UPDATE SET role = 'owner';
+
+  -- Update profile if requested
+  IF p_update_profile THEN
+    UPDATE public.profiles
+    SET organisation_id = v_org_id,
+        workspace_mode = p_workspace_mode
+    WHERE id = p_owner_id;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'org_id', v_org_id,
+    'action', v_action,
+    'diagnostics', jsonb_build_object(
+      'auth_user_id', v_auth_user_id,
+      'jwt_sub', v_jwt_sub,
+      'owner_id_param', p_owner_id
+    )
+  );
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object(
+    'success', false,
+    'error', SQLERRM,
+    'diagnostics', jsonb_build_object(
+      'auth_user_id', v_auth_user_id,
+      'jwt_sub', v_jwt_sub,
+      'owner_id_param', p_owner_id
+    )
+  );
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.create_organisation_for_user(text, text, boolean, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_organisation_for_user(text, text, boolean, text) TO authenticated;
+
 -- ═════════════════════════════════════════════════════════════════════════════
 -- DONE
 -- ═════════════════════════════════════════════════════════════════════════════
 
 RAISE NOTICE '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
-RAISE NOTICE 'All 7 steps completed successfully.';
+RAISE NOTICE 'All 8 steps completed successfully.';
 RAISE NOTICE '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
 
 COMMIT;
