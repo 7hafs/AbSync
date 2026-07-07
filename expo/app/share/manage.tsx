@@ -56,18 +56,12 @@ export default function ShareManageScreen() {
       absences,
     });
 
-    console.log("[ShareManageScreen] Created share link", {
-      linkLength: link.length,
-      mode: viewOnly ? "view" : "edit",
-    });
-
     try {
       await Share.share({
         message: `Open this shared AbsenceFlow calendar: ${link}`,
         url: link,
       });
     } catch (error) {
-      console.log("[ShareManageScreen] Share sheet unavailable", error);
       Alert.alert("Share link ready", link);
     }
   };

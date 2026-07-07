@@ -82,7 +82,6 @@ async function getOrganisationIdAsync(): Promise<string | null> {
 
     if (personalOrg && personalOrg.length > 0) {
       const orgId = (personalOrg[0] as { id: string }).id;
-      console.log("[dataService] Personal mode — found personal org by query:", orgId);
       // Cache for next time
       try { await AsyncStorage.setItem("personal_org_id", orgId); } catch { /* ignore */ }
       return orgId;
@@ -212,7 +211,6 @@ async function enqueueOffline(table: string, operation: "upsert" | "delete", pay
       retries: 0,
     });
     await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-    console.log(`[dataService] Enqueued offline ${operation} on ${table}`);
   } catch (err) {
     console.error("[dataService] Failed to enqueue offline operation:", err);
   }
@@ -238,7 +236,6 @@ export async function processOfflineQueue(): Promise<{ processed: number; failed
     const queue: QueuedOperation[] = JSON.parse(raw);
     if (queue.length === 0) return { processed: 0, failed: 0 };
 
-    console.log(`[dataService] Processing ${queue.length} offline operations...`);
     const remaining: QueuedOperation[] = [];
     let processed = 0;
     let failed = 0;
@@ -268,7 +265,6 @@ export async function processOfflineQueue(): Promise<{ processed: number; failed
     }
 
     await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
-    console.log(`[dataService] Offline queue: ${processed} processed, ${failed} failed, ${remaining.length} remaining`);
     return { processed, failed };
   } catch (err) {
     console.error("[dataService] Failed to process offline queue:", err);
@@ -334,8 +330,6 @@ export async function writeAuditLog(
       return;
     }
 
-    console.log("[dataService] Audit log: writing", action, "for org", orgId);
-
     const { error } = await supabase.from("audit_logs" as any).insert({
       user_id: userId,
       organisation_id: orgId,
@@ -378,7 +372,6 @@ async function ensureBucket(bucketName: string): Promise<boolean> {
       console.warn(`[dataService] Failed to create bucket "${bucketName}":`, error.message);
       return false;
     }
-    console.log(`[dataService] Created storage bucket: ${bucketName}`);
     return true;
   } catch (err) {
     console.warn(`[dataService] Bucket ensure error for "${bucketName}":`, err);
@@ -479,7 +472,6 @@ export function onSyncStatusChange(listener: (status: SyncStatus) => void): () =
 export function setSyncStatus(status: SyncStatus): void {
   if (currentSyncStatus === status) return;
   currentSyncStatus = status;
-  console.log(`[dataService] Sync status: ${status}`);
   for (const listener of syncListeners) {
     try { listener(status); } catch { /* ignore listener errors */ }
   }
@@ -1097,8 +1089,6 @@ export async function migrateLocalDataToSupabase(
     return;
   }
 
-  console.log("[dataService] Migrating local data to Supabase for user:", userId);
-
   if (staff.length > 0) {
     const staffRows = staff.map((s) => ({ ...staffToInsert(s), user_id: userId, organisation_id: orgId }));
     await supabase.from("staff_members").upsert(staffRows, { onConflict: "id" });
@@ -1125,8 +1115,6 @@ export async function migrateLocalDataToSupabase(
   }
 
   await upsertNotificationPreferences(notifPrefs);
-
-  console.log("[dataService] Migration complete");
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1659,8 +1647,6 @@ export async function acceptInvitation(
   userId: string,
   userEmail: string
 ): Promise<{ success: boolean; orgId?: string; error?: string }> {
-  console.log("[diag:acceptInv] RPC START — token:", token.substring(0, 8) + "...", "userId:", userId, "email:", userEmail);
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.rpc as any)("accept_invitation_rpc", {
     p_token: token,
@@ -1669,7 +1655,7 @@ export async function acceptInvitation(
   });
 
   if (error) {
-    console.error("[diag:acceptInv] RPC call FAILED:", error.message, error.code, error.details);
+    console.error("[auth] accept_invitation_rpc failed:", error.message, error.code, error.details);
     // Network or RPC-level failure — the database transaction was not committed
     return {
       success: false,
@@ -1677,17 +1663,14 @@ export async function acceptInvitation(
     };
   }
 
-  console.log("[diag:acceptInv] RPC call returned — data:", JSON.stringify(data));
-
   // The RPC returns a jsonb object: { success, org_id?, error? }
   const result = data as unknown as { success: boolean; org_id?: string; error?: string };
 
   if (!result.success) {
-    console.error("[diag:acceptInv] RPC returned failure:", result.error);
+    console.error("[auth] accept_invitation_rpc returned failure:", result.error);
     return { success: false, error: result.error ?? "Unknown error" };
   }
 
-  console.log("[diag:acceptInv] RPC SUCCESS — orgId:", result.org_id);
   return { success: true, orgId: result.org_id };
 }
 
@@ -1748,7 +1731,6 @@ export async function leaveOrganisation(userId: string): Promise<boolean> {
     }
 
     if (!memberships || memberships.length === 0) {
-      console.log("[dataService] leaveOrganisation: no memberships to leave");
       return true;
     }
 
@@ -1772,7 +1754,6 @@ export async function leaveOrganisation(userId: string): Promise<boolean> {
       });
     }
 
-    console.log("[dataService] leaveOrganisation: removed", memberships.length, "memberships");
     return true;
   } catch (err) {
     console.error("[dataService] leaveOrganisation threw:", err);

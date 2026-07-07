@@ -51,23 +51,18 @@ function ResetPasswordScreen() {
 
   // ── Verify session (AuthGate should have set it by now) ────────────────────
   useEffect(() => {
-    // LOG #11: First render of reset-password.tsx
-    console.log("[reset-password:11] Screen mounted — starting session check");
     let cancelled = false;
 
     const verifySession = async () => {
       try {
-        console.log("[reset-password:11] Checking for active session...");
-
         // Try up to 5 times with increasing delays (500ms, 1s, 1.5s, 2s, 2.5s)
+        // The recovery session may take a moment to be established by AuthGate.
         for (let attempt = 0; attempt < 5; attempt++) {
           if (cancelled) return;
 
-          const { data: { session: existingSession }, error: sessionError } = await supabase.auth.getSession();
-          console.log("[reset-password:11] Attempt", attempt + 1, "— session found:", !!existingSession, "error:", sessionError?.message ?? "none");
+          const { data: { session: existingSession } } = await supabase.auth.getSession();
 
           if (existingSession) {
-            console.log("[reset-password:11] Session found — user ID:", existingSession.user.id);
             if (!cancelled) setPhase("form");
             return;
           }
@@ -75,13 +70,11 @@ function ResetPasswordScreen() {
           // Not found yet — wait before retrying
           if (attempt < 4) {
             const delay = 500 + attempt * 500;
-            console.log("[reset-password:11] No session — retrying in", delay, "ms...");
             await new Promise((r) => setTimeout(r, delay));
           }
         }
 
         // All attempts exhausted
-        console.log("[reset-password:11] No session after 5 attempts — showing error UI");
         if (!cancelled) {
           setPhase("error");
           setErrorMessage(
@@ -89,10 +82,7 @@ function ResetPasswordScreen() {
           );
         }
       } catch (err) {
-        console.error("[reset-password:12] SESSION CHECK CRASH:", err);
-        if (err instanceof Error) {
-          console.error("[reset-password:12] Stack:", err.stack);
-        }
+        console.error("[reset-password] Session verification error:", err);
         if (!cancelled) {
           setPhase("error");
           setErrorMessage("An unexpected error occurred. Please try again.");
@@ -104,50 +94,41 @@ function ResetPasswordScreen() {
 
     return () => {
       cancelled = true;
-      // LOG #12: Screen unmount
-      console.log("[reset-password:12] Screen unmounted");
     };
   }, []);
 
   // ── Set new password ───────────────────────────────────────────────────────
   const handleSetPassword = async () => {
-    console.log("[reset-password] handleSetPassword called");
-
     // Validation
     if (!newPassword) {
-      console.log("[reset-password] Validation: empty password");
       Alert.alert("Validation", "Please enter a new password.");
       return;
     }
     if (newPassword.length < 8) {
-      console.log("[reset-password] Validation: password too short");
       Alert.alert("Validation", "Password must be at least 8 characters.");
       return;
     }
     if (newPassword !== confirmPassword) {
-      console.log("[reset-password] Validation: passwords don't match");
       Alert.alert("Validation", "Passwords do not match.");
       return;
     }
 
     setIsProcessing(true);
-    console.log("[reset-password] Calling updateUser with new password...");
     try {
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
       });
 
       if (error) {
-        console.warn("[reset-password] updateUser FAILED:", error.message);
+        console.warn("[reset-password] Failed to update password:", error.message);
         Alert.alert("Error", error.message);
       } else {
-        console.log("[reset-password] updateUser SUCCESS — password changed");
         setPhase("success");
       }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "An unexpected error occurred.";
-      console.error("[reset-password] updateUser exception:", err);
+      console.error("[reset-password] Password update exception:", err);
       Alert.alert("Error", message);
     } finally {
       setIsProcessing(false);
@@ -392,9 +373,6 @@ function ResetPasswordScreen() {
  * a fallback UI instead of a blank white screen.
  */
 export default function ResetPasswordScreenWithBoundary() {
-  // LOG #11: Wrapper mount
-  console.log("[reset-password:11] ErrorBoundary wrapper mounted");
-
   return (
     <ErrorBoundary screenName="reset-password">
       <ResetPasswordScreen />

@@ -106,7 +106,6 @@ const useAbsenceStore = create<AbsenceState>()(
       addAbsence: (absence) =>
         set((state) => {
           if (state.absences.some((a) => a.id === absence.id)) {
-            console.log('[useAbsenceStore] Skipping duplicate absence ID:', absence.id);
             return state;
           }
           return { absences: [...state.absences, absence] };
@@ -203,11 +202,6 @@ const useAbsenceStore = create<AbsenceState>()(
             // Dynamic import to avoid circular dependency at module level
             const { sendApprovalNotification } = require("@/utils/notificationService");
 
-            console.log(
-              `[useAbsenceStore] Notifying ${status.toLowerCase()} for "${original.name}" on ${original.date}` +
-                (staffEmail ? ` (email: ${staffEmail})` : " (no email on file)")
-            );
-
             sendApprovalNotification(
               status === "Approved" ? "approved" : "rejected",
               original.name,
@@ -221,7 +215,6 @@ const useAbsenceStore = create<AbsenceState>()(
       },
 
       deleteAbsence: (id) => {
-        console.log("[useAbsenceStore] deleteAbsence", id);
         const deleted = get().absences.find((a) => a.id === id);
         set((state) => ({
           absences: state.absences.filter((absence) => {
@@ -254,7 +247,6 @@ const useAbsenceStore = create<AbsenceState>()(
         const seen = new Set<string>();
         const deduplicated = incoming.filter((a) => {
           if (seen.has(a.id)) {
-            console.log('[useAbsenceStore] Dropping duplicate absence ID during replace:', a.id);
             return false;
           }
           seen.add(a.id);

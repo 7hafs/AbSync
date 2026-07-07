@@ -77,28 +77,23 @@ export default function WorkspaceSwitcherScreen() {
   }, [profile?.organisationId, profile?.id, isOrg]);
 
   const handleSwitchToPersonal = useCallback(async () => {
-    console.log("[workspace:diag] handleSwitchToPersonal — current profile:", "orgId:", profile?.organisationId ?? "NULL", "wsMode:", profile?.workspaceMode ?? "NULL");
     setIsSwitching(true);
     try {
       await switchToPersonalWorkspace();
       await refreshProfile();
-      console.log("[workspace:diag] handleSwitchToPersonal SUCCESS");
       Alert.alert("Switched", "You are now in Personal Workspace.", [
         { text: "OK", onPress: () => router.back() },
       ]);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to switch workspace.";
-      console.error("[workspace:diag] handleSwitchToPersonal FAILED:", message);
       Alert.alert("Switch Failed", message);
     } finally {
       setIsSwitching(false);
     }
-  }, [switchToPersonalWorkspace, refreshProfile, router, profile]);
+  }, [switchToPersonalWorkspace, refreshProfile, router]);
 
   const handleSwitchToOrg = useCallback(async () => {
-    console.log("[workspace:diag] handleSwitchToOrg — hasOrg:", hasOrg, "profile.orgId:", profile?.organisationId ?? "NULL", "wsMode:", profile?.workspaceMode ?? "NULL");
     if (!hasOrg) {
-      console.error("[workspace:diag] handleSwitchToOrg FAILED: hasOrg is false");
       Alert.alert(
         "No Organisation",
         "You are not a member of any organisation. Create or join one first."
@@ -110,18 +105,16 @@ export default function WorkspaceSwitcherScreen() {
     try {
       await switchToOrganisationWorkspace();
       await refreshProfile();
-      console.log("[workspace:diag] handleSwitchToOrg SUCCESS");
       Alert.alert("Switched", "You are now in Organisation Workspace.", [
         { text: "OK", onPress: () => router.back() },
       ]);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to switch workspace.";
-      console.error("[workspace:diag] handleSwitchToOrg FAILED:", message);
       Alert.alert("Switch Failed", message);
     } finally {
       setIsSwitching(false);
     }
-  }, [hasOrg, switchToOrganisationWorkspace, refreshProfile, router, profile]);
+  }, [hasOrg, switchToOrganisationWorkspace, refreshProfile, router]);
 
   const roleLabel = (role: string) => {
     const labels: Record<string, string> = { owner: "Owner", manager: "Manager", staff: "Staff" };

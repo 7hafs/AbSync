@@ -35,7 +35,6 @@ export default function ArchivedStaffScreen() {
           text: "Unarchive",
           onPress: () => {
             unarchiveStaff(staffMember.id);
-            console.log(`Unarchived staff: ${staffMember.name}`);
           },
         },
       ]
@@ -53,7 +52,6 @@ export default function ArchivedStaffScreen() {
           style: "destructive",
           onPress: () => {
             deleteStaff(staffMember.id);
-            console.log(`Deleted staff: ${staffMember.name}`);
           },
         },
       ]

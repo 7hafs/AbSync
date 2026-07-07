@@ -98,10 +98,6 @@ function AuthGate() {
 
     const handleUrl = async (overrideUrl?: string) => {
       try {
-        // LOG #1: Current URL on app startup
-        console.log("[AuthGate:recovery:1] Getting initial URL...");
-        const startTime = Date.now();
-
         // On web, always use window.location.href — it includes the hash
         // fragment (#access_token=...&type=recovery) which
         // Linking.getInitialURL() strips on web.
@@ -116,106 +112,54 @@ function AuthGate() {
           url = await Linking.getInitialURL();
         }
 
-        const elapsed = Date.now() - startTime;
-        console.log(`[AuthGate:recovery:1] URL lookup took ${elapsed}ms`);
-        console.log("[AuthGate:recovery:1] URL:", url ? `${url.substring(0, 200)}` : "null");
-        if (url && url.length > 200) {
-          console.log("[AuthGate:recovery:1] URL (full):", url);
-        }
+        if (!url) return;
 
-        if (!url) {
-          console.log("[AuthGate:recovery:1] No initial URL — recovery not possible");
-          return;
-        }
-
-        // LOG #2: Parse hash parameters
         // Use the raw (non-decoded) URL to find the hash, because
         // decodeURIComponent can corrupt the fragment if it contains
         // URL-encoded characters that look like %xx sequences.
         const hashIndex = url.indexOf("#");
-        console.log("[AuthGate:recovery:2] Hash fragment index:", hashIndex);
 
-        if (hashIndex === -1) {
-          console.log("[AuthGate:recovery:2] No hash fragment — URL is a plain navigation");
-          return;
-        }
+        if (hashIndex === -1) return;
 
         const fragment = url.substring(hashIndex + 1);
-        console.log("[AuthGate:recovery:2] Raw fragment (first 300 chars):", fragment.substring(0, 300));
-
         const params = new URLSearchParams(fragment);
-        const paramKeys = Array.from(params.keys());
-        console.log("[AuthGate:recovery:2] Parsed param keys:", paramKeys);
 
         const accessToken = params.get("access_token");
         const refreshToken = params.get("refresh_token");
         const type = params.get("type");
 
-        // LOG #3: access_token present
-        console.log("[AuthGate:recovery:3] access_token present:", !!accessToken);
-        // LOG #4: refresh_token present
-        console.log("[AuthGate:recovery:4] refresh_token present:", !!refreshToken);
-        // LOG #5: type parameter value
-        console.log("[AuthGate:recovery:5] type parameter:", type);
-
-        if (!accessToken || !refreshToken || type !== "recovery") {
-          console.log("[AuthGate:recovery:5] Skipping — need access_token + refresh_token + type=recovery");
-          return;
-        }
+        if (!accessToken || !refreshToken || type !== "recovery") return;
 
         recoveryHandled.current = true;
-        // LOG #9a: recoveryInProgress → true
         recoveryInProgress.current = true;
-        console.log("[AuthGate:recovery:9] recoveryInProgress set to TRUE");
-
-        // LOG #6: Before setSession
-        console.log("[AuthGate:recovery:6] Calling supabase.auth.setSession()...");
-        const setSessionStart = Date.now();
 
         const { error } = await supabase.auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken,
         });
 
-        const setSessionElapsed = Date.now() - setSessionStart;
-        console.log(`[AuthGate:recovery:7] setSession completed in ${setSessionElapsed}ms`);
-
-        // LOG #8: Error from setSession
         if (error) {
-          console.warn("[AuthGate:recovery:8] setSession ERROR:", error.message, error.status);
-          // LOG #9b: recoveryInProgress → false (failure)
+          console.warn("[auth] Recovery session failed:", error.message, error.status);
           recoveryInProgress.current = false;
-          console.log("[AuthGate:recovery:9] recoveryInProgress set to FALSE (error)");
           return;
         }
 
-        console.log("[AuthGate:recovery:7] setSession SUCCESS");
-
-        // LOG #10: Navigation to /auth/reset-password
         const currentSegments = segments.join("/");
-        console.log("[AuthGate:recovery:10] Current segments:", currentSegments);
-
         if (!currentSegments.startsWith("auth/reset-password")) {
-          console.log("[AuthGate:recovery:10] Navigating to /auth/reset-password");
           router.replace("/auth/reset-password" as never);
-        } else {
-          console.log("[AuthGate:recovery:10] Already on reset-password — no navigation needed");
         }
       } catch (e) {
-        console.error("[AuthGate:recovery:FATAL] Unhandled exception in recovery flow:", e);
+        console.error("[auth] Recovery flow exception:", e);
         recoveryInProgress.current = false;
-        console.log("[AuthGate:recovery:9] recoveryInProgress set to FALSE (exception)");
       }
     };
 
     handleUrl();
 
-    // ── Listen for URL changes (warm launches) ──────────────────────────
-    // On native, if the app is already running and the user taps a
-    // recovery deep link, Linking fires a 'url' event. On web, if the
-    // hash changes (e.g. SPA navigation), we also want to check.
+    // Listen for URL changes (warm launches) — if the app is already
+    // running and the user taps a recovery deep link, Linking fires a
+    // 'url' event.
     const subscription = Linking.addEventListener("url", (event: { url: string }) => {
-      console.log("[AuthGate:recovery] URL event received:", event.url?.substring(0, 200));
       if (!recoveryHandled.current) {
         handleUrl(event.url);
       }
@@ -227,47 +171,27 @@ function AuthGate() {
   }, []);
 
   useEffect(() => {
-    if (isLoading) {
-      console.log("[AuthGate:routing] isLoading=true — deferring route check");
-      return;
-    }
-
-    console.log("[AuthGate:routing] Evaluating routes:", {
-      hasUser: !!user,
-      inAuthGroup,
-      segments: segments.join("/"),
-      recoveryInProgress: recoveryInProgress.current,
-    });
+    if (isLoading) return;
 
     if (!user && !inAuthGroup) {
-      console.log("[AuthGate:routing] !user && !inAuth → redirect to /auth/login");
       // Reset all Zustand stores (clear persisted data + reset in-memory state)
       clearAllStores().catch((e) =>
-        console.warn("[AuthGate] Failed to clear stores on sign-out:", e)
+        console.warn("[auth] Failed to clear stores on sign-out:", e)
       );
       useOrganisationStore.getState().reset();
       useInvitationStore.getState().reset();
       router.replace("/auth/login" as never);
     } else if (user && inAuthGroup) {
-      if (recoveryInProgress.current) {
-        console.log("[AuthGate:routing] user && inAuth, recoveryInProgress=true → staying");
-        return;
-      }
-      console.log("[AuthGate:routing] user && inAuth, no recovery → redirect to dashboard");
+      if (recoveryInProgress.current) return;
       router.replace("/" as never);
     } else if (user && !inAuthGroup && !inOnboarding && profile && profile.workspaceMode === null) {
       // Brand-new user who hasn't chosen a workspace mode — send to onboarding
-      console.log("[AuthGate:routing] user authenticated but workspace_mode=null → onboarding");
       router.replace("/onboarding/workspace" as never);
     } else if (user && inOnboarding && profile && profile.workspaceMode !== null) {
       // User has set up their workspace, redirect to dashboard
-      console.log("[AuthGate:routing] workspace mode set → redirect to dashboard");
       router.replace("/" as never);
     } else if (user && !inAuthGroup && recoveryInProgress.current) {
-      console.log("[AuthGate:routing] user && !inAuth && recoveryInProgress → navigate to /auth/reset-password");
       router.replace("/auth/reset-password" as never);
-    } else {
-      console.log("[AuthGate:routing] No routing action needed");
     }
   }, [isLoading, user, inAuthGroup, inOnboarding, profile]);
 
@@ -277,7 +201,6 @@ function AuthGate() {
     // Always show a spinner during loading — never render null (blank
     // screen). Returning null for the first few seconds appeared as a
     // blank white screen on web when recovery links were opened.
-    console.log("[AuthGate:render] isLoading — showing spinner, recoveryInProgress:", recoveryInProgress.current);
     return (
       <View
         style={{
@@ -294,7 +217,6 @@ function AuthGate() {
   }
 
   if (!user) {
-    console.log("[AuthGate:render] No user — rendering unauth Stack. recoveryInProgress:", recoveryInProgress.current);
     return (
       <Stack
         screenOptions={{
@@ -313,7 +235,6 @@ function AuthGate() {
   // instead of rendering AuthenticatedApp without a profile. This prevents
   // the user from getting stuck in the app with no workspace mode set.
   if (!profile) {
-    console.log("[AuthGate:render] User authenticated but profile is null — showing profile-loading spinner");
     return (
       <View
         style={{
@@ -329,12 +250,11 @@ function AuthGate() {
     );
   }
 
-  console.log("[AuthGate:render] User authenticated with profile — rendering AuthenticatedApp");
   return <AuthenticatedApp />;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Authenticated app — loads data from Supabase, seeds sample data if empty
+// Authenticated app — loads data from Supabase
 // ═════════════════════════════════════════════════════════════════════════════
 
 function AuthenticatedApp() {
@@ -360,33 +280,26 @@ function AuthenticatedApp() {
   useRealtime(profile?.organisationId ?? null, user?.id ?? null);
 
   const loadData = useCallback(async () => {
-    if (!user) {
-      console.log("[AuthenticatedApp] No user — skipping data load");
-      return;
-    }
+    if (!user) return;
 
-    console.log("[AuthenticatedApp] Starting data load...");
     setSyncStatus("syncing");
 
     // Check connectivity
     try {
       const reachable = await isSupabaseReachable();
-      console.log("[AuthenticatedApp] Supabase reachable:", reachable);
       if (!reachable) {
         setSyncStatus("offline");
-        console.log("[_layout] Supabase unreachable, using local data");
       }
     } catch (e) {
-      console.warn("[AuthenticatedApp] Connectivity check failed:", e);
+      console.warn("[app] Connectivity check failed:", e);
       setSyncStatus("offline");
     }
 
     // Step 1: Run integrity check
     try {
       await startupIntegrityCheck();
-      console.log("[AuthenticatedApp] Integrity check passed");
     } catch (e) {
-      console.warn("[AuthenticatedApp] Integrity check failed:", e);
+      console.warn("[app] Integrity check failed:", e);
     }
 
     // Step 2: Mark stores as loaded
@@ -408,22 +321,16 @@ function AuthenticatedApp() {
         calendarStore.events,
         notificationStore.preferences
       );
-      console.log("[AuthenticatedApp] Migration completed, migrated:", migrated);
     } catch (e) {
-      console.warn("[AuthenticatedApp] Migration failed:", e);
+      console.warn("[app] Migration failed:", e);
     }
 
     // Step 4: Load data from Supabase
     let data: Awaited<ReturnType<typeof loadAllFromSupabase>>;
     try {
       data = await loadAllFromSupabase();
-      console.log("[AuthenticatedApp] Supabase data loaded:", {
-        staff: data.staff.length,
-        absences: data.absences.length,
-        events: data.calendarEvents.length,
-      });
     } catch (e) {
-      console.error("[AuthenticatedApp] CRITICAL: Failed to load from Supabase:", e);
+      console.error("[app] Failed to load data from Supabase:", e);
       setSyncStatus("offline");
       data = { staff: [], absences: [], calendarEvents: [], notes: [], reminders: [], notifPrefs: null };
     }
@@ -432,33 +339,22 @@ function AuthenticatedApp() {
     // lose data if the Supabase fetch returns empty due to a network error)
     if (data.staff.length > 0) {
       staffStore.replaceStaff(data.staff);
-    } else if (!migrated && staffStore.staff.length > 0) {
-      // Fallback: keep local data if Supabase returns empty
-      console.log("[_layout] Keeping local staff data (Supabase returned empty)");
     }
 
     if (data.absences.length > 0) {
       absenceStore.replaceAbsences(data.absences);
-    } else if (!migrated && absenceStore.absences.length > 0) {
-      console.log("[_layout] Keeping local absences data (Supabase returned empty)");
     }
 
     if (data.calendarEvents.length > 0) {
       calendarStore.replaceEvents(data.calendarEvents);
-    } else if (!migrated && calendarStore.events.length > 0) {
-      console.log("[_layout] Keeping local calendar events (Supabase returned empty)");
     }
 
     if (data.notes.length > 0) {
       notesStore.replaceNotes(data.notes);
-    } else if (!migrated && notesStore.notes.length > 0) {
-      console.log("[_layout] Keeping local notes data (Supabase returned empty)");
     }
 
     if (data.reminders.length > 0) {
       remindersStore.replaceReminders(data.reminders);
-    } else if (!migrated && remindersStore.reminders.length > 0) {
-      console.log("[_layout] Keeping local reminders data (Supabase returned empty)");
     }
 
     if (data.notifPrefs) {
@@ -470,28 +366,26 @@ function AuthenticatedApp() {
       const savedView = await fetchCalendarView();
       if (savedView && ['day', 'week', 'month'].includes(savedView)) {
         calendarStore.setCalendarView(savedView);
-        console.log("[_layout] Loaded calendar view preference:", savedView);
       }
     } catch (e) {
-      console.warn("[_layout] Failed to load calendar view preference:", e);
+      console.warn("[app] Failed to load calendar view preference:", e);
     }
 
     // Step 6: Seed public holidays
     try {
       seedPublicHolidays(absenceStore);
     } catch (e) {
-      console.warn("[AuthenticatedApp] Failed to seed public holidays:", e);
+      console.warn("[app] Failed to seed public holidays:", e);
     }
 
     // Step 7: Initialize notifications
     try {
       initializeNotifications(user.id);
     } catch (e) {
-      console.warn("[AuthenticatedApp] Failed to init notifications:", e);
+      console.warn("[app] Failed to init notifications:", e);
     }
 
     setSyncStatus("synced");
-    console.log("[AuthenticatedApp] Data load COMPLETE");
   }, [user]);
 
   useEffect(() => {

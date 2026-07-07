@@ -73,13 +73,11 @@ export default function WorkspaceOnboardingScreen() {
     setIsProcessing(true);
     setError(null);
     try {
-      console.log("[onboarding:diag] Creating organisation with name:", orgName.trim());
       await setWorkspaceMode("organisation", orgName.trim());
       await refreshProfile();
-      console.log("[onboarding:diag] Organisation creation complete — navigating to dashboard");
       router.replace("/" as never);
     } catch (err) {
-      console.error("[onboarding:diag] Organisation creation FAILED:", err);
+      console.error("[onboarding] Organisation creation failed:", err);
       setError("Failed to create your organisation. Please try again.");
     } finally {
       setIsProcessing(false);
@@ -111,7 +109,7 @@ export default function WorkspaceOnboardingScreen() {
         role: invitation.role,
       });
     } catch (err) {
-      console.error("[onboarding:diag] getInvitationByToken FAILED:", err);
+      console.error("[onboarding] Invitation lookup failed:", err);
       const message = err instanceof Error ? err.message : "Unknown error";
       setError(`Failed to look up invitation: ${message}`);
     }
@@ -138,12 +136,10 @@ export default function WorkspaceOnboardingScreen() {
         profile.email
       );
       if (!result.success) {
-        console.error("[onboarding:diag] acceptInvitation FAILED:", result.error);
         setError(result.error ?? "Failed to join organisation.");
         setIsProcessing(false);
         return;
       }
-      console.log("[onboarding:diag] acceptInvitation SUCCESS — orgId:", result.orgId);
       // Update profile with the new org (pass orgId as UUID for joining flow)
       await setWorkspaceMode("organisation", result.orgId);
       await refreshProfile();

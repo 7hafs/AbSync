@@ -156,7 +156,6 @@ export default function DayAbsencesScreen() {
     }
 
     const confirmDelete = () => {
-      console.log('[DayAbsencesScreen] Deleting absence', absence.id);
       deleteAbsence(absence.id);
     };
 

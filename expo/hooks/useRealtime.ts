@@ -101,11 +101,8 @@ export function useRealtime(organisationId: string | null, userId: string | null
   useEffect(() => {
     // Nothing to subscribe to without an organisation
     if (!organisationId) {
-      console.log("[useRealtime] No organisation_id — skipping realtime subscriptions");
       return;
     }
-
-    console.log("[useRealtime] Setting up realtime subscriptions for org:", organisationId);
 
     // ── Helper: check if the change was made by the current user ──────────
     const isOwnChange = (payload: SupabasePayload): boolean => {
@@ -129,20 +126,11 @@ export function useRealtime(organisationId: string | null, userId: string | null
           const store = useAbsenceStore.getState();
           const id = (payload.eventType === "DELETE" ? payload.old.id : payload.new.id) as string;
 
-          console.log(
-            `[useRealtime] absences ${payload.eventType}:`,
-            id,
-            isOwnChange(payload) ? "(own change — store already updated)" : ""
-          );
-
           if (payload.eventType === "INSERT") {
             // Dedup: if store already has this record (our own write), skip
             if (isOwnChange(payload)) {
               const exists = store.absences.some((a) => a.id === id);
-              if (exists) {
-                console.log("[useRealtime] Skipping INSERT — record already in store");
-                return;
-              }
+              if (exists) return;
             }
             const record = absenceFromPayload(payload.new);
             store.addAbsence(record);
@@ -154,9 +142,7 @@ export function useRealtime(organisationId: string | null, userId: string | null
           }
         }
       )
-      .subscribe((status) => {
-        console.log(`[useRealtime] absences channel status: ${status}`);
-      });
+      .subscribe();
 
     // ── Staff members channel ─────────────────────────────────────────────
     const staffChannel = supabase
@@ -173,19 +159,10 @@ export function useRealtime(organisationId: string | null, userId: string | null
           const store = useStaffStore.getState();
           const id = (payload.eventType === "DELETE" ? payload.old.id : payload.new.id) as string;
 
-          console.log(
-            `[useRealtime] staff_members ${payload.eventType}:`,
-            id,
-            isOwnChange(payload) ? "(own change — store already updated)" : ""
-          );
-
           if (payload.eventType === "INSERT") {
             if (isOwnChange(payload)) {
               const exists = store.staff.some((s) => s.id === id);
-              if (exists) {
-                console.log("[useRealtime] Skipping staff INSERT — record already in store");
-                return;
-              }
+              if (exists) return;
             }
             const record = staffFromPayload(payload.new);
             store.addStaff(record);
@@ -197,9 +174,7 @@ export function useRealtime(organisationId: string | null, userId: string | null
           }
         }
       )
-      .subscribe((status) => {
-        console.log(`[useRealtime] staff_members channel status: ${status}`);
-      });
+      .subscribe();
 
     // ── Calendar events channel ───────────────────────────────────────────
     const calendarChannel = supabase
@@ -216,19 +191,10 @@ export function useRealtime(organisationId: string | null, userId: string | null
           const store = useCalendarStore.getState();
           const id = (payload.eventType === "DELETE" ? payload.old.id : payload.new.id) as string;
 
-          console.log(
-            `[useRealtime] calendar_events ${payload.eventType}:`,
-            id,
-            isOwnChange(payload) ? "(own change — store already updated)" : ""
-          );
-
           if (payload.eventType === "INSERT") {
             if (isOwnChange(payload)) {
               const exists = store.events.some((e) => e.id === id);
-              if (exists) {
-                console.log("[useRealtime] Skipping event INSERT — record already in store");
-                return;
-              }
+              if (exists) return;
             }
             const record = eventFromPayload(payload.new);
             store.addEvent(record);
@@ -240,15 +206,12 @@ export function useRealtime(organisationId: string | null, userId: string | null
           }
         }
       )
-      .subscribe((status) => {
-        console.log(`[useRealtime] calendar_events channel status: ${status}`);
-      });
+      .subscribe();
 
     channelsRef.current = [absenceChannel, staffChannel, calendarChannel];
 
     // ── Cleanup on unmount or org change ──────────────────────────────────
     return () => {
-      console.log("[useRealtime] Tearing down realtime subscriptions for org:", organisationId);
       for (const channel of channelsRef.current) {
         supabase.removeChannel(channel).catch((err: Error) => {
           console.warn("[useRealtime] Error removing channel:", err.message);

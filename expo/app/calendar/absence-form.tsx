@@ -346,7 +346,6 @@ export default function AbsenceFormScreen() {
     }
 
     const confirmDelete = () => {
-      console.log('[AbsenceForm] Deleting absence', existingAbsence.id);
       deleteAbsence(existingAbsence.id);
       router.back();
     };

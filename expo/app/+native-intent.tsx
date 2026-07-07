@@ -19,10 +19,6 @@ export function redirectSystemPath({
   path: string;
   initial: boolean;
 }): string {
-  if (process.env.NODE_ENV === "development") {
-    console.log("[native-intent] redirectSystemPath", { path, initial });
-  }
-
   // On true initial launch (no deep link), go to root
   if (initial && (!path || path === "/")) {
     return "/";

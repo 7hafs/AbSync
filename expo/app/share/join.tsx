@@ -36,7 +36,6 @@ export default function ShareJoinScreen() {
 
   const payload = useMemo(() => {
     if (!params.data || typeof params.data !== "string") return null;
-    console.log("[ShareJoinScreen] Attempting to decode shared payload");
     return decodeShareLink(params.data);
   }, [decodeShareLink, params.data]);
 
@@ -48,13 +47,6 @@ export default function ShareJoinScreen() {
       );
       return;
     }
-
-    console.log("[ShareJoinScreen] Importing shared calendar", {
-      workspaceId: payload.workspaceId,
-      mode: payload.mode,
-      staffCount: payload.staff.length,
-      absenceCount: payload.absences.length,
-    });
 
     replaceStaff(payload.staff);
     replaceAbsences(payload.absences);

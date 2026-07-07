@@ -71,23 +71,11 @@ export async function loadAllFromSupabase(): Promise<{
     fetchNotificationPreferences(),
   ]);
 
-  console.log("[syncService] Loaded from Supabase:", {
-    absences: absences.length,
-    staff: staff.length,
-    calendarEvents: calendarEvents.length,
-    notes: notes.length,
-    reminders: reminders.length,
-    notifPrefs: notifPrefs ? "found" : "not found",
-  });
-
   // Process any offline-queued operations now that we're connected
   try {
     const reachable = await isSupabaseReachable();
     if (reachable) {
-      const result = await processOfflineQueue();
-      if (result.processed > 0) {
-        console.log(`[syncService] Processed ${result.processed} offline operations`);
-      }
+      await processOfflineQueue();
     }
   } catch (e) {
     console.warn("[syncService] Offline queue processing failed:", e);
@@ -113,11 +101,9 @@ export async function migrateIfNeeded(
 ): Promise<boolean> {
   const migrationDone = await hasCompletedMigration();
   if (migrationDone) {
-    console.log("[syncService] Migration already completed, skipping");
     return false;
   }
 
-  console.log("[syncService] Running local-to-Supabase migration...");
   await migrateLocalDataToSupabase(
     localStaff,
     localAbsences,
