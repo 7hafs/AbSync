@@ -34,13 +34,11 @@ function tryDecodePayload(value: string): CalendarSharePayload | null {
     const parsed = JSON.parse(decodeURIComponent(normalizedValue)) as CalendarSharePayload;
 
     if (parsed.version !== 1 || !Array.isArray(parsed.staff) || !Array.isArray(parsed.absences)) {
-      console.log("[useShareStore] Invalid share payload shape");
       return null;
     }
 
     return parsed;
-  } catch (error) {
-    console.log("[useShareStore] Failed to decode share payload", error);
+  } catch {
     return null;
   }
 }
@@ -65,13 +63,6 @@ const useShareStore = create<ShareState>()(
         const data = encodePayload(payload);
         const link = Linking.createURL("/share/join", {
           queryParams: { data },
-        });
-
-        console.log("[useShareStore] Generated share link", {
-          mode,
-          workspaceId,
-          staffCount: staff.length,
-          absenceCount: absences.length,
         });
 
         set({

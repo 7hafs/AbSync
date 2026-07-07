@@ -149,15 +149,11 @@ async function scheduleOne(
     },
   });
 
-  console.log(
-    `[notificationService] Scheduled "${identifier}" at ${hour}:${String(minute).padStart(2, "0")} — today=${todayCount}, tomorrow=${tomorrowCount}`
-  );
 }
 
 /** Schedule (or reschedule) both daily notifications. */
 export async function scheduleDailyNotifications(_userId?: string): Promise<void> {
   if (Platform.OS === "web") {
-    console.log("[notificationService] Notifications not available on web");
     return;
   }
 
@@ -180,7 +176,6 @@ export async function scheduleDailyNotifications(_userId?: string): Promise<void
 export async function cancelAllDailyNotifications(): Promise<void> {
   await Notifications.cancelScheduledNotificationAsync(MORNING_ID);
   await Notifications.cancelScheduledNotificationAsync(EVENING_ID);
-  console.log("[notificationService] All daily notifications cancelled");
 }
 
 // ── Instant alert (optional) ────────────────────────────────────────────────
@@ -230,7 +225,6 @@ export async function sendEmailNotification(
   try {
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) {
-      console.log("[notificationService] No session, skipping email");
       return false;
     }
 
@@ -243,7 +237,6 @@ export async function sendEmailNotification(
       return false;
     }
 
-    console.log("[notificationService] Email sent:", payload.subject);
     return true;
   } catch (err) {
     console.warn("[notificationService] Email send error:", err);
@@ -312,7 +305,6 @@ export async function sendDailySummaryEmail(
 TaskManager.defineTask(BG_TASK_NAME, async () => {
   try {
     await scheduleDailyNotifications();
-    console.log("[notificationService] BG task: notifications refreshed");
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch (err) {
     console.error("[notificationService] BG task error:", err);
@@ -324,7 +316,6 @@ async function registerBackgroundFetch(): Promise<void> {
   try {
     const status = await BackgroundFetch.getStatusAsync();
     if (status === BackgroundFetch.BackgroundFetchStatus.Denied) {
-      console.log("[notificationService] Background fetch denied");
       return;
     }
 
@@ -334,7 +325,6 @@ async function registerBackgroundFetch(): Promise<void> {
       startOnBoot: true,
     });
 
-    console.log("[notificationService] Background fetch registered");
   } catch (err) {
     console.error("[notificationService] Background fetch registration error:", err);
   }
@@ -369,7 +359,6 @@ export async function initializeNotifications(_userId?: string): Promise<void> {
 
   const hasPermission = await requestNotificationPermissions();
   if (!hasPermission) {
-    console.log("[notificationService] Permission denied, skipping init");
     return;
   }
 
@@ -380,12 +369,9 @@ export async function initializeNotifications(_userId?: string): Promise<void> {
   await registerBackgroundFetch();
 
   // Handle notification taps — navigate to the calendar (dashboard)
-  Notifications.addNotificationResponseReceivedListener((response) => {
-    const data = response.notification.request.content.data;
-    console.log("[notificationService] Notification tapped:", data?.type);
+  Notifications.addNotificationResponseReceivedListener(() => {
+    // Notification tap — navigation handled by the app shell
   });
-
-  console.log("[notificationService] Initialized");
 }
 
 /**
@@ -406,5 +392,4 @@ export async function sendTestNotification(): Promise<void> {
     trigger: null, // immediate
   });
 
-  console.log("[notificationService] Test notification sent");
 }

@@ -67,7 +67,6 @@ async function getOrganisationIdAsync(): Promise<string | null> {
       // Try AsyncStorage cache first (set by switchToPersonalWorkspace)
       const cached = await AsyncStorage.getItem("personal_org_id");
       if (cached) {
-        console.log("[dataService] Personal mode — using cached personal org ID:", cached);
         return cached;
       }
     } catch { /* AsyncStorage read may fail */ }
@@ -124,7 +123,6 @@ async function requireOrganisationId(): Promise<string> {
     );
   }
 
-  console.log("[dataService] requireOrganisationId: using organisation_id =", orgId);
   return orgId;
 }
 
@@ -1503,8 +1501,6 @@ export async function createInvitation(
     updated_at: row.updated_at,
   };
 
-  console.log("[dataService] Invitation created:", invitation.id, "for", normalizedEmail);
-
   // Audit log
   writeAuditLog("invitation_created", "organisation_invitations", invitation.id, undefined, {
     organisation_id: orgId,
@@ -1536,7 +1532,6 @@ export async function revokeInvitation(
   // Audit log
   writeAuditLog("invitation_revoked", "organisation_invitations", invitationId);
 
-  console.log("[dataService] Invitation revoked:", invitationId);
   return true;
 }
 
@@ -1570,7 +1565,6 @@ export async function resendInvitation(
     new_expires_at: expiresAt,
   });
 
-  console.log("[dataService] Invitation resent:", invitationId);
   return true;
 }
 
@@ -1717,8 +1711,6 @@ export async function autoAcceptInvitations(
  */
 export async function leaveOrganisation(userId: string): Promise<boolean> {
   try {
-    console.log("[dataService] leaveOrganisation for user:", userId);
-
     // Get all memberships for this user
     const { data: memberships, error: fetchError } = await supabase
       .from("organisation_members")

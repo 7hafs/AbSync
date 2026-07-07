@@ -68,9 +68,6 @@ const useStaffStore = create<StaffState>()(
             absenceState.replaceAbsences(
               absenceState.absences.filter((a: { staffId: string }) => a.staffId !== id)
             );
-            console.log(
-              `[useStaffStore] Cascaded delete: removed ${orphanedIds.length} absences for staff ${id}`
-            );
           }
         } catch (e) {
           console.warn("[useStaffStore] Could not cascade absence cleanup:", e);

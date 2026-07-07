@@ -10,7 +10,7 @@
  */
 import React, { useEffect, useRef } from "react";
 import { View, StyleSheet, Animated } from "react-native";
-import { Cloud, CloudOff, Wifi, WifiOff, AlertTriangle } from "lucide-react-native";
+import { Cloud, Wifi, WifiOff, AlertTriangle } from "lucide-react-native";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { SyncStatus } from "@/lib/dataService";
 import ThemedText from "@/components/ThemedText";

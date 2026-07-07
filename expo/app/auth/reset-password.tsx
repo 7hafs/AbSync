@@ -31,6 +31,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import Colors from "@/constants/colors";
 import useThemeStore from "@/store/useThemeStore";
 import { supabase } from "@/lib/supabase";
+import { friendlyAuthError } from "@/hooks/useSupabaseAuth";
 
 function ResetPasswordScreen() {
   const router = useRouter();
@@ -120,8 +121,7 @@ function ResetPasswordScreen() {
       });
 
       if (error) {
-        console.warn("[reset-password] Failed to update password:", error.message);
-        Alert.alert("Error", error.message);
+        Alert.alert("Error", friendlyAuthError(error));
       } else {
         setPhase("success");
       }

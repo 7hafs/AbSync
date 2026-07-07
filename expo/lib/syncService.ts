@@ -113,6 +113,5 @@ export async function migrateIfNeeded(
     localNotifPrefs
   );
   await markMigrationComplete();
-  console.log("[syncService] Migration complete");
   return true;
 }

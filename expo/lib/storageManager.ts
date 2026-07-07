@@ -117,12 +117,6 @@ export async function verifyStorageIntegrity(): Promise<IntegrityReport> {
     }
   }
 
-  console.log("[storageManager] Integrity report:", {
-    healthy: report.healthy,
-    errors: report.errors.length,
-    warnings: report.warnings.length,
-  });
-
   return report;
 }
 
@@ -135,7 +129,6 @@ export async function recoverCorruptedStore(key: string): Promise<boolean> {
   try {
     console.warn(`[storageManager] Attempting recovery for corrupted key: ${key}`);
     await AsyncStorage.removeItem(key);
-    console.log(`[storageManager] Removed corrupted entry for ${key}. Store will reinitialize.`);
     return true;
   } catch (err) {
     console.error(`[storageManager] Recovery failed for ${key}:`, err);
@@ -152,7 +145,6 @@ export async function startupIntegrityCheck(): Promise<void> {
   const report = await verifyStorageIntegrity();
 
   if (report.healthy && report.warnings.length === 0) {
-    console.log("[storageManager] All stores healthy");
     return;
   }
 
@@ -172,7 +164,6 @@ export async function startupIntegrityCheck(): Promise<void> {
       if (!info.valid) {
         const recovered = await recoverCorruptedStore(key);
         if (recovered) {
-          console.log(`[storageManager] Store "${key}" recovered (reset to defaults)`);
         }
       }
     }
@@ -266,10 +257,6 @@ export async function restoreFromBackup(
   }
 
   const success = errors.length === 0 && count > 0;
-
-  console.log(
-    `[storageManager] Restore ${success ? "succeeded" : "partially failed"}: ${count} stores, ${errors.length} errors`
-  );
 
   return { success, count, errors };
 }
@@ -388,7 +375,6 @@ export async function clearAllStores(): Promise<void> {
 
   try {
     await AsyncStorage.multiRemove(keysToClear);
-    console.log("[storageManager] Cleared all data stores for sign-out");
   } catch (err) {
     console.error("[storageManager] Failed to clear stores on sign-out:", err);
   }
