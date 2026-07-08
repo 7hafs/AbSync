@@ -77,6 +77,12 @@ function AuthGate() {
   const router = useRouter();
   const recoveryHandled = useRef(false);
   const [recoveryInProgress, setRecoveryInProgress] = useState(false);
+  // Blocks the redirect effect until handleUrl() has finished checking the
+  // initial URL for recovery tokens. Without this, getSession() can resolve
+  // (setting isLoading=false + user) before handleUrl() has set
+  // recoveryInProgress=true, causing the redirect effect to fire and send
+  // the user to / (dashboard) instead of staying on /auth/reset-password.
+  const [recoveryCheckComplete, setRecoveryCheckComplete] = useState(false);
 
   const inAuthGroup = segments[0] === "auth";
   const inOnboarding = segments[0] === "onboarding";
@@ -101,6 +107,7 @@ function AuthGate() {
         console.log("[auth] handleUrl START", {
           hasOverride: !!overrideUrl,
           platform: Platform.OS,
+          recoveryHandled: recoveryHandled.current,
         });
 
         // On web, always use window.location.href — it includes the hash
@@ -117,7 +124,7 @@ function AuthGate() {
           url = await Linking.getInitialURL();
         }
 
-        console.log("[auth] handleUrl URL", { url: url ? url.substring(0, 80) + "..." : null });
+        console.log("[auth] handleUrl URL", { url: url ? url.substring(0, 120) : null });
 
         if (!url) {
           console.log("[auth] handleUrl — no URL, exiting");
@@ -154,7 +161,7 @@ function AuthGate() {
 
         recoveryHandled.current = true;
         setRecoveryInProgress(true);
-        console.log("[auth] handleUrl — recovery token detected, calling setSession()");
+        console.log("[auth] handleUrl — recovery token detected, setRecoveryInProgress(true), calling setSession()");
 
         const { error } = await supabase.auth.setSession({
           access_token: accessToken,
@@ -180,17 +187,35 @@ function AuthGate() {
       } catch (e) {
         console.error("[auth] Recovery flow exception:", e);
         setRecoveryInProgress(false);
+      } finally {
+        // CRITICAL: Mark the URL check as complete so the redirect effect
+        // can proceed. This must happen in finally so it fires even if
+        // handleUrl exits early (no URL, no hash, etc.).
+        setRecoveryCheckComplete(true);
+        console.log("[auth] handleUrl COMPLETE — recoveryCheckComplete=true");
       }
     };
 
     handleUrl();
+
+    // Safety timeout — if Linking.getInitialURL() hangs or takes too long,
+    // force recoveryCheckComplete=true so the redirect effect can proceed
+    // and the user isn't stuck on a blank screen.
+    const urlCheckTimeout = setTimeout(() => {
+      setRecoveryCheckComplete((prev) => {
+        if (!prev) {
+          console.warn("[auth] handleUrl TIMEOUT — forcing recoveryCheckComplete=true after 3s");
+        }
+        return true;
+      });
+    }, 3000);
 
     // Listen for URL changes (warm launches) — if the app is already
     // running and the user taps a recovery deep link, Linking fires a
     // 'url' event.
     const subscription = Linking.addEventListener("url", (event: { url: string }) => {
       console.log("[auth] Linking 'url' event received", {
-        url: event.url ? event.url.substring(0, 80) + "..." : null,
+        url: event.url ? event.url.substring(0, 120) : null,
         recoveryHandled: recoveryHandled.current,
       });
       if (!recoveryHandled.current) {
@@ -200,6 +225,7 @@ function AuthGate() {
 
     return () => {
       subscription.remove();
+      clearTimeout(urlCheckTimeout);
     };
   }, []);
 
@@ -217,7 +243,21 @@ function AuthGate() {
   }, [user, recoveryInProgress]);
 
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading) {
+      console.log("[auth-gate] redirect effect — isLoading=true, skipping");
+      return;
+    }
+
+    // CRITICAL: Wait for the initial URL check to complete before redirecting.
+    // getSession() can resolve (setting isLoading=false + user) before
+    // handleUrl() has finished checking for recovery tokens in the deep link.
+    // Without this guard, the redirect fires with recoveryInProgress=false
+    // and sends an authenticated user to / (dashboard) instead of letting
+    // the recovery flow navigate to /auth/reset-password.
+    if (!recoveryCheckComplete) {
+      console.log("[auth-gate] redirect effect — recoveryCheckComplete=false, waiting for URL check");
+      return;
+    }
 
     // CRITICAL: Don't redirect while a recovery session is being
     // established. setSession() is async — isLoading may become false
@@ -226,9 +266,21 @@ function AuthGate() {
     // sending the user to /auth/login. When setSession() then completes
     // and user becomes set, AuthenticatedApp renders but the current
     // route (auth/login) isn't in its Stack — producing a blank screen.
-    if (recoveryInProgress) return;
+    if (recoveryInProgress) {
+      console.log("[auth-gate] redirect effect — recoveryInProgress=true, skipping");
+      return;
+    }
+
+    console.log("[auth-gate] redirect effect EVALUATING", {
+      hasUser: !!user,
+      inAuthGroup,
+      inOnboarding,
+      hasProfile: !!profile,
+      workspaceMode: profile?.workspaceMode ?? null,
+    });
 
     if (!user && !inAuthGroup) {
+      console.log("[auth-gate] redirect → /auth/login (no user, not in auth group)");
       // Reset all Zustand stores (clear persisted data + reset in-memory state)
       clearAllStores().catch((e) =>
         console.warn("[auth] Failed to clear stores on sign-out:", e)
@@ -237,15 +289,20 @@ function AuthGate() {
       useInvitationStore.getState().reset();
       router.replace("/auth/login" as never);
     } else if (user && inAuthGroup) {
+      console.log("[auth-gate] redirect → / (user authenticated, in auth group)");
       router.replace("/" as never);
     } else if (user && !inAuthGroup && !inOnboarding && profile && profile.workspaceMode === null) {
       // Brand-new user who hasn't chosen a workspace mode — send to onboarding
+      console.log("[auth-gate] redirect → /onboarding/workspace (no workspace mode set)");
       router.replace("/onboarding/workspace" as never);
     } else if (user && inOnboarding && profile && profile.workspaceMode !== null) {
       // User has set up their workspace, redirect to dashboard
+      console.log("[auth-gate] redirect → / (onboarding complete)");
       router.replace("/" as never);
+    } else {
+      console.log("[auth-gate] redirect — no condition matched, staying on current route");
     }
-  }, [isLoading, user, inAuthGroup, inOnboarding, profile, recoveryInProgress]);
+  }, [isLoading, user, inAuthGroup, inOnboarding, profile, recoveryInProgress, recoveryCheckComplete, router]);
 
   // ── Render ────────────────────────────────────────────────────────────
 
