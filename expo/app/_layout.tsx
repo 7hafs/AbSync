@@ -3,7 +3,7 @@ import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Linking from "expo-linking";
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { useColorScheme, Platform, View, ActivityIndicator } from "react-native";
 import useThemeStore from "@/store/useThemeStore";
 import useStaffStore from "@/store/useStaffStore";
@@ -76,7 +76,7 @@ function AuthGate() {
   const segments = useSegments();
   const router = useRouter();
   const recoveryHandled = useRef(false);
-  const recoveryInProgress = useRef(false);
+  const [recoveryInProgress, setRecoveryInProgress] = useState(false);
 
   const inAuthGroup = segments[0] === "auth";
   const inOnboarding = segments[0] === "onboarding";
@@ -131,7 +131,7 @@ function AuthGate() {
         if (!accessToken || !refreshToken || type !== "recovery") return;
 
         recoveryHandled.current = true;
-        recoveryInProgress.current = true;
+        setRecoveryInProgress(true);
 
         const { error } = await supabase.auth.setSession({
           access_token: accessToken,
@@ -140,17 +140,17 @@ function AuthGate() {
 
         if (error) {
           console.warn("[auth] Recovery session failed:", error.message, error.status);
-          recoveryInProgress.current = false;
+          setRecoveryInProgress(false);
           return;
         }
 
-        const currentSegments = segments.join("/");
-        if (!currentSegments.startsWith("auth/reset-password")) {
-          router.replace("/auth/reset-password" as never);
-        }
+        // Navigate to the reset-password screen. The recoveryInProgress
+        // flag stays true so the redirect effect below doesn't send the
+        // user to / or /auth/login before the password screen loads.
+        router.replace("/auth/reset-password" as never);
       } catch (e) {
         console.error("[auth] Recovery flow exception:", e);
-        recoveryInProgress.current = false;
+        setRecoveryInProgress(false);
       }
     };
 
@@ -170,8 +170,30 @@ function AuthGate() {
     };
   }, []);
 
+  // ── Reset recovery flag when the user signs out during recovery ──────
+  // After the password is updated, the reset-password screen signs the
+  // recovery session out. When user transitions from non-null → null,
+  // we clear recoveryInProgress so the redirect effect resumes normal
+  // behaviour (sending unauthenticated users to /auth/login).
+  const prevUser = useRef(user);
+  useEffect(() => {
+    if (prevUser.current && !user && recoveryInProgress) {
+      setRecoveryInProgress(false);
+    }
+    prevUser.current = user;
+  }, [user, recoveryInProgress]);
+
   useEffect(() => {
     if (isLoading) return;
+
+    // CRITICAL: Don't redirect while a recovery session is being
+    // established. setSession() is async — isLoading may become false
+    // (from the AuthProvider's getSession()) before setSession()
+    // completes. Without this guard, the redirect fires with user=null,
+    // sending the user to /auth/login. When setSession() then completes
+    // and user becomes set, AuthenticatedApp renders but the current
+    // route (auth/login) isn't in its Stack — producing a blank screen.
+    if (recoveryInProgress) return;
 
     if (!user && !inAuthGroup) {
       // Reset all Zustand stores (clear persisted data + reset in-memory state)
@@ -182,7 +204,6 @@ function AuthGate() {
       useInvitationStore.getState().reset();
       router.replace("/auth/login" as never);
     } else if (user && inAuthGroup) {
-      if (recoveryInProgress.current) return;
       router.replace("/" as never);
     } else if (user && !inAuthGroup && !inOnboarding && profile && profile.workspaceMode === null) {
       // Brand-new user who hasn't chosen a workspace mode — send to onboarding
@@ -190,10 +211,8 @@ function AuthGate() {
     } else if (user && inOnboarding && profile && profile.workspaceMode !== null) {
       // User has set up their workspace, redirect to dashboard
       router.replace("/" as never);
-    } else if (user && !inAuthGroup && recoveryInProgress.current) {
-      router.replace("/auth/reset-password" as never);
     }
-  }, [isLoading, user, inAuthGroup, inOnboarding, profile]);
+  }, [isLoading, user, inAuthGroup, inOnboarding, profile, recoveryInProgress]);
 
   // ── Render ────────────────────────────────────────────────────────────
 

@@ -75,14 +75,13 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
 });
 
 /**
- * Returns the correct redirect URL for Supabase auth callbacks.
+ * Returns the correct redirect URL for Supabase auth callbacks,
+ * platform-aware.
  *
- * Points at the root domain — NOT /auth/reset-password.
- *
+ * **Web**: Points at the root domain — NOT /auth/reset-password.
  * The Rork web preview serves static files and does NOT support SPA
  * fallback routing. A direct browser request to /auth/reset-password
  * would 404 at the server level before the JS bundle even loads.
- *
  * Supabase appends hash-fragment recovery tokens
  * (#access_token=...&refresh_token=...&type=recovery) which are
  * NEVER sent to the server — they stay client-side only. So the server
@@ -90,11 +89,25 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
  * detects the recovery tokens in the URL hash, calls setSession(),
  * and navigates to /auth/reset-password.
  *
- * On native (real device), the deep-link URL becomes:
- *   rork-lxwo9f6yr6sjgzxbuwjkz://#access_token=...&type=recovery
- * and +native-intent.tsx routes it to /. AuthGate handles the rest.
+ * **Native (iOS/Android)**: Uses the app's custom URL scheme:
+ *   rork-<projectId>://auth/reset-password#access_token=...&type=recovery
+ * iOS opens the app directly (not Safari), and +native-intent.tsx
+ * routes the deep link so AuthGate can process the recovery tokens.
+ *
+ * The custom scheme must be registered in app.json ("scheme" field)
+ * AND added to the Supabase Authentication → URL Configuration
+ * redirect URL allowlist. Both have been verified.
  */
 export function getAuthRedirectUrl(): string {
   const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
-  return `https://p-${projectId}--expo.rork.live`;
+
+  if (Platform.OS === "web") {
+    return `https://p-${projectId}--expo.rork.live`;
+  }
+
+  // Native: use the custom URL scheme registered in app.json.
+  // Supabase appends the hash fragment (#access_token=...&type=recovery)
+  // to this URL, and the OS opens the app directly.
+  const scheme = `rork-${projectId}`;
+  return `${scheme}://auth/reset-password`;
 }
