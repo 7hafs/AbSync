@@ -41,6 +41,8 @@ function ResetPasswordScreen() {
     isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
 
+  console.log("[reset-password] SCREEN MOUNTED", { phase: "loading" });
+
   // ── State ──────────────────────────────────────────────────────────────────
   const [phase, setPhase] = useState<"loading" | "form" | "success" | "error">("loading");
   const [newPassword, setNewPassword] = useState("");
@@ -55,6 +57,7 @@ function ResetPasswordScreen() {
     let cancelled = false;
 
     const verifySession = async () => {
+      console.log("[reset-password] verifySession START — waiting for recovery session");
       try {
         // Try up to 5 times with increasing delays (500ms, 1s, 1.5s, 2s, 2.5s)
         // The recovery session may take a moment to be established by AuthGate.
@@ -64,9 +67,14 @@ function ResetPasswordScreen() {
           const { data: { session: existingSession } } = await supabase.auth.getSession();
 
           if (existingSession) {
+            console.log("[reset-password] Session found on attempt", attempt, {
+              userId: existingSession.user?.id,
+            });
             if (!cancelled) setPhase("form");
             return;
           }
+
+          console.log("[reset-password] No session on attempt", attempt, "— retrying");
 
           // Not found yet — wait before retrying
           if (attempt < 4) {
@@ -76,6 +84,7 @@ function ResetPasswordScreen() {
         }
 
         // All attempts exhausted
+        console.error("[reset-password] All 5 session verification attempts exhausted");
         if (!cancelled) {
           setPhase("error");
           setErrorMessage(
@@ -115,14 +124,20 @@ function ResetPasswordScreen() {
     }
 
     setIsProcessing(true);
+    console.log("[reset-password] updateUser START — updating password");
     try {
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
       });
 
       if (error) {
+        console.error("[reset-password] updateUser FAILED", {
+          message: error.message,
+          status: error.status,
+        });
         Alert.alert("Error", friendlyAuthError(error));
       } else {
+        console.log("[reset-password] updateUser SUCCESS — password updated");
         setPhase("success");
       }
     } catch (err) {

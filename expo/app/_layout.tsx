@@ -98,6 +98,11 @@ function AuthGate() {
 
     const handleUrl = async (overrideUrl?: string) => {
       try {
+        console.log("[auth] handleUrl START", {
+          hasOverride: !!overrideUrl,
+          platform: Platform.OS,
+        });
+
         // On web, always use window.location.href — it includes the hash
         // fragment (#access_token=...&type=recovery) which
         // Linking.getInitialURL() strips on web.
@@ -112,14 +117,22 @@ function AuthGate() {
           url = await Linking.getInitialURL();
         }
 
-        if (!url) return;
+        console.log("[auth] handleUrl URL", { url: url ? url.substring(0, 80) + "..." : null });
+
+        if (!url) {
+          console.log("[auth] handleUrl — no URL, exiting");
+          return;
+        }
 
         // Use the raw (non-decoded) URL to find the hash, because
         // decodeURIComponent can corrupt the fragment if it contains
         // URL-encoded characters that look like %xx sequences.
         const hashIndex = url.indexOf("#");
 
-        if (hashIndex === -1) return;
+        if (hashIndex === -1) {
+          console.log("[auth] handleUrl — no hash fragment in URL, exiting");
+          return;
+        }
 
         const fragment = url.substring(hashIndex + 1);
         const params = new URLSearchParams(fragment);
@@ -128,10 +141,20 @@ function AuthGate() {
         const refreshToken = params.get("refresh_token");
         const type = params.get("type");
 
-        if (!accessToken || !refreshToken || type !== "recovery") return;
+        console.log("[auth] handleUrl TOKENS", {
+          hasAccessToken: !!accessToken,
+          hasRefreshToken: !!refreshToken,
+          type,
+        });
+
+        if (!accessToken || !refreshToken || type !== "recovery") {
+          console.log("[auth] handleUrl — missing tokens or not recovery type, exiting");
+          return;
+        }
 
         recoveryHandled.current = true;
         setRecoveryInProgress(true);
+        console.log("[auth] handleUrl — recovery token detected, calling setSession()");
 
         const { error } = await supabase.auth.setSession({
           access_token: accessToken,
@@ -139,15 +162,21 @@ function AuthGate() {
         });
 
         if (error) {
-          console.warn("[auth] Recovery session failed:", error.message, error.status);
+          console.error("[auth] handleUrl setSession FAILED", {
+            message: error.message,
+            status: error.status,
+          });
           setRecoveryInProgress(false);
           return;
         }
+
+        console.log("[auth] handleUrl setSession SUCCESS — navigating to /auth/reset-password");
 
         // Navigate to the reset-password screen. The recoveryInProgress
         // flag stays true so the redirect effect below doesn't send the
         // user to / or /auth/login before the password screen loads.
         router.replace("/auth/reset-password" as never);
+        console.log("[auth] handleUrl router.replace DONE");
       } catch (e) {
         console.error("[auth] Recovery flow exception:", e);
         setRecoveryInProgress(false);
@@ -160,6 +189,10 @@ function AuthGate() {
     // running and the user taps a recovery deep link, Linking fires a
     // 'url' event.
     const subscription = Linking.addEventListener("url", (event: { url: string }) => {
+      console.log("[auth] Linking 'url' event received", {
+        url: event.url ? event.url.substring(0, 80) + "..." : null,
+        recoveryHandled: recoveryHandled.current,
+      });
       if (!recoveryHandled.current) {
         handleUrl(event.url);
       }

@@ -22,6 +22,7 @@ import React, {
   useState,
   useCallback,
 } from "react";
+import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase, getAuthRedirectUrl } from "@/lib/supabase";
 import { autoAcceptInvitations, acceptInvitation } from "@/lib/dataService";
@@ -671,19 +672,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (email: string): Promise<string | null> => {
       setIsProcessing(true);
       try {
+        const redirectTo = getAuthRedirectUrl();
+        const maskedEmail = email.length > 2
+          ? `${email[0]}***${email.substring(email.indexOf("@"))}`
+          : "***";
+        console.log("[auth] resetPasswordForEmail START", {
+          email: maskedEmail,
+          redirectTo,
+          platform: Platform.OS,
+        });
+
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: getAuthRedirectUrl(),
+          redirectTo,
         });
 
         if (error) {
-          console.error("[auth] Forgot password error:", error.message);
+          console.error("[auth] resetPasswordForEmail FAILED", {
+            message: error.message,
+            status: error.status,
+            code: (error as any).code,
+          });
           return friendlyAuthError(error);
         }
 
+        console.log("[auth] resetPasswordForEmail SUCCESS — email sent");
         return null;
       } catch (err) {
         const message = err instanceof Error ? err.message : "An unknown error occurred";
-        console.error("[auth] Forgot password exception:", message);
+        console.error("[auth] resetPasswordForEmail EXCEPTION:", message);
         return friendlyAuthError(err);
       } finally {
         setIsProcessing(false);
