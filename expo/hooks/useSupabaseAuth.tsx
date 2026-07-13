@@ -31,6 +31,9 @@ import { Session, User } from "@supabase/supabase-js";
 /** AsyncStorage key for persisting the user's personal organisation ID. */
 const PERSONAL_ORG_ID_KEY = "personal_org_id";
 
+/** Development-only logger — no-op in production builds. */
+const devLog = __DEV__ ? console.log.bind(console) : () => {};
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface AuthProfile {
@@ -573,7 +576,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth state changes
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
-        console.log("[auth] onAuthStateChange", {
+        devLog("[auth] onAuthStateChange", {
           event,
           hasSession: !!newSession,
           userId: newSession?.user?.id ?? null,
@@ -627,6 +630,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           password,
           options: {
             data: { name },
+            emailRedirectTo: getAuthRedirectUrl(),
           },
         });
 
@@ -678,33 +682,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsProcessing(true);
       try {
         const redirectTo = getAuthRedirectUrl();
-        const maskedEmail = email.length > 2
-          ? `${email[0]}***${email.substring(email.indexOf("@"))}`
-          : "***";
-        console.log("[auth] resetPasswordForEmail START", {
-          email: maskedEmail,
-          redirectTo,
-          platform: Platform.OS,
-        });
+        if (__DEV__) {
+          const maskedEmail = email.length > 2
+            ? `${email[0]}***${email.substring(email.indexOf("@"))}`
+            : "***";
+          devLog("[auth] resetPasswordForEmail START", {
+            email: maskedEmail,
+            redirectTo,
+            platform: Platform.OS,
+          });
+        }
 
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo,
         });
 
         if (error) {
-          console.error("[auth] resetPasswordForEmail FAILED", {
-            message: error.message,
-            status: error.status,
-            code: (error as any).code,
-          });
+          if (__DEV__) {
+            console.error("[auth] resetPasswordForEmail FAILED", {
+              message: error.message,
+              status: error.status,
+            });
+          }
           return friendlyAuthError(error);
         }
 
-        console.log("[auth] resetPasswordForEmail SUCCESS — email sent");
+        devLog("[auth] resetPasswordForEmail SUCCESS — email sent");
         return null;
       } catch (err) {
         const message = err instanceof Error ? err.message : "An unknown error occurred";
-        console.error("[auth] resetPasswordForEmail EXCEPTION:", message);
+        if (__DEV__) {
+          console.error("[auth] resetPasswordForEmail EXCEPTION:", message);
+        }
         return friendlyAuthError(err);
       } finally {
         setIsProcessing(false);

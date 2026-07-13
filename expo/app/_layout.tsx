@@ -28,6 +28,9 @@ import { Absence } from "@/types";
 import { toDateString } from "@/utils/dateUtils";
 import Colors from "@/constants/colors";
 
+/** Development-only logger — no-op in production builds. */
+const devLog = __DEV__ ? console.log.bind(console) : () => {};
+
 export const unstable_settings = {
   initialRouteName: "(tabs)",
 };
@@ -104,7 +107,7 @@ function AuthGate() {
 
     const handleUrl = async (overrideUrl?: string) => {
       try {
-        console.log("[auth] handleUrl START", {
+        devLog("[auth] handleUrl START", {
           hasOverride: !!overrideUrl,
           platform: Platform.OS,
           recoveryHandled: recoveryHandled.current,
@@ -124,10 +127,10 @@ function AuthGate() {
           url = await Linking.getInitialURL();
         }
 
-        console.log("[auth] handleUrl URL", { url: url ? url.substring(0, 120) : null });
+        devLog("[auth] handleUrl URL", { url: url ? url.substring(0, 120) : null });
 
         if (!url) {
-          console.log("[auth] handleUrl — no URL, exiting");
+          devLog("[auth] handleUrl — no URL, exiting");
           return;
         }
 
@@ -137,7 +140,7 @@ function AuthGate() {
         const hashIndex = url.indexOf("#");
 
         if (hashIndex === -1) {
-          console.log("[auth] handleUrl — no hash fragment in URL, exiting");
+          devLog("[auth] handleUrl — no hash fragment in URL, exiting");
           return;
         }
 
@@ -148,20 +151,20 @@ function AuthGate() {
         const refreshToken = params.get("refresh_token");
         const type = params.get("type");
 
-        console.log("[auth] handleUrl TOKENS", {
+        devLog("[auth] handleUrl TOKENS", {
           hasAccessToken: !!accessToken,
           hasRefreshToken: !!refreshToken,
           type,
         });
 
         if (!accessToken || !refreshToken || type !== "recovery") {
-          console.log("[auth] handleUrl — missing tokens or not recovery type, exiting");
+          devLog("[auth] handleUrl — missing tokens or not recovery type, exiting");
           return;
         }
 
         recoveryHandled.current = true;
         setRecoveryInProgress(true);
-        console.log("[auth] handleUrl — recovery token detected, setRecoveryInProgress(true), calling setSession()");
+        devLog("[auth] handleUrl — recovery token detected, calling setSession()");
 
         const { error } = await supabase.auth.setSession({
           access_token: accessToken,
@@ -169,30 +172,34 @@ function AuthGate() {
         });
 
         if (error) {
-          console.error("[auth] handleUrl setSession FAILED", {
-            message: error.message,
-            status: error.status,
-          });
+          if (__DEV__) {
+            console.error("[auth] handleUrl setSession FAILED", {
+              message: error.message,
+              status: error.status,
+            });
+          }
           setRecoveryInProgress(false);
           return;
         }
 
-        console.log("[auth] handleUrl setSession SUCCESS — navigating to /auth/reset-password");
+        devLog("[auth] handleUrl setSession SUCCESS — navigating to /auth/reset-password");
 
         // Navigate to the reset-password screen. The recoveryInProgress
         // flag stays true so the redirect effect below doesn't send the
         // user to / or /auth/login before the password screen loads.
         router.replace("/auth/reset-password" as never);
-        console.log("[auth] handleUrl router.replace DONE");
+        devLog("[auth] handleUrl router.replace DONE");
       } catch (e) {
-        console.error("[auth] Recovery flow exception:", e);
+        if (__DEV__) {
+          console.error("[auth] Recovery flow exception:", e);
+        }
         setRecoveryInProgress(false);
       } finally {
         // CRITICAL: Mark the URL check as complete so the redirect effect
         // can proceed. This must happen in finally so it fires even if
         // handleUrl exits early (no URL, no hash, etc.).
         setRecoveryCheckComplete(true);
-        console.log("[auth] handleUrl COMPLETE — recoveryCheckComplete=true");
+        devLog("[auth] handleUrl COMPLETE — recoveryCheckComplete=true");
       }
     };
 
@@ -204,7 +211,9 @@ function AuthGate() {
     const urlCheckTimeout = setTimeout(() => {
       setRecoveryCheckComplete((prev) => {
         if (!prev) {
-          console.warn("[auth] handleUrl TIMEOUT — forcing recoveryCheckComplete=true after 3s");
+          if (__DEV__) {
+            console.warn("[auth] handleUrl TIMEOUT — forcing recoveryCheckComplete=true after 3s");
+          }
         }
         return true;
       });
@@ -214,7 +223,7 @@ function AuthGate() {
     // running and the user taps a recovery deep link, Linking fires a
     // 'url' event.
     const subscription = Linking.addEventListener("url", (event: { url: string }) => {
-      console.log("[auth] Linking 'url' event received", {
+      devLog("[auth] Linking 'url' event received", {
         url: event.url ? event.url.substring(0, 120) : null,
         recoveryHandled: recoveryHandled.current,
       });
@@ -244,7 +253,7 @@ function AuthGate() {
 
   useEffect(() => {
     if (isLoading) {
-      console.log("[auth-gate] redirect effect — isLoading=true, skipping");
+      devLog("[auth-gate] redirect effect — isLoading=true, skipping");
       return;
     }
 
@@ -255,7 +264,7 @@ function AuthGate() {
     // and sends an authenticated user to / (dashboard) instead of letting
     // the recovery flow navigate to /auth/reset-password.
     if (!recoveryCheckComplete) {
-      console.log("[auth-gate] redirect effect — recoveryCheckComplete=false, waiting for URL check");
+      devLog("[auth-gate] redirect effect — recoveryCheckComplete=false, waiting for URL check");
       return;
     }
 
@@ -267,11 +276,11 @@ function AuthGate() {
     // and user becomes set, AuthenticatedApp renders but the current
     // route (auth/login) isn't in its Stack — producing a blank screen.
     if (recoveryInProgress) {
-      console.log("[auth-gate] redirect effect — recoveryInProgress=true, skipping");
+      devLog("[auth-gate] redirect effect — recoveryInProgress=true, skipping");
       return;
     }
 
-    console.log("[auth-gate] redirect effect EVALUATING", {
+    devLog("[auth-gate] redirect effect EVALUATING", {
       hasUser: !!user,
       inAuthGroup,
       inOnboarding,
@@ -280,7 +289,7 @@ function AuthGate() {
     });
 
     if (!user && !inAuthGroup) {
-      console.log("[auth-gate] redirect → /auth/login (no user, not in auth group)");
+      devLog("[auth-gate] redirect → /auth/login (no user, not in auth group)");
       // Reset all Zustand stores (clear persisted data + reset in-memory state)
       clearAllStores().catch((e) =>
         console.warn("[auth] Failed to clear stores on sign-out:", e)
@@ -289,18 +298,18 @@ function AuthGate() {
       useInvitationStore.getState().reset();
       router.replace("/auth/login" as never);
     } else if (user && inAuthGroup) {
-      console.log("[auth-gate] redirect → / (user authenticated, in auth group)");
+      devLog("[auth-gate] redirect → / (user authenticated, in auth group)");
       router.replace("/" as never);
     } else if (user && !inAuthGroup && !inOnboarding && profile && profile.workspaceMode === null) {
       // Brand-new user who hasn't chosen a workspace mode — send to onboarding
-      console.log("[auth-gate] redirect → /onboarding/workspace (no workspace mode set)");
+      devLog("[auth-gate] redirect → /onboarding/workspace (no workspace mode set)");
       router.replace("/onboarding/workspace" as never);
     } else if (user && inOnboarding && profile && profile.workspaceMode !== null) {
       // User has set up their workspace, redirect to dashboard
-      console.log("[auth-gate] redirect → / (onboarding complete)");
+      devLog("[auth-gate] redirect → / (onboarding complete)");
       router.replace("/" as never);
     } else {
-      console.log("[auth-gate] redirect — no condition matched, staying on current route");
+      devLog("[auth-gate] redirect — no condition matched, staying on current route");
     }
   }, [isLoading, user, inAuthGroup, inOnboarding, profile, recoveryInProgress, recoveryCheckComplete, router]);
 

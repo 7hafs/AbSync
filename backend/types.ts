@@ -658,12 +658,8 @@ export type Database = {
         }
         Returns: Json
       }
-      debug_auth_context: { Args: never; Returns: Json }
-      diagnose_auth_id: { Args: never; Returns: Json }
-      diagnose_identity_values: { Args: never; Returns: Json }
       get_user_email: { Args: never; Returns: string }
       get_user_organisation_id: { Args: never; Returns: string }
-      inspect_organisations_schema: { Args: never; Returns: Json }
       is_member_of_org: { Args: { org_id: string }; Returns: boolean }
       is_org_owner: { Args: { org_id: string }; Returns: boolean }
       user_id: { Args: never; Returns: string }

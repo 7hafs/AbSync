@@ -33,6 +33,9 @@ import {
   Mail,
   Lock,
   Building2,
+  Cloud,
+  WifiOff,
+  AlertTriangle,
 } from "lucide-react-native";
 import { exportAbsencesCSV } from "@/utils/csvExport";
 import { useRouter } from "expo-router";
@@ -45,6 +48,7 @@ import useNotificationStore from "@/store/useNotificationStore";
 import useAbsenceStore from "@/store/useAbsenceStore";
 import { sendTestNotification } from "@/utils/notificationService";
 import { useSupabaseAuth, friendlyAuthError } from "@/hooks/useSupabaseAuth";
+import { useSyncInfo } from "@/hooks/useSyncStatus";
 import { supabase, getAuthRedirectUrl } from "@/lib/supabase";
 import {
   exportBackupFile,
@@ -63,6 +67,7 @@ export default function SettingsScreen() {
     setInstantAlertsEnabled,
   } = useNotificationStore();
   const { profile, signOut, switchToPersonalWorkspace, switchToOrganisationWorkspace, refreshProfile } = useSupabaseAuth();
+  const syncInfo = useSyncInfo();
   const colorScheme =
     isDarkMode === null ? systemColorScheme : isDarkMode ? "dark" : "light";
   const colors = Colors[colorScheme || "light"];
@@ -80,6 +85,32 @@ export default function SettingsScreen() {
     absences: number;
     staff: number;
   } | null>(null);
+
+  const syncStatusConfig: Record<string, { label: string; color: string; icon: typeof Cloud }> = {
+    synced: { label: "Online", color: "#22C55E", icon: Cloud },
+    syncing: { label: "Syncing", color: "#2563EB", icon: RefreshCw },
+    offline: { label: "Offline", color: "#D97706", icon: WifiOff },
+    error: { label: "Sync Error", color: "#DC2626", icon: AlertTriangle },
+  };
+
+  const formatLastSynced = (timestamp: number | null): string => {
+    if (!timestamp) return "Never";
+    const date = new Date(timestamp);
+    const now = Date.now();
+    const diffMs = now - timestamp;
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHr = Math.floor(diffMin / 60);
+
+    if (diffMin < 1) return "Just now";
+    if (diffMin < 60) return `${diffMin} min ago`;
+    if (diffHr < 24) return `${diffHr} hr ago`;
+    return date.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
 
   const handleToggleDarkMode = () => {
     if (isDarkMode === null) {
@@ -440,6 +471,54 @@ export default function SettingsScreen() {
               </View>
             </View>
           </TouchableOpacity>
+        </View>
+
+        {/* ── Sync Status Section ──────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <ThemedText size="large" weight="bold" style={styles.sectionTitle}>
+            Sync Status
+          </ThemedText>
+
+          <View
+            style={[
+              styles.settingItem,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.settingContent}>
+              {(() => {
+                const cfg = syncStatusConfig[syncInfo.status] ?? syncStatusConfig.synced;
+                const SyncIcon = cfg.icon;
+                return <SyncIcon size={22} color={cfg.color} />;
+              })()}
+              <View style={styles.settingTextContainer}>
+                <ThemedText weight="semibold">Cloud Sync</ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  {(() => {
+                    const cfg = syncStatusConfig[syncInfo.status] ?? syncStatusConfig.synced;
+                    return cfg.label;
+                  })()}
+                </ThemedText>
+              </View>
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.settingItem,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.settingContent}>
+              <Clock size={22} color={colors.primary} />
+              <View style={styles.settingTextContainer}>
+                <ThemedText weight="semibold">Last Synced</ThemedText>
+                <ThemedText variant="secondary" size="small">
+                  {formatLastSynced(syncInfo.lastSyncedAt)}
+                </ThemedText>
+              </View>
+            </View>
+          </View>
         </View>
 
         {/* ── Appearance Section ───────────────────────────────────────────── */}

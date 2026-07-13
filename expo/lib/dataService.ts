@@ -451,16 +451,27 @@ export async function deleteFromStorage(
 
 export type SyncStatus = "synced" | "syncing" | "offline" | "error";
 
+type SyncState = {
+  status: SyncStatus;
+  lastSyncedAt: number | null;
+};
+
 let currentSyncStatus: SyncStatus = "synced";
-let syncListeners: Array<(status: SyncStatus) => void> = [];
+let currentLastSyncedAt: number | null = null;
+let syncListeners: Array<(state: SyncState) => void> = [];
 
 /** Get the current sync status. */
 export function getSyncStatus(): SyncStatus {
   return currentSyncStatus;
 }
 
+/** Get the timestamp of the last successful sync (epoch ms), or null if never synced. */
+export function getLastSyncedAt(): number | null {
+  return currentLastSyncedAt;
+}
+
 /** Subscribe to sync status changes. Returns unsubscribe function. */
-export function onSyncStatusChange(listener: (status: SyncStatus) => void): () => void {
+export function onSyncStatusChange(listener: (state: SyncState) => void): () => void {
   syncListeners.push(listener);
   return () => {
     syncListeners = syncListeners.filter((l) => l !== listener);
@@ -468,10 +479,17 @@ export function onSyncStatusChange(listener: (status: SyncStatus) => void): () =
 }
 
 export function setSyncStatus(status: SyncStatus): void {
-  if (currentSyncStatus === status) return;
+  const prevStatus = currentSyncStatus;
   currentSyncStatus = status;
+
+  // Record the sync timestamp when transitioning to "synced"
+  if (status === "synced" && prevStatus !== "synced") {
+    currentLastSyncedAt = Date.now();
+  }
+
+  const state: SyncState = { status: currentSyncStatus, lastSyncedAt: currentLastSyncedAt };
   for (const listener of syncListeners) {
-    try { listener(status); } catch { /* ignore listener errors */ }
+    try { listener(state); } catch { /* ignore listener errors */ }
   }
 }
 
