@@ -9,6 +9,7 @@ import { Database } from "@/integrations/supabase/types";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import * as Linking from "expo-linking";
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL as string;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY as string;
@@ -75,39 +76,40 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
 });
 
 /**
- * Returns the correct redirect URL for Supabase auth callbacks,
- * platform-aware.
+ * Returns the correct redirect URL for Supabase auth callbacks.
  *
- * **Web**: Points at the root domain — NOT /auth/reset-password.
- * The Rork web preview serves static files and does NOT support SPA
- * fallback routing. A direct browser request to /auth/reset-password
- * would 404 at the server level before the JS bundle even loads.
- * Supabase appends hash-fragment recovery tokens
- * (#access_token=...&refresh_token=...&type=recovery) which are
- * NEVER sent to the server — they stay client-side only. So the server
- * sees a request for /, serves index.html, the app boots, AuthGate
- * detects the recovery tokens in the URL hash, calls setSession(),
- * and navigates to /auth/reset-password.
+ * **Web**: Points at the root domain (NOT /auth/reset-password) because
+ * the Rork web preview serves static files without SPA fallback. Supabase
+ * appends hash-fragment recovery tokens (#access_token=...&type=recovery)
+ * which are never sent to the server — they stay client-side. The server
+ * serves index.html for /, the app boots, AuthGate detects the tokens in
+ * the URL hash, calls setSession(), and navigates to /auth/reset-password.
  *
- * **Native (iOS/Android)**: Uses the app's custom URL scheme:
- *   rork-<projectId>://auth/reset-password#access_token=...&type=recovery
- * iOS opens the app directly (not Safari), and +native-intent.tsx
- * routes the deep link so AuthGate can process the recovery tokens.
+ * **Native (iOS/Android)**: Uses `Linking.createURL()` which automatically
+ * generates the correct URL based on the runtime environment:
  *
- * The custom scheme must be registered in app.json ("scheme" field)
- * AND added to the Supabase Authentication → URL Configuration
- * redirect URL allowlist. Both have been verified.
+ *   - Expo Go (development):  exp://<host>/--/auth/reset-password
+ *   - Standalone build (prod): <scheme>://auth/reset-password
+ *
+ * This is critical: if we hardcode the custom scheme URL (e.g.
+ * rork-<projectId>://auth/reset-password), iOS opens whatever app has that
+ * scheme registered — which is the App Store production build, NOT the
+ * Expo Go development build the user is testing with. By using
+ * Linking.createURL(), the redirect URL always matches the app that's
+ * actually running.
+ *
+ * Supabase appends the hash fragment to whichever URL we provide, and the
+ * OS routes the deep link to the correct app. The redirect URL must be in
+ * the Supabase Authentication → URL Configuration allowlist.
  */
 export function getAuthRedirectUrl(): string {
-  const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
-
   if (Platform.OS === "web") {
+    const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
     return `https://p-${projectId}--expo.rork.live`;
   }
 
-  // Native: use the custom URL scheme registered in app.json.
-  // Supabase appends the hash fragment (#access_token=...&type=recovery)
-  // to this URL, and the OS opens the app directly.
-  const scheme = `rork-${projectId}`;
-  return `${scheme}://auth/reset-password`;
+  // Native: Linking.createURL() generates the environment-correct URL.
+  // Expo Go → exp://<host>/--/auth/reset-password
+  // Standalone → <scheme>://auth/reset-password
+  return Linking.createURL("auth/reset-password");
 }
